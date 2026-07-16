@@ -23,7 +23,10 @@
 #include <opendaq/sample_reader.h>
 #include <opendaq/typed_reading_utils.h>
 
+#include <chrono>
 #include <deque>
+#include <memory>
+#include <optional>
 
 BEGIN_NAMESPACE_OPENDAQ
 
@@ -41,8 +44,6 @@ class SignalEvent
 public:
     SignalEvent(const EventPacketPtr& packet);
 
-    static SignalEvent syncGapEvent(Int gapDiff);
-
     bool merge(const SignalEvent& otherEvent);
     SignalEventType getType() const;
     const DataDescriptorPtr& getDomainDescriptor() const;
@@ -51,8 +52,6 @@ public:
     EventPacketPtr toEventPacket() const;
 
 private:
-    explicit SignalEvent(Int gapDiff);
-
     void updateType();
 private:
     SignalEventType eventType;
@@ -71,6 +70,17 @@ enum class AdvanceResult
     Error
 };
 
+/**
+ * @brief Result of an advance operation. On Success, reachedValue holds the domain value of the
+ * first sample actually reached (in the signal's own domain) - the owner verifies it against the
+ * requested target in the common domain instead of trusting target rounding.
+ */
+struct AdvanceOutcome
+{
+    AdvanceResult result;
+    std::unique_ptr<DomainValue> reachedValue;
+};
+
 enum class QueueReaderIssue : uint32_t
 {
     None                            = 0,
@@ -78,7 +88,8 @@ enum class QueueReaderIssue : uint32_t
     DomainTypesNotConvertible       = 1 << 1,
     UnsupportedDomainRule           = 1 << 2,
     OriginParsingFailed             = 1 << 3,
-    DomainUnitInvalid               = 1 << 4
+    DomainUnitInvalid               = 1 << 4,
+    UnsupportedDimensions           = 1 << 5
 };
 
 class QueueReader
@@ -94,7 +105,18 @@ public:
 public:
     DomainInfo getDomainInfo();
     std::unique_ptr<DomainValue> getFirstSampleDomainValue();
-    AdvanceResult advanceToDomainValue(const DomainValue* domainValue);
+
+    /**
+     * @brief System-clock time of the first unread sample, for synchronization-distance diagnostics.
+     * Empty when no data packet is at the front of the queue.
+     */
+    std::optional<std::chrono::system_clock::time_point> getFirstSampleAbsoluteTime();
+
+    /**
+     * @brief Advance the cursor to the first sample at or after domainValue (signal-domain target).
+     * Pending events block advancing (returns Error); the owner must pop them first.
+     */
+    AdvanceOutcome advanceToDomainValue(const DomainValue* domainValue);
     Int getSampleRate();
 
     void dropOutdatedPacketSegments();
@@ -105,7 +127,13 @@ public:
      * @return SizeT Available samples multiplied by the sample rate divider.
      */
     SizeT getAvailableSamples();
-    
+
+    /**
+     * @brief Available samples (common rate equivalent) from the cursor up to the next event packet
+     * or queue end. Makes the until-event contract of the availability count explicit.
+     */
+    SizeT getAvailableSamplesUntilEvent();
+
     bool hasPendingEvents();
     EventPacketPtr popFrontEvent();
     
@@ -129,17 +157,18 @@ public:
     AdvanceResult skip(SizeT* count);
 
     /**
-     * @brief Drop the current data segment, if there are fewer than samplesInBlock samples available (common rate equivalent).
-     * 
+     * @brief Silently discard the current data segment, if there are fewer than samplesInBlock samples available (common rate equivalent).
+     *
      * For example: If there are 3 samples available before next event, samplesInBlock=10 (this is dividerLCM in terms of multireading)
-     * and divider for the queue reader is 2, then 5 native samples are required as minimum aligned read. Since 3 < 5, we drop the 3 samples
-     * and create a synchronization GAP event in the event queue.
-     * 
+     * and divider for the queue reader is 2, then 5 native samples are required as minimum aligned read. Since 3 < 5, the 3 samples
+     * are discarded and the original event packets ending the segment become pending. No synthetic event is created and no dropped
+     * count is reported; the discontinuity is observable from the next read's domain output.
+     *
      * @param samplesInBlock Number of samples (common rate equivalent).
-     * @return true If samples were dropped.
-     * @return false If samples were not dropped - data segment is long enough or there is no event in the queue to end the segment.
+     * @return true If samples were discarded.
+     * @return false If samples were not discarded - data segment is long enough or there is no event in the queue to end the segment.
      */
-    bool dropLeftoverSegment(SizeT samplesInBlock);
+    bool discardLeftoverSegment(SizeT samplesInBlock);
     
 private:
     void drainConnection();

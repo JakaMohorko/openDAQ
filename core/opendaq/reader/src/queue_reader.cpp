@@ -3,6 +3,8 @@
 #include <opendaq/custom_log.h>
 #include <opendaq/event_packet_utils.h>
 
+#include <limits>
+
 BEGIN_NAMESPACE_OPENDAQ
 
 SignalEvent::SignalEvent(const EventPacketPtr& packet)
@@ -25,25 +27,12 @@ SignalEvent::SignalEvent(const EventPacketPtr& packet)
     }
 }
 
-SignalEvent::SignalEvent(Int gapDiff)
-    : eventType(SignalEventType::Gap)
-    , domainDescriptor(nullptr)
-    , valueDescriptor(nullptr)
-    , gapDiff(gapDiff)
-{
-}
-
-SignalEvent SignalEvent::syncGapEvent(Int gapDiff)
-{
-    return SignalEvent(gapDiff);
-}
-
 void SignalEvent::updateType()
 {
     if (eventType == SignalEventType::Gap)
         return;
 
-    if (domainDescriptor.assigned() and valueDescriptor.assigned())
+    if (domainDescriptor.assigned() && valueDescriptor.assigned())
     {
         eventType = SignalEventType::DomainAndValueChanged;
     }
@@ -63,9 +52,8 @@ void SignalEvent::updateType()
 
 bool SignalEvent::merge(const SignalEvent& other)
 {
-    if (this->eventType != SignalEventType::Gap && other.eventType == SignalEventType::Gap)
-        return false;
-    if (this->eventType == SignalEventType::Gap && other.eventType != SignalEventType::Gap)
+    // Gap events never merge with anything, including other gaps - each gap is reported individually
+    if (this->eventType == SignalEventType::Gap || other.eventType == SignalEventType::Gap)
         return false;
 
     if (other.domainDescriptor.assigned())
@@ -159,11 +147,15 @@ std::unique_ptr<DomainValue> QueueReader::getFirstSampleDomainValue()
         typeCtx.domainIn, typeCtx.domainOut, typeCtx.domainLayout, domainPacket, readingPosition, typeCtx.domainInfo);
 }
 
-AdvanceResult QueueReader::advanceToDomainValue(const DomainValue* domainValue)
+AdvanceOutcome QueueReader::advanceToDomainValue(const DomainValue* domainValue)
 {
-    // TODO: Add first timestamp mechanism for sync tolerance checking
     checkConnection();
     drainConnection();
+
+    // Pending events must be popped before advancing - the owner would otherwise
+    // step over a reportable event boundary without handling it.
+    if (!events.empty())
+        return {AdvanceResult::Error, nullptr};
 
     SignalEventType signalChange = SignalEventType::NoChange;
 
@@ -176,13 +168,13 @@ AdvanceResult QueueReader::advanceToDomainValue(const DomainValue* domainValue)
             DataPacketPtr domainPacket = packet.asPtr<IDataPacket>(true).getDomainPacket();
 
             SizeT index = TypedReadingUtils::findDomainValue(
-                typeCtx.domainIn, typeCtx.domainOut, typeCtx.domainLayout, domainPacket, domainValue, nullptr /*TODO*/);
+                typeCtx.domainIn, typeCtx.domainOut, typeCtx.domainLayout, domainPacket, domainValue, nullptr);
 
             if (index != static_cast<SizeT>(-1))
             {
                 if (index < readingPosition)
                 {
-                    return AdvanceResult::OvershotError;
+                    return {AdvanceResult::OvershotError, nullptr};
                 }
                 readingPosition = index;
                 found = true;
@@ -223,12 +215,26 @@ AdvanceResult QueueReader::advanceToDomainValue(const DomainValue* domainValue)
         case SignalEventType::DomainChanged:
         case SignalEventType::DomainAndValueChanged:
         case SignalEventType::Gap:
-            return AdvanceResult::DomainChanged;
+            return {AdvanceResult::DomainChanged, nullptr};
         default:
             break;
     }
 
-    return found ? AdvanceResult::Success : AdvanceResult::NeedMoreData;
+    if (found)
+    {
+        // Report the first-sample value actually reached so the owner can verify it
+        // against the requested target after converting to the common domain.
+        return {AdvanceResult::Success, getFirstSampleDomainValue()};
+    }
+    return {AdvanceResult::NeedMoreData, nullptr};
+}
+
+std::optional<std::chrono::system_clock::time_point> QueueReader::getFirstSampleAbsoluteTime()
+{
+    const auto firstSample = getFirstSampleDomainValue();
+    if (!firstSample)
+        return std::nullopt;
+    return firstSample->toAbsoluteTime();
 }
 
 Int QueueReader::getSampleRate()
@@ -302,6 +308,13 @@ SizeT QueueReader::getAvailableSamplesNative()
 
 SizeT QueueReader::getAvailableSamples()
 {
+    return getAvailableSamplesNative() * sampleRateDivider;
+}
+
+SizeT QueueReader::getAvailableSamplesUntilEvent()
+{
+    // The native counter stops at the first non-data packet, so the available count
+    // already ends at the next event boundary; this alias makes that contract explicit.
     return getAvailableSamplesNative() * sampleRateDivider;
 }
 
@@ -518,31 +531,31 @@ void QueueReader::drainConnection()
     consumeLeadingEventPackets();
 }
 
-bool QueueReader::dropLeftoverSegment(SizeT samplesInBlock)
+bool QueueReader::discardLeftoverSegment(SizeT samplesInBlock)
 {
     if (samplesInBlock % sampleRateDivider != 0)
     {
         DAQ_THROW_EXCEPTION(InvalidStateException, "Aligned block size must be divisible by all signal dividers.");
     }
-    
+
     if (hasPendingEvents())
     {
-        DAQ_THROW_EXCEPTION(InvalidStateException, "Events must be handled before dropping leftover segments.");
+        DAQ_THROW_EXCEPTION(InvalidStateException, "Events must be handled before discarding leftover segments.");
     }
 
-    // No events in the queue, this segment has not been ended - mustn't drop
+    // No events in the queue, this segment has not been ended - mustn't discard
     if (getNumberOfEventPacketsInQueue() == 0)
         return false;
 
-
     const SizeT requiredNativeSamples = samplesInBlock / sampleRateDivider;
-    size_t availableNativeSamples = getAvailableSamplesNative();
+    const size_t availableNativeSamples = getAvailableSamplesNative();
 
     if (availableNativeSamples >= requiredNativeSamples)
         return false;
-    
+
+    // Silent discard: the trailing partial block is dropped without a synthetic event or
+    // dropped-sample count; the original event packets ending the segment become pending.
     dropUntilEvent();
-    addToEventQueue(SignalEvent::syncGapEvent(availableNativeSamples));
     consumeLeadingEventPackets(); // Transition to new segment
     return true;
 }
@@ -602,10 +615,19 @@ void QueueReader::parseDomainDescriptor()
     }
 
     typeCtx.domainLayout.rawSampleSize = descriptor.getRawSampleSize();
-    auto dimensions = descriptor.getDimensions();
-    if (dimensions.assigned() && dimensions.getCount() == 1)
     {
-        typeCtx.domainLayout.valuesPerSample = dimensions[0].getSize();
+        SizeT valuesPerSample = 1;
+        SizeT dimensionCount = 0;
+        auto dimensions = descriptor.getDimensions();
+        if (dimensions.assigned())
+        {
+            dimensionCount = dimensions.getCount();
+            for (const auto& dimension : dimensions)
+                valuesPerSample *= static_cast<SizeT>(dimension.getSize());
+        }
+        typeCtx.domainLayout.valuesPerSample = valuesPerSample;
+        // Domain samples must be scalar - a vector timestamp has no meaning
+        issues.set(QueueReaderIssue::UnsupportedDimensions, dimensionCount != 0);
     }
 
     typeCtx.domainInfo = DomainInfo::fromDescriptor(descriptor);
@@ -645,13 +667,28 @@ void QueueReader::parseDomainDescriptor()
             delta = rule.getParameters()["delta"];
         }
 
-        double sr = static_cast<double>(typeCtx.domainInfo.resolution.getDenominator()) /
-                    (static_cast<double>(typeCtx.domainInfo.resolution.getNumerator()) * delta.getFloatValue());
+        const bool resolutionValid =
+            typeCtx.domainInfo.resolution.assigned() &&
+            typeCtx.domainInfo.resolution.getNumerator() > 0 &&
+            typeCtx.domainInfo.resolution.getDenominator() > 0;
+        const bool deltaPositive = delta.getFloatValue() > 0.0;
+
+        double sr = 0.0;
+        if (resolutionValid && deltaPositive)
+        {
+            sr = static_cast<double>(typeCtx.domainInfo.resolution.getDenominator()) /
+                 (static_cast<double>(typeCtx.domainInfo.resolution.getNumerator()) * delta.getFloatValue());
+        }
 
         const bool deltaIsInteger = (delta.getFloatValue() == static_cast<double>(delta.getIntValue()));
-        const bool sampleRateIsInteger = (sr == static_cast<double>(static_cast<std::int64_t>(sr)));
+        // A valid rate is a positive integer within the representable range - anything else
+        // (fractional, zero, negative or overflowing) marks the domain rule unsupported.
+        const bool sampleRateRepresentable =
+            sr >= 1.0 && sr <= static_cast<double>(std::numeric_limits<std::int64_t>::max());
+        const bool sampleRateIsInteger =
+            sampleRateRepresentable && (sr == static_cast<double>(static_cast<std::int64_t>(sr)));
 
-        newSampleRate = static_cast<std::int64_t>(sr);
+        newSampleRate = sampleRateIsInteger ? static_cast<std::int64_t>(sr) : -1;
 
         if (sampleRate != newSampleRate)
         {
@@ -665,7 +702,8 @@ void QueueReader::parseDomainDescriptor()
             domainChanged = true;
         }
 
-        issues.set(QueueReaderIssue::UnsupportedDomainRule, !ruleIsLinear || !deltaIsInteger || !sampleRateIsInteger);
+        issues.set(QueueReaderIssue::UnsupportedDomainRule,
+                   !ruleIsLinear || !deltaIsInteger || !resolutionValid || !deltaPositive || !sampleRateIsInteger);
     }
     // END Sample rate and delta
 
@@ -709,11 +747,15 @@ void QueueReader::parseValueDescriptor()
 
     {
         typeCtx.valueLayout.rawSampleSize = descriptor.getRawSampleSize();
+        // Values of any rank are readable - one sample is a fixed-size block of product-of-dimensions values
+        SizeT valuesPerSample = 1;
         auto dimensions = descriptor.getDimensions();
-        if (dimensions.assigned() && dimensions.getCount() == 1)
+        if (dimensions.assigned())
         {
-            typeCtx.valueLayout.valuesPerSample = dimensions[0].getSize();
+            for (const auto& dimension : dimensions)
+                valuesPerSample *= static_cast<SizeT>(dimension.getSize());
         }
+        typeCtx.valueLayout.valuesPerSample = valuesPerSample;
     }
 
     if (typeCtx.valueOut == SampleType::Undefined)  // Dynamically determine output type

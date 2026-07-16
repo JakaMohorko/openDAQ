@@ -525,11 +525,13 @@ ReadLayout TypedReadingUtils::createReadLayout(const DataDescriptorPtr& descript
         DAQ_THROW_EXCEPTION(ArgumentNullException, "Descriptor must be assigned!");
 
     const SizeT rawSampleSize = descriptor.getRawSampleSize();
+    // One sample is a fixed-size block of product-of-dimensions values, whatever the rank
     SizeT valuesPerSample = 1;
     auto dimensions = descriptor.getDimensions();
-    if (dimensions.assigned() && dimensions.getCount() == 1)
+    if (dimensions.assigned())
     {
-        valuesPerSample = dimensions[0].getSize();
+        for (const auto& dimension : dimensions)
+            valuesPerSample *= static_cast<SizeT>(dimension.getSize());
     }
 
     return {descriptor, rawSampleSize, valuesPerSample};
@@ -540,11 +542,15 @@ bool TypedReadingUtils::isSampleTypeConvertible(SampleType in, SampleType out, b
     // TODO: Detais about limiting allowed types (not throwing unless necessary)
     switch (in)
     {
-        case SampleType::Struct:
         case SampleType::Invalid:
         case SampleType::Null:
         case SampleType::_count:
             return false;
+        case SampleType::Struct:
+            // Struct values are readable as raw fixed-size blocks (void output); a struct domain has no meaning
+            if (isDomain)
+                return false;
+            break;
         default:
             break;
     }

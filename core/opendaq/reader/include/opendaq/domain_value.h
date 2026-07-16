@@ -89,6 +89,12 @@ public:
 
     virtual void roundUpOnDomainInterval(const RatioPtr& interval) = 0;
 
+    /**
+     * @brief System-clock time this value represents (epoch + tick * resolution).
+     * Used for synchronization-distance diagnostics; not for tick-exact comparisons.
+     */
+    virtual std::chrono::system_clock::time_point toAbsoluteTime() const = 0;
+
 #if !defined(NDEBUG)
     virtual std::string asTime() const = 0;
 #endif
@@ -125,12 +131,6 @@ public:
         : DomainValue(info)
         , value(value)
     {
-#if !defined(NDEBUG)
-        if constexpr (std::is_integral_v<Type>)
-        {
-            std::cout << "DomainValueImpl(value=" << value << ", domain=" << info << ")" << std::endl;
-        }
-#endif
     }
 
     ~DomainValueImpl() override = default;
@@ -212,6 +212,11 @@ public:
         value = static_cast<Type>((((value * num + den - 1) / den) * den) / num);
     }
 
+    std::chrono::system_clock::time_point toAbsoluteTime() const override
+    {
+        return reader::toSysTime(value, domain.epoch, domain.resolution);
+    }
+
     Type getValue() const
     {
         return value;
@@ -261,7 +266,6 @@ public:
         : DomainValue(info)
         , value(value)
     {
-        std::cout << "DomainValueImpl(value=" << value.start << ", domain=" << info << ")" << std::endl;
     }
 
     std::unique_ptr<DomainValue> toCommonDomain(const DomainInfo& commonDomain) override
@@ -324,6 +328,11 @@ public:
     void roundUpOnDomainInterval(const RatioPtr& interval) override
     {
         DAQ_THROW_EXCEPTION(NotSupportedException);
+    }
+
+    std::chrono::system_clock::time_point toAbsoluteTime() const override
+    {
+        return reader::toSysTime(value.start, domain.epoch, domain.resolution);
     }
 
     RangeType64 getValue() const
@@ -389,6 +398,11 @@ public:
         DAQ_THROW_EXCEPTION(NotSupportedException);
     }
 
+    std::chrono::system_clock::time_point toAbsoluteTime() const override
+    {
+        DAQ_THROW_EXCEPTION(NotSupportedException);
+    }
+
     ComplexFloat32 getValue() const
     {
         DAQ_THROW_EXCEPTION(NotSupportedException);
@@ -427,6 +441,11 @@ public:
     }
 
     void roundUpOnDomainInterval(const RatioPtr& interval) override
+    {
+        DAQ_THROW_EXCEPTION(NotSupportedException);
+    }
+
+    std::chrono::system_clock::time_point toAbsoluteTime() const override
     {
         DAQ_THROW_EXCEPTION(NotSupportedException);
     }
