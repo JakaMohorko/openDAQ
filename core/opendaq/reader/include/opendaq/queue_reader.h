@@ -138,7 +138,11 @@ public:
     EventPacketPtr popFrontEvent();
     
     bool isValid();
-    
+
+    /// Active (cached) descriptors - null until the first descriptor event has been consumed.
+    const DataDescriptorPtr& getValueDescriptor() const;
+    const DataDescriptorPtr& getDomainDescriptor() const;
+
     void domainChangeHandled();
     void updateConnection();
     

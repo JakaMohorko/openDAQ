@@ -351,6 +351,16 @@ void QueueReader::domainChangeHandled()
     domainChanged = false;
 }
 
+const DataDescriptorPtr& QueueReader::getValueDescriptor() const
+{
+    return typeCtx.valueLayout.descriptor;
+}
+
+const DataDescriptorPtr& QueueReader::getDomainDescriptor() const
+{
+    return typeCtx.domainLayout.descriptor;
+}
+
 void QueueReader::updateConnection()
 {
     connection = port.getConnection();
