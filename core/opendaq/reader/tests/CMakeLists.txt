@@ -16,8 +16,16 @@ set(TEST_SOURCES test_factories.cpp
                  test_domain_value.cpp
                  test_typed_reading.cpp
                  test_queue_reader.cpp
+                 test_input_slot.cpp
+                 test_synchronization_manager.cpp
+                 test_notification_coordinator.cpp
+                 test_read_coordinator.cpp
                  ../src/typed_reading_utils.cpp
                  ../src/queue_reader.cpp
+                 ../src/input_slot.cpp
+                 ../src/synchronization_manager.cpp
+                 ../src/notification_coordinator.cpp
+                 ../src/read_coordinator.cpp
 )
 
 opendaq_prepare_test_runner(TEST_APP FOR ${MODULE_NAME}

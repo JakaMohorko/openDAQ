@@ -129,12 +129,16 @@ function(create_component_source_groups_${BASE_NAME})
         ${SDK_SRC_DIR}/packet_reader_impl.cpp
     )
     
-    source_group("reader//multi" FILES 
+    source_group("reader//multi" FILES
         ${SDK_HEADERS_DIR}/multi_reader_builder.h
         ${SDK_HEADERS_DIR}/multi_reader_builder_impl.h
         ${SDK_HEADERS_DIR}/multi_reader.h
         ${SDK_HEADERS_DIR}/signal_reader.h
         ${SDK_HEADERS_DIR}/queue_reader.h
+        ${SDK_HEADERS_DIR}/input_slot.h
+        ${SDK_HEADERS_DIR}/synchronization_manager.h
+        ${SDK_HEADERS_DIR}/notification_coordinator.h
+        ${SDK_HEADERS_DIR}/read_coordinator.h
         ${SDK_HEADERS_DIR}/multi_reader_impl.h
         ${SDK_HEADERS_DIR}/multi_typed_reader.h
         ${SDK_HEADERS_DIR}/reader_domain_info.h
@@ -143,6 +147,10 @@ function(create_component_source_groups_${BASE_NAME})
         ${SDK_SRC_DIR}/multi_reader_builder_impl.cpp
         ${SDK_SRC_DIR}/signal_reader.cpp
         ${SDK_SRC_DIR}/queue_reader.cpp
+        ${SDK_SRC_DIR}/input_slot.cpp
+        ${SDK_SRC_DIR}/synchronization_manager.cpp
+        ${SDK_SRC_DIR}/notification_coordinator.cpp
+        ${SDK_SRC_DIR}/read_coordinator.cpp
     )
 endfunction()
 
@@ -173,6 +181,10 @@ set(SRC_PrivateHeaders_Component
     multi_typed_reader.h
     signal_reader.h
     queue_reader.h
+    input_slot.h
+    synchronization_manager.h
+    notification_coordinator.h
+    read_coordinator.h
     reader_status_impl.h
     reader_impl.h
     enum_flags.h
@@ -195,6 +207,10 @@ set(SRC_Cpp_Component
     multi_reader_builder_impl.cpp
     signal_reader.cpp
     queue_reader.cpp
+    input_slot.cpp
+    synchronization_manager.cpp
+    notification_coordinator.cpp
+    read_coordinator.cpp
     reader.natvis
     PARENT_SCOPE
 )
