@@ -7,6 +7,8 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// COMMENT: We should maybe revisit the IMultiReaderStatus and how this is reported to them. Using event packets
+//          is likely not the most intuitive.
 SignalEvent::SignalEvent(const EventPacketPtr& packet)
     : eventType(SignalEventType::NoChange)
     , domainDescriptor(nullptr)
@@ -99,12 +101,14 @@ QueueReader::QueueReader(const InputPortConfigPtr& port,  // Consider using Conn
                          bool globalIdFromSignal)  // TODO
     : port(port)
     , connection(port.getConnection())
-    , readMode(mode)
+    , readMode(mode) 
     , loggerComponent(logger)
 {
     typeCtx.domainIn = SampleType::Undefined;
     typeCtx.domainOut = domainReadType;
     typeCtx.valueIn = SampleType::Undefined;
+    // COMMENT: Read mode should be reworked or at least clarified. Seems like there's a weird correlation between read mode and read types.
+    //          Also, unscaled is simply ignored. This should be clarified.
     typeCtx.valueOut = mode == ReadMode::RawValue ? SampleType::Undefined : valueReadType;
 }
 
@@ -311,6 +315,7 @@ SizeT QueueReader::getAvailableSamples()
     return getAvailableSamplesNative() * sampleRateDivider;
 }
 
+// COMMENT: Should this be in the divided or non-divided rate? Which is more clear?
 SizeT QueueReader::getAvailableSamplesUntilEvent()
 {
     // The native counter stops at the first non-data packet, so the available count
@@ -319,7 +324,10 @@ SizeT QueueReader::getAvailableSamplesUntilEvent()
 }
 
 bool QueueReader::hasPendingEvents()
-{
+{ 
+    // COMMENT: These connection checks and drained don't make sense here. This results in change of state
+    //          in the middle of a user API call. We should probably just: check if readers are ready -> 
+    //          update internal state -> execute command (getAvailable, read...)
     checkConnection();
     drainConnection();
     return !events.empty();
@@ -337,6 +345,7 @@ EventPacketPtr QueueReader::popFrontEvent()
     return eventPacket;
 }
 
+// COMMENT: Is this still needed? We probably just needs a "ready" flag the reader, the other error states are more explicit now.
 bool QueueReader::isValid()
 {
     if (!connection.assigned())

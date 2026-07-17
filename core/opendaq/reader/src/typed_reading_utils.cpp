@@ -7,6 +7,10 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// COMMENT: This document feels really hard to parse and understand. It's clear on what the purpose of it is,
+//          But actually understanding what is does is difficult and will be hard to fix. Is there a way to simplify this?
+//          Not only code-wise, but to remove cases that are not allowed by the multi reader? If not, it's also okay.
+
 namespace
 {
 
@@ -583,6 +587,7 @@ bool TypedReadingUtils::isSampleTypeConvertible(SampleType in, SampleType out, b
                                });
 }
 
+// COMMENT: Is this needed? Do we really need to convert the domain values?
 std::unique_ptr<DomainValue> TypedReadingUtils::readDomainValue(SampleType in,
                                                                 SampleType out,
                                                                 const ReadLayout& readLayout,

@@ -19,7 +19,6 @@
 #include <opendaq/data_packet_ptr.h>
 #include <opendaq/domain_value.h>
 
-
 BEGIN_NAMESPACE_OPENDAQ
 
 struct ReadLayout
@@ -32,6 +31,7 @@ struct ReadLayout
 class TypedReadingUtils
 {
 public:
+    // COMMENT: Is this unused?
     static ReadLayout createReadLayout(const DataDescriptorPtr& descriptor);
 
     static bool isSampleTypeConvertible(SampleType in, SampleType out, bool isDomain);
@@ -43,13 +43,13 @@ public:
                                                         SizeT index,
                                                         const DomainInfo& domainInfo);
 
-static SizeT findDomainValue(SampleType in,
+    static SizeT findDomainValue(SampleType in,
                                  SampleType out,
                                  const ReadLayout& readLayout,
                                  const DataPacketPtr& domainPacket,
                                  const DomainValue* target,
                                  std::chrono::system_clock::rep* firstSampleAbsoluteTime = nullptr);
-
+    
     static ErrCode readData(SampleType in,
                             SampleType out,
                             bool isDomain,

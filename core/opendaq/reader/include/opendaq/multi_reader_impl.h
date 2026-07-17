@@ -74,6 +74,7 @@ public:
                     Bool startOnFullUnitOfDomain = false,
                     SizeT minReadCount = 1);
 
+    // COMMENT: These can likely be removed in future phases.
     MultiReaderImpl(MultiReaderImpl* old, SampleType valueReadType, SampleType domainReadType);
 
     MultiReaderImpl(const MultiReaderBuilderPtr& builder);
