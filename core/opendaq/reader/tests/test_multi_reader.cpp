@@ -5290,3 +5290,173 @@ TEST_F(MultiReaderTest, CheckSpecificCase)
         ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
     }
 }
+
+// --- IMultiReaderStatus state and diagnostics extension (spec 8.2, test plan ST rows) ---
+
+TEST_F(MultiReaderTest, StatusStateWaitingForConnections)
+{
+    // ST-3/ST-4/ST-5: an unconnected used input is reported with its construction-order index
+    readSignals.reserve(3);
+    addSignal(0, 10, createDomainSignal());
+    addSignal(0, 10, createDomainSignal());
+    addSignal(0, 10, createDomainSignal());
+
+    auto ports = portsList();
+    auto multi =
+        MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addInputPorts(ports).build();
+    ports[0].connect(readSignals[0].signal);
+    ports[2].connect(readSignals[2].signal);
+    // port 1 stays unconnected
+
+    SizeT count{0};
+    MultiReaderStatusPtr status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
+    ASSERT_EQ(status.getState(), MultiReaderState::WaitingForConnections);
+    ASSERT_EQ(status.getAffectedInputCount(), 1u);
+    ASSERT_EQ(status.getAffectedInputIndex(0), 1u);
+    ASSERT_EQ(status.getStateMessage().toStdString(), "Inputs [1] have no signal connected");
+}
+
+TEST_F(MultiReaderTest, StatusOrderedEventListAndCompatAccessors)
+{
+    // ST-1/ST-6/ST-8: ordered (inputIndex, packet) pairs, the compat dict and the compat
+    // first-event accessor all expose the same events
+    readSignals.reserve(2);
+    addSignal(0, 10, createDomainSignal());
+    addSignal(0, 10, createDomainSignal());
+
+    auto multi =
+        MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
+
+    SizeT count{0};
+    MultiReaderStatusPtr status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+    ASSERT_EQ(status.getEventCount(), 2u);
+
+    SizeT inputIndex = static_cast<SizeT>(-1);
+    auto packet0 = status.getEvent(0, inputIndex);
+    ASSERT_EQ(inputIndex, 0u);
+    ASSERT_TRUE(packet0.assigned());
+    ASSERT_EQ(packet0.getEventId(), event_packet_id::DATA_DESCRIPTOR_CHANGED);
+
+    auto packet1 = status.getEvent(1, inputIndex);
+    ASSERT_EQ(inputIndex, 1u);
+    ASSERT_TRUE(packet1.assigned());
+
+    // The compat dict carries the same packets keyed by port global id (ST-1)
+    auto dict = status.getEventPackets();
+    ASSERT_EQ(dict.getCount(), 2u);
+
+    // IReaderStatus::getEventPacket returns the first event of the ordered list (ST-8)
+    auto firstEvent = status.asPtr<IReaderStatus>().getEventPacket();
+    ASSERT_EQ(firstEvent.getObject(), packet0.getObject());
+
+    // After all initial events are consumed the reader waits for data
+    ASSERT_EQ(status.getState(), MultiReaderState::WaitingForData);
+}
+
+TEST_F(MultiReaderTest, StatusMainDescriptorCommonDomain)
+{
+    // ST-2: the domain part of getMainDescriptor is the common output domain - earliest
+    // epoch as origin, rational-GCD resolution and one output sample per linear-rule delta
+    readSignals.reserve(2);
+    addSignal(0, 10, createDomainSignal("2022-09-27T00:02:04+00:00"));
+    addSignal(0, 10, createDomainSignal("2022-09-27T00:02:03+00:00", Ratio(1, 10000), LinearDataRule(10, 0)));
+
+    auto multi =
+        MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
+
+    SizeT count{0};
+    MultiReaderStatusPtr status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+
+    count = 0;
+    status = multi.read(nullptr, &count);
+
+    auto mainDescriptor = status.getMainDescriptor();
+    ASSERT_TRUE(mainDescriptor.assigned());
+    ASSERT_EQ(mainDescriptor.getEventId(), event_packet_id::DATA_DESCRIPTOR_CHANGED);
+
+    DataDescriptorPtr domainDescriptor =
+        mainDescriptor.getParameters().get(event_packet_param::DOMAIN_DATA_DESCRIPTOR).asPtrOrNull<IDataDescriptor>();
+    ASSERT_TRUE(domainDescriptor.assigned());
+
+    // Origin and resolution equal the reader's common-domain accessors
+    ASSERT_EQ(domainDescriptor.getOrigin(), multi.getOrigin());
+    ASSERT_EQ(domainDescriptor.getTickResolution(), multi.getTickResolution());
+    ASSERT_EQ(domainDescriptor.getTickResolution(), Ratio(1, 10000));
+
+    // One 1000 Hz output sample spans ten 1/10000 s common ticks
+    const auto rule = domainDescriptor.getRule();
+    ASSERT_EQ(rule.getType(), DataRuleType::Linear);
+    ASSERT_EQ(static_cast<Int>(rule.getParameters().get("delta")), 10);
+}
+
+TEST_F(MultiReaderTest, StatusCachedWhileUnchangedNewOnChange)
+{
+    // ST-7: the status instance is re-issued while its visible content is unchanged and
+    // replaced when the state changes
+    readSignals.reserve(2);
+    addSignal(0, 10, createDomainSignal());
+    addSignal(0, 10, createDomainSignal());
+
+    auto multi =
+        MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
+
+    SizeT count{0};
+    MultiReaderStatusPtr eventStatus = multi.read(nullptr, &count);
+    ASSERT_EQ(eventStatus.getReadStatus(), ReadStatus::Event);
+
+    count = 0;
+    MultiReaderStatusPtr first = multi.read(nullptr, &count);
+    count = 0;
+    MultiReaderStatusPtr second = multi.read(nullptr, &count);
+
+    ASSERT_EQ(first.getState(), MultiReaderState::WaitingForData);
+    ASSERT_EQ(first.getObject(), second.getObject());
+
+    sendPackets(0);
+
+    count = 0;
+    MultiReaderStatusPtr third = multi.read(nullptr, &count);
+    ASSERT_EQ(third.getState(), MultiReaderState::Synchronized);
+    ASSERT_NE(third.getObject(), second.getObject());
+}
+
+TEST_F(MultiReaderTest, StatusStateIncompatibleRecoverable)
+{
+    // ST-3 + LC-10: a non-convertible value descriptor reports a recoverable Incompatible
+    // state naming the input; a later convertible descriptor recovers in the same instance
+    readSignals.reserve(2);
+    addSignal(0, 10, createDomainSignal());
+    addSignal(0, 10, createDomainSignal());
+
+    auto multi =
+        MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
+
+    SizeT count{0};
+    MultiReaderStatusPtr status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+
+    // Complex values cannot be converted to the double read type
+    readSignals[0].setValueDescriptor(setupDescriptor(SampleType::ComplexFloat64));
+
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+    ASSERT_EQ(status.getState(), MultiReaderState::Incompatible);
+    ASSERT_FALSE(status.getValid());
+    ASSERT_EQ(status.getAffectedInputCount(), 1u);
+    ASSERT_EQ(status.getAffectedInputIndex(0), 0u);
+
+    // The reader itself stays valid - the condition is recoverable (spec 6.1/8.5)
+    ASSERT_TRUE(multi.asPtr<IReaderConfig>().getIsValid());
+
+    readSignals[0].setValueDescriptor(setupDescriptor(SampleType::Float64));
+
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+    ASSERT_EQ(status.getState(), MultiReaderState::WaitingForData);
+    ASSERT_TRUE(status.getValid());
+}

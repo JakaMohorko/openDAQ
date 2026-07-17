@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 #pragma once
+#include <coretypes/listobject.h>
 #include <opendaq/reader_status.h>
 #include <opendaq/signal.h>
 
@@ -24,6 +25,26 @@ BEGIN_NAMESPACE_OPENDAQ
  * @addtogroup opendaq_reader Multi reader status
  * @{
  */
+
+/*!
+ * @brief Runtime states of the multi reader. Every state except Error is recoverable in the
+ * same reader instance; the sensible recovery actions follow from the state, the affected
+ * inputs and the state message.
+ */
+enum class MultiReaderState : EnumType
+{
+    Inactive = 0,           ///< Disabled via setActive(false)
+    WaitingForConnections,  ///< A used input has no signal connected
+    WaitingForDescriptors,  ///< A used input has not received its descriptors yet
+    Incompatible,           ///< Local or cross-input validation failed (recoverable)
+    WaitingForData,         ///< Valid, but some input has no samples
+    Synchronizing,          ///< Alignment in progress, waiting for data to reach the aligned start
+    Synchronized,           ///< Aligned blocks readable
+    EventPending,           ///< Event(s) must be returned before data
+    SynchronizationFailed,  ///< Span, representability or common-tick failure
+    DataLost,               ///< A used input missed its packet deadline
+    Error                   ///< Internal invariant violated or reader disposed; not recoverable
+};
 
 /*#
  * [interfaceSmartPtr(IReaderStatus, GenericReaderStatusPtr)]
@@ -41,12 +62,59 @@ DECLARE_OPENDAQ_INTERFACE(IMultiReaderStatus, IReaderStatus)
      */
     virtual ErrCode INTERFACE_FUNC getEventPackets(IDict** eventPackets) = 0;
 
-    
+
     /*!
-     * @brief Retrieves the descriptor of main signal. The main signal is the first signal in the list of signals.
-     * @param[out] descriptor The descriptor of the main signal.
+     * @brief Retrieves the combined descriptor-changed event packet carrying the value descriptor of
+     * the main input and the common output domain descriptor (the domain in which the status offset
+     * is expressed).
+     * @param[out] descriptor The descriptor-changed event packet of the main input.
      */
     virtual ErrCode INTERFACE_FUNC getMainDescriptor(IEventPacket** descriptor) = 0;
+
+    /*!
+     * @brief Retrieves the runtime state of the reader at the time the status was created.
+     * @param[out] state The reader state.
+     */
+    virtual ErrCode INTERFACE_FUNC getState(MultiReaderState* state) = 0;
+
+    /*!
+     * @brief Retrieves the human-readable diagnostic message describing the state, naming the
+     * affected inputs and the details needed to act on the condition.
+     * @param[out] message The diagnostic message; empty when there is nothing to report.
+     */
+    virtual ErrCode INTERFACE_FUNC getStateMessage(IString** message) = 0;
+
+    /*!
+     * @brief Retrieves the number of inputs affected by the reported condition.
+     * @param[out] count The number of affected inputs.
+     */
+    virtual ErrCode INTERFACE_FUNC getAffectedInputCount(SizeT* count) = 0;
+
+    /*!
+     * @brief Retrieves the construction-order index of one affected input.
+     * @param statusIndex Position within the affected-input list (0 to getAffectedInputCount() - 1).
+     * @param[out] inputIndex The construction-order index of the affected input.
+     */
+    virtual ErrCode INTERFACE_FUNC getAffectedInputIndex(SizeT statusIndex, SizeT* inputIndex) = 0;
+
+    /*!
+     * @brief Retrieves the number of events in the ordered event list. The reader populates
+     * the list on every event-carrying status; statuses built through the compatibility
+     * factory (which cannot know input indices) carry only the event-packet dictionary and
+     * report zero here.
+     * @param[out] count The number of events.
+     */
+    virtual ErrCode INTERFACE_FUNC getEventCount(SizeT* count) = 0;
+
+    /*!
+     * @brief Retrieves one event of the ordered event list together with the construction-order
+     * index of the input it originates from. Events are ordered as they are returned: per input
+     * in queue order, one event per input per read call.
+     * @param eventIndex Position within the event list (0 to getEventCount() - 1).
+     * @param[out] inputIndex The construction-order index of the originating input.
+     * @param[out] packet The event packet.
+     */
+    virtual ErrCode INTERFACE_FUNC getEvent(SizeT eventIndex, SizeT* inputIndex, IEventPacket** packet) = 0;
 };
 /*!@}*/
 
@@ -56,6 +124,23 @@ OPENDAQ_DECLARE_CLASS_FACTORY (
     IDict*, eventPackets,
     Bool, valid,
     INumber*, offset
+)
+
+// The status validity is derived from the state (Incompatible, SynchronizationFailed and
+// Error are the invalid-stream conditions), so the extended factory does not take a valid flag.
+// [elementType(affectedInputIndices, IInteger)]
+// [elementType(eventInputIndices, IInteger)]
+// [elementType(orderedEventPackets, IEventPacket)]
+OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(
+    LIBRARY_FACTORY, MultiReaderStatusEx, IMultiReaderStatus, createMultiReaderStatusEx,
+    IEventPacket*, mainDescriptor,
+    IDict*, eventPackets,
+    INumber*, offset,
+    MultiReaderState, state,
+    IString*, stateMessage,
+    IList*, affectedInputIndices,
+    IList*, eventInputIndices,
+    IList*, orderedEventPackets
 )
 
 END_NAMESPACE_OPENDAQ

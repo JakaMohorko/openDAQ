@@ -59,6 +59,13 @@ namespace reader
         return ss.str();
     }
 
+    /// ISO 8601 UTC string of an epoch time point, as reported by the multi reader's
+    /// getOrigin and the common-output-domain descriptor origin.
+    inline std::string isoEpochString(std::chrono::system_clock::time_point epoch)
+    {
+        return date::format("%FT%TZ", epoch);
+    }
+
     /*!
      * @brief Parser expects the string in "YYYY-mm-ddTHH:MM:SS+HH:MM" so coerce
      * other valid options to this format.
