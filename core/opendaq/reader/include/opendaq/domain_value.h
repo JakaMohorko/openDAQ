@@ -117,7 +117,7 @@ public:
     }
 
 protected:
-    DomainInfo domain;
+    DomainInfo domain; // COMMENT: This composition is odd. Why is the domain info part of the domain value?
 
 private:
     virtual int compare(const DomainValue& other) const = 0;
@@ -135,6 +135,12 @@ public:
 
     ~DomainValueImpl() override = default;
 
+     // COMMENT: These calculations have a lot of duplicate code.
+     // COMMENT: The "common" domain nomenclature is a bit odd. This converts the internal domain to the provided one.
+     //          The `fromCommonDomain` changes it to the internal one, but the variables used in the function are then named
+     //          "commonDomain" and "commonValue". It might make more sense to call it `toDomain`.
+     // COMMENT: Are the from/to functions even needed? We just need to get the values to the common domain, or is this critical
+     //          for the synchronization mechanism?
     std::unique_ptr<DomainValue> toCommonDomain(const DomainInfo& commonDomain) override
     {
         // Offset of current domain in common domain ticks
@@ -267,7 +273,7 @@ public:
         , value(value)
     {
     }
-
+     // COMMENT: Again, a lot of code duplication. The multiplier and scaling calculation should be refactored.
     std::unique_ptr<DomainValue> toCommonDomain(const DomainInfo& commonDomain) override
     {
         // Offset of current domain in common domain ticks
@@ -374,6 +380,7 @@ private:
     RangeType64 value;
 };
 
+ // COMMENT: We should not even allow for these types of template parameters. This should result in a compile time error.
 template <>
 class DomainValueImpl<ComplexFloat32> final : public DomainValue
 {
