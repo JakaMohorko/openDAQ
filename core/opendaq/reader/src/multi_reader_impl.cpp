@@ -372,14 +372,26 @@ void MultiReaderImpl::evaluateStateLocked()
     if (!isActive)
     {
         // Inactivity suspends data flow only: descriptor/gap events are enqueued regardless
-        // of the active flag and must still surface through reads
+        // of the active flag and must still surface through reads (and through the
+        // dataAvailable callback, which is why the event bits are maintained here too)
         std::vector<SizeT> inactiveEventInputs;
         std::vector<SizeT> inactiveSlotIndices;
         const auto inactiveReaders = collectUsedReaders(inactiveSlotIndices);
         for (SizeT position = 0; position < inactiveReaders.size(); ++position)
         {
-            if (inactiveReaders[position]->hasPendingEvents())
-                inactiveEventInputs.push_back(inactiveSlotIndices[position]);
+            const auto slotIndex = inactiveSlotIndices[position];
+            slots[slotIndex]->syncConnection();
+            if (!slots[slotIndex]->isConnected())
+            {
+                notificationCoordinator->setEvent(slotIndex, false);
+                continue;
+            }
+
+            slots[slotIndex]->clearPacketPending();
+            const bool hasEvents = inactiveReaders[position]->hasPendingEvents();
+            notificationCoordinator->setEvent(slotIndex, hasEvents);
+            if (hasEvents)
+                inactiveEventInputs.push_back(slotIndex);
         }
         if (!inactiveEventInputs.empty())
         {
@@ -418,6 +430,12 @@ void MultiReaderImpl::evaluateStateLocked()
         }
         if (!unconnected.empty())
         {
+            // Connections gate events (spec 6.2: step 3 precedes step 5): while a used input
+            // has no signal, no event is returnable, so the callback must not fire on the
+            // events already queued on the connected inputs
+            for (const auto index : slotIndices)
+                notificationCoordinator->setEvent(index, false);
+
             invalidateModelLocked();
             setStateLocked(MultiReaderState::WaitingForConnections,
                            fmt::format("Inputs [{}] have no signal connected", fmt::join(unconnected, ", ")),
@@ -434,15 +452,34 @@ void MultiReaderImpl::evaluateStateLocked()
     // 4./5. Refresh queues; pending events preempt everything below
     {
         std::vector<SizeT> eventInputs;
+        bool handshakeInFlight = false;
         for (SizeT position = 0; position < usedReaders.size(); ++position)
         {
             slots[slotIndices[position]]->clearPacketPending();
-            if (usedReaders[position]->hasPendingEvents())
+            const bool hasEvents = usedReaders[position]->hasPendingEvents();
+            if (hasEvents)
                 eventInputs.push_back(slotIndices[position]);
-            notificationCoordinator->setEvent(slotIndices[position], usedReaders[position]->hasPendingEvents());
+            notificationCoordinator->setEvent(slotIndices[position], hasEvents);
+
+            // A connected input with neither descriptors nor events is still completing its
+            // connect handshake: the signal's initial descriptor event has not been enqueued
+            // yet (connections are constructed in steps and evaluations can run in between)
+            if (!hasEvents && !usedReaders[position]->getValueDescriptor().assigned() &&
+                !usedReaders[position]->getDomainDescriptor().assigned())
+            {
+                handshakeInFlight = true;
+            }
         }
         if (!eventInputs.empty())
         {
+            // Reads may still return the events already pending, but the dataAvailable
+            // callback waits for the in-flight handshake - its event arrives momentarily and
+            // re-triggers evaluation, so the callback sees every input's initial event at once
+            if (handshakeInFlight)
+            {
+                for (const auto index : slotIndices)
+                    notificationCoordinator->setEvent(index, false);
+            }
             // Descriptors apply when leading events are consumed, so the cross-input model
             // can be built opportunistically - accessors like getCommonSampleRate and
             // getTickResolution work right after construction, like they always have
@@ -625,6 +662,11 @@ void MultiReaderImpl::slotConnected(SizeT slotIndex)
         }
     }
     notifyCondition.notify_all();
+
+    // A coalesced task scheduled by the connection's first packets may have run while the
+    // connection was still being constructed and found nothing returnable; guarantee one
+    // evaluation (and callback gate check) after the connection is fully established
+    notificationCoordinator->requestEvaluation();
 
     if (externalListener.assigned())
     {
