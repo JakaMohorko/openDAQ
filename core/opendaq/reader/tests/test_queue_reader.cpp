@@ -448,14 +448,13 @@ TEST_F(QueueReaderTest, MergeDomainAndValueChange)
 
     auto valueDescriptor = DataDescriptorBuilder().setSampleType(SampleType::Float64).setUnit(Unit("V", -1, "volt", "voltage")).build();
 
-    auto domainChangePacket =
-        DataDescriptorChangedEventPacket(descriptorToEventPacketParam(nullptr), descriptorToEventPacketParam(domainDescriptor));
+    // Unchanged descriptors are absent (nullptr) - the explicit null marker means "changed to null"
+    auto domainChangePacket = DataDescriptorChangedEventPacket(nullptr, descriptorToEventPacketParam(domainDescriptor));
     SignalEvent domainChange(domainChangePacket);
 
     ASSERT_EQ(domainChange.getType(), SignalEventType::DomainChanged);
 
-    auto valueChangePacket =
-        DataDescriptorChangedEventPacket(descriptorToEventPacketParam(valueDescriptor), descriptorToEventPacketParam(nullptr));
+    auto valueChangePacket = DataDescriptorChangedEventPacket(descriptorToEventPacketParam(valueDescriptor), nullptr);
     SignalEvent valueChange(valueChangePacket);
 
     ASSERT_EQ(valueChange.getType(), SignalEventType::ValueChanged);
@@ -487,15 +486,13 @@ TEST_F(QueueReaderTest, LatestDescriptorPreserved)
                                  .setUnit(Unit("s", -1, "second", "time"))
                                  .build();
 
-    auto domainChangePacket =
-        DataDescriptorChangedEventPacket(descriptorToEventPacketParam(nullptr), descriptorToEventPacketParam(domainDescriptor));
+    auto domainChangePacket = DataDescriptorChangedEventPacket(nullptr, descriptorToEventPacketParam(domainDescriptor));
     SignalEvent domainChange(domainChangePacket);
     ASSERT_EQ(domainChange.getType(), SignalEventType::DomainChanged);
     NumberPtr delta = domainChange.getDomainDescriptor().getRule().getParameters()["delta"];
     ASSERT_EQ(delta.getIntValue(), 1u);
 
-    auto domainChangePacket2 =
-        DataDescriptorChangedEventPacket(descriptorToEventPacketParam(nullptr), descriptorToEventPacketParam(domainDescriptor2));
+    auto domainChangePacket2 = DataDescriptorChangedEventPacket(nullptr, descriptorToEventPacketParam(domainDescriptor2));
     SignalEvent domainChange2(domainChangePacket2);
     ASSERT_EQ(domainChange2.getType(), SignalEventType::DomainChanged);
     delta = domainChange2.getDomainDescriptor().getRule().getParameters()["delta"];
@@ -520,8 +517,7 @@ TEST_F(QueueReaderTest, GapEventsRefuseMerge)
                                 .setUnit(Unit("s", -1, "second", "time"))
                                 .build();
 
-    auto domainChangePacket =
-        DataDescriptorChangedEventPacket(descriptorToEventPacketParam(nullptr), descriptorToEventPacketParam(domainDescriptor));
+    auto domainChangePacket = DataDescriptorChangedEventPacket(nullptr, descriptorToEventPacketParam(domainDescriptor));
     SignalEvent domainChange(domainChangePacket);
     ASSERT_EQ(domainChange.getType(), SignalEventType::DomainChanged);
 

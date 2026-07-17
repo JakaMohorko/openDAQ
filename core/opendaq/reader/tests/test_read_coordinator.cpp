@@ -226,7 +226,7 @@ TEST_F(ReadCoordinatorTest, DiscardLeftoverSegmentsIsSilent)
     CommonModel blockTen;
     blockTen.blockLcm = 10;
 
-    const auto discarded = coordinator->discardLeftoverSegments(readers(), blockTen);
+    const auto discarded = coordinator->discardLeftoverSegments(readers(), blockTen, 1);
     ASSERT_EQ(discarded, (std::vector<SizeT>{1}));
 
     // The discard is silent: the pending event is the descriptor change, nothing synthetic

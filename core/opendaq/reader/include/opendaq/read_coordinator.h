@@ -95,11 +95,11 @@ public:
     CommitResult skip(const ReadPlan& plan, const std::vector<QueueReader*>& inputs, std::string& errorMessage);
 
     /**
-     * @brief Silent leftover-segment discard (spec section 3.1): on inputs where fewer than
-     * one aligned block remains before an event, drop the partial segment so the event
-     * becomes pending. Returns the slot positions that discarded.
+     * @brief Silent leftover-segment discard (spec section 3.1): on inputs where less than
+     * the smallest servable aligned request remains before an event, drop the partial
+     * segment so the event becomes pending. Returns the slot positions that discarded.
      */
-    std::vector<SizeT> discardLeftoverSegments(const std::vector<QueueReader*>& inputs, const CommonModel& model);
+    std::vector<SizeT> discardLeftoverSegments(const std::vector<QueueReader*>& inputs, const CommonModel& model, SizeT minReadCount);
 
 private:
     static SizeT effectiveMinimum(const CommonModel& model, SizeT minReadCount);

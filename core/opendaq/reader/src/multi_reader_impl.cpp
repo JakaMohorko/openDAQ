@@ -371,7 +371,27 @@ void MultiReaderImpl::evaluateStateLocked()
     }
     if (!isActive)
     {
-        setStateLocked(MultiReaderState::Inactive);
+        // Inactivity suspends data flow only: descriptor/gap events are enqueued regardless
+        // of the active flag and must still surface through reads
+        std::vector<SizeT> inactiveEventInputs;
+        std::vector<SizeT> inactiveSlotIndices;
+        const auto inactiveReaders = collectUsedReaders(inactiveSlotIndices);
+        for (SizeT position = 0; position < inactiveReaders.size(); ++position)
+        {
+            if (inactiveReaders[position]->hasPendingEvents())
+                inactiveEventInputs.push_back(inactiveSlotIndices[position]);
+        }
+        if (!inactiveEventInputs.empty())
+        {
+            invalidateSynchronizationLocked();
+            setStateLocked(MultiReaderState::EventPending,
+                           fmt::format("Events pending on inputs [{}]", fmt::join(inactiveEventInputs, ", ")),
+                           std::move(inactiveEventInputs));
+        }
+        else
+        {
+            setStateLocked(MultiReaderState::Inactive);
+        }
         return;
     }
 
@@ -385,11 +405,14 @@ void MultiReaderImpl::evaluateStateLocked()
         return;
     }
 
-    // 3. Connections
+    // 3. Connections - resynced from the ports themselves: initial event packets arrive
+    // (and packetReceived fires) while the connection is still being constructed, before
+    // the connected() notification reaches the slot
     {
         std::vector<SizeT> unconnected;
         for (const auto index : slotIndices)
         {
+            slots[index]->syncConnection();
             if (!slots[index]->isConnected())
                 unconnected.push_back(index);
         }
@@ -406,7 +429,7 @@ void MultiReaderImpl::evaluateStateLocked()
     // While synchronized, partial blocks in front of an event are silently discarded so
     // the event can surface (spec section 3.1/3.4)
     if (syncManager->getCommonStart() != nullptr && syncManager->hasModel())
-        readCoordinator->discardLeftoverSegments(usedReaders, syncManager->getModel());
+        readCoordinator->discardLeftoverSegments(usedReaders, syncManager->getModel(), minReadCount);
 
     // 4./5. Refresh queues; pending events preempt everything below
     {
@@ -650,7 +673,12 @@ MultiReaderStatusPtr MultiReaderImpl::createStatusLocked(const DictPtr<IString, 
 {
     auto mainDescriptor = DataDescriptorChangedEventPacket(descriptorToEventPacketParam(mainValueDescriptor),
                                                            descriptorToEventPacketParam(mainDomainDescriptor));
-    return MultiReaderStatus(mainDescriptor, eventPackets, !invalid, offset);
+    // The status reports the stream condition (error contract section 3.3): reads in
+    // Incompatible/SynchronizationFailed carry an invalid status (ReadStatus::Fail without
+    // events) while the reader itself stays recoverable
+    const bool statusValid =
+        !invalid && state != MultiReaderState::Incompatible && state != MultiReaderState::SynchronizationFailed;
+    return MultiReaderStatus(mainDescriptor, eventPackets, statusValid, offset);
 }
 
 std::optional<std::int64_t> MultiReaderImpl::currentReadOffsetLocked() const
@@ -704,9 +732,11 @@ MultiReaderStatusPtr MultiReaderImpl::readEventsLocked()
     }
 
     // Every returned event invalidates synchronization; descriptor changes may have
-    // changed rates, so the whole model is rebuilt on the next evaluation
+    // changed rates, so the whole model is rebuilt right away - accessors like
+    // getCommonSampleRate must reflect the new descriptors as soon as the events are out
     invalidateModelLocked();
     updateMainDescriptorsLocked();
+    evaluateStateLocked();
 
     return createStatusLocked(events.getCount() > 0 ? events : DictPtr<IString, IEventPacket>(nullptr));
 }
@@ -732,9 +762,22 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
 
     evaluateStateLocked();
 
-    // Zero-count handshake: report events or the current state without consuming data
+    // Zero-count handshake: report events or the current state without consuming data.
+    // With a timeout the call waits for events to arrive instead of returning immediately.
     if (*count == 0)
     {
+        if (timeoutMs > 0 && state != MultiReaderState::EventPending)
+        {
+            notifyCondition.wait_for(lock,
+                                     milliseconds(timeoutMs),
+                                     [&]
+                                     {
+                                         if (invalid)
+                                             return true;
+                                         evaluateStateLocked();
+                                         return state == MultiReaderState::EventPending;
+                                     });
+        }
         MultiReaderStatusPtr statusPtr =
             state == MultiReaderState::EventPending ? readEventsLocked() : createStatusLocked();
         if (status)
@@ -1093,6 +1136,15 @@ ErrCode MultiReaderImpl::setActive(Bool isActive)
             setPortsActiveLocked(isActive);
             invalidateSynchronizationLocked();
             notificationCoordinator->clearReadiness();
+
+            // Deactivation suspends the data flow: queued data and gap events are dropped
+            // (they are meaningless once the stream pauses), while descriptor changes stay
+            // pending so the reader's type state cannot silently diverge
+            if (!isActive)
+            {
+                for (auto* slot : slots)
+                    slot->getQueueReader().dropForInactive();
+            }
         }
         evaluateStateLocked();
     }

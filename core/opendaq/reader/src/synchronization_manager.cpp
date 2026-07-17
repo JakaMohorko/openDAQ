@@ -124,6 +124,18 @@ SyncSetupResult SynchronizationManager::buildCommonModel(const std::vector<Queue
                                                          const std::vector<SizeT>& slotIndices,
                                                          SizeT mainPosition)
 {
+    auto result = buildCommonModelImpl(inputs, slotIndices, mainPosition);
+    if (!result.ok())
+    {
+        LOG_D("{}", result.message);
+    }
+    return result;
+}
+
+SyncSetupResult SynchronizationManager::buildCommonModelImpl(const std::vector<QueueReader*>& inputs,
+                                                             const std::vector<SizeT>& slotIndices,
+                                                             SizeT mainPosition)
+{
     modelValid = false;
     model = CommonModel{};
 

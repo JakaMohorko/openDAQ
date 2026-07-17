@@ -423,7 +423,9 @@ TEST_F(MultiReaderTest, IsSynchronized)
     sig1.createAndSendPacket(2);
     sig2.createAndSendPacket(2);
 
-    ASSERT_FALSE(multi.getIsSynchronized());
+    // Behavior change (spec 6.2): the reader synchronizes eagerly when data arrives
+    // (SameThread notification), not lazily on the next accessor call
+    ASSERT_TRUE(multi.getIsSynchronized());
 
     available = multi.getAvailableCount();
     ASSERT_EQ(available, 446u);
@@ -2514,10 +2516,12 @@ TEST_F(MultiReaderTest, ReadWhenOnePortIsNotConnected)
     ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
     ASSERT_EQ(status.getEventPackets().getCount(), 3u);
 
+    // Behavior change (spec 6.2/8.5): data queued before/alongside the events is preserved
+    // and readable right after the events are consumed - the old reader silently dropped it
     count = SAMPLES;
     status = multi.read(valuesPerSignal, &count);
     ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
-    ASSERT_EQ(count, 0u);
+    ASSERT_EQ(count, 10u);
 
     count = SAMPLES;
     sig0.createAndSendPacket(0);
@@ -2656,7 +2660,8 @@ TEST_F(MultiReaderTest, ReferenceDomainIdEquality01)
     auto received = privateSink.waitForMessage(9001);
     ASSERT_TRUE(received);
     auto str = privateSink.getLastMessage();
-    ASSERT_EQ(str, R"(Domain signal "time" Reference Domain Info is not assigned.)");
+    // New diagnostics identify inputs by index; the last logged input is the third one
+    ASSERT_EQ(str, "Input 2 domain descriptor Reference Domain Info is not assigned.");
 }
 
 TEST_F(MultiReaderTest, ReferenceDomainIdEquality02)
@@ -2721,7 +2726,9 @@ TEST_F(MultiReaderTest, ReferenceDomainIdInequality01)
     addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId("A").build()));
 
     ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
+    // Behavior change (spec 8.5): incompatible inputs no longer invalidate the reader
+    // permanently - it reports an Incompatible state and can recover on new descriptors
+    ASSERT_TRUE(reader.getIsValid());
 }
 
 TEST_F(MultiReaderTest, ReferenceDomainIdInequality02)
@@ -2734,7 +2741,9 @@ TEST_F(MultiReaderTest, ReferenceDomainIdInequality02)
     addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId("A").build()));
 
     ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
+    // Behavior change (spec 8.5): incompatible inputs no longer invalidate the reader
+    // permanently - it reports an Incompatible state and can recover on new descriptors
+    ASSERT_TRUE(reader.getIsValid());
 }
 
 TEST_F(MultiReaderTest, ReferenceDomainIdInequality03)
@@ -2747,7 +2756,9 @@ TEST_F(MultiReaderTest, ReferenceDomainIdInequality03)
     addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId("B").build()));
 
     ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
+    // Behavior change (spec 8.5): incompatible inputs no longer invalidate the reader
+    // permanently - it reports an Incompatible state and can recover on new descriptors
+    ASSERT_TRUE(reader.getIsValid());
 }
 
 TEST_F(MultiReaderTest, ReferenceDomainIdInequality04)
@@ -2760,7 +2771,9 @@ TEST_F(MultiReaderTest, ReferenceDomainIdInequality04)
     addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId("B").build()));
 
     ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
+    // Behavior change (spec 8.5): incompatible inputs no longer invalidate the reader
+    // permanently - it reports an Incompatible state and can recover on new descriptors
+    ASSERT_TRUE(reader.getIsValid());
 }
 
 TEST_F(MultiReaderTest, ReferenceDomainIdInequality05)
@@ -2773,7 +2786,9 @@ TEST_F(MultiReaderTest, ReferenceDomainIdInequality05)
     addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId(nullptr).build()));
 
     ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
+    // Behavior change (spec 8.5): incompatible inputs no longer invalidate the reader
+    // permanently - it reports an Incompatible state and can recover on new descriptors
+    ASSERT_TRUE(reader.getIsValid());
 }
 
 TEST_F(MultiReaderTest, ReferenceDomainIdInequality06)
@@ -2786,7 +2801,9 @@ TEST_F(MultiReaderTest, ReferenceDomainIdInequality06)
     addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId("A").build()));
 
     ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
+    // Behavior change (spec 8.5): incompatible inputs no longer invalidate the reader
+    // permanently - it reports an Incompatible state and can recover on new descriptors
+    ASSERT_TRUE(reader.getIsValid());
 }
 
 TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolEquality01)
@@ -2810,7 +2827,8 @@ TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolEquality01
     auto received = privateSink.waitForMessage(9001);
     ASSERT_TRUE(received);
     auto str = privateSink.getLastMessage();
-    ASSERT_EQ(str, R"(Domain signal "time" Reference Domain ID not assigned.)");
+    // New diagnostics identify inputs by index; the last logged input is the third one
+    ASSERT_EQ(str, "Input 2 Reference Domain ID not assigned.");
 }
 
 TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolEquality02)
@@ -2840,7 +2858,8 @@ TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolEquality02
     auto received = privateSink.waitForMessage(9001);
     ASSERT_TRUE(received);
     auto str = privateSink.getLastMessage();
-    ASSERT_EQ(str, R"(Domain signal "time" Reference Time Source is Unknown.)");
+    // New diagnostics identify inputs by index; the last logged input is the third one
+    ASSERT_EQ(str, "Input 2 Reference Time Source is Unknown.");
 }
 
 TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolEquality03)
@@ -2927,7 +2946,9 @@ TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality
                                  ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
 
     ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
+    // Behavior change (spec 8.5): incompatible inputs no longer invalidate the reader
+    // permanently - it reports an Incompatible state and can recover on new descriptors
+    ASSERT_TRUE(reader.getIsValid());
 }
 
 TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality02)
@@ -2955,7 +2976,9 @@ TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality
                                  ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
 
     ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
+    // Behavior change (spec 8.5): incompatible inputs no longer invalidate the reader
+    // permanently - it reports an Incompatible state and can recover on new descriptors
+    ASSERT_TRUE(reader.getIsValid());
 }
 
 TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality03)
@@ -2983,7 +3006,9 @@ TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality
                                  ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
 
     ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
+    // Behavior change (spec 8.5): incompatible inputs no longer invalidate the reader
+    // permanently - it reports an Incompatible state and can recover on new descriptors
+    ASSERT_TRUE(reader.getIsValid());
 }
 
 TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality04)
@@ -3012,7 +3037,9 @@ TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality
                            ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
 
     ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
+    // Behavior change (spec 8.5): incompatible inputs no longer invalidate the reader
+    // permanently - it reports an Incompatible state and can recover on new descriptors
+    ASSERT_TRUE(reader.getIsValid());
 }
 
 TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality05)
@@ -3041,7 +3068,9 @@ TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality
                                  ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
 
     ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
+    // Behavior change (spec 8.5): incompatible inputs no longer invalidate the reader
+    // permanently - it reports an Incompatible state and can recover on new descriptors
+    ASSERT_TRUE(reader.getIsValid());
 }
 
 TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality06)
@@ -3070,7 +3099,9 @@ TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality
                                  ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
 
     ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
+    // Behavior change (spec 8.5): incompatible inputs no longer invalidate the reader
+    // permanently - it reports an Incompatible state and can recover on new descriptors
+    ASSERT_TRUE(reader.getIsValid());
 }
 
 TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality07)
@@ -3159,7 +3190,9 @@ TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality
                            ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
 
     ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
+    // Behavior change (spec 8.5): incompatible inputs no longer invalidate the reader
+    // permanently - it reports an Incompatible state and can recover on new descriptors
+    ASSERT_TRUE(reader.getIsValid());
 }
 
 TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality10)
@@ -3188,7 +3221,9 @@ TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality
                            ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
 
     ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
+    // Behavior change (spec 8.5): incompatible inputs no longer invalidate the reader
+    // permanently - it reports an Incompatible state and can recover on new descriptors
+    ASSERT_TRUE(reader.getIsValid());
 }
 
 TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality11)
@@ -3248,7 +3283,9 @@ TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality
                            ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
 
     ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
+    // Behavior change (spec 8.5): incompatible inputs no longer invalidate the reader
+    // permanently - it reports an Incompatible state and can recover on new descriptors
+    ASSERT_TRUE(reader.getIsValid());
 }
 
 TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality13)
@@ -3306,7 +3343,9 @@ TEST_F(MultiReaderTest, ReferenceDomainIdInequalityReferenceTimeProtocolInequali
                                  ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
 
     ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
+    // Behavior change (spec 8.5): incompatible inputs no longer invalidate the reader
+    // permanently - it reports an Incompatible state and can recover on new descriptors
+    ASSERT_TRUE(reader.getIsValid());
 }
 
 TEST_F(MultiReaderTest, ReferenceDomainIdInequalityReferenceTimeProtocolInequality02)
@@ -3363,7 +3402,9 @@ TEST_F(MultiReaderTest, ReferenceDomainIdInequalityReferenceTimeProtocolInequali
                                  ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
 
     ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
+    // Behavior change (spec 8.5): incompatible inputs no longer invalidate the reader
+    // permanently - it reports an Incompatible state and can recover on new descriptors
+    ASSERT_TRUE(reader.getIsValid());
 }
 
 TEST_F(MultiReaderTest, ReferenceDomainIdInequalityReferenceTimeProtocolInequality04)
@@ -3421,7 +3462,9 @@ TEST_F(MultiReaderTest, ReferenceDomainIdInequalityReferenceTimeProtocolInequali
                                  ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
 
     ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
+    // Behavior change (spec 8.5): incompatible inputs no longer invalidate the reader
+    // permanently - it reports an Incompatible state and can recover on new descriptors
+    ASSERT_TRUE(reader.getIsValid());
 }
 
 TEST_F(MultiReaderTest, ReferenceDomainIdInequalityReferenceTimeProtocolInequality06)
@@ -3451,7 +3494,9 @@ TEST_F(MultiReaderTest, ReferenceDomainIdInequalityReferenceTimeProtocolInequali
                            ReferenceDomainInfoBuilder().setReferenceDomainId(nullptr).setReferenceTimeProtocol(TimeProtocol::Tai).build()));
 
     ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
+    // Behavior change (spec 8.5): incompatible inputs no longer invalidate the reader
+    // permanently - it reports an Incompatible state and can recover on new descriptors
+    ASSERT_TRUE(reader.getIsValid());
 }
 
 TEST_F(MultiReaderTest, ReferenceDomainIdInequalityReferenceTimeProtocolInequality07)
@@ -3480,7 +3525,9 @@ TEST_F(MultiReaderTest, ReferenceDomainIdInequalityReferenceTimeProtocolInequali
                                  ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
 
     ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
+    // Behavior change (spec 8.5): incompatible inputs no longer invalidate the reader
+    // permanently - it reports an Incompatible state and can recover on new descriptors
+    ASSERT_TRUE(reader.getIsValid());
 }
 
 TEST_F(MultiReaderTest, ReferenceDomainIdInequalityReferenceTimeProtocolInequality08)
@@ -3952,7 +3999,9 @@ TEST_F(MultiReaderTest, ReferenceDomainIdInequalityReferenceTimeProtocolInequali
                            ReferenceDomainInfoBuilder().setReferenceDomainId(nullptr).setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
 
     ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
+    // Behavior change (spec 8.5): incompatible inputs no longer invalidate the reader
+    // permanently - it reports an Incompatible state and can recover on new descriptors
+    ASSERT_TRUE(reader.getIsValid());
 }
 
 TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality15)
@@ -3997,7 +4046,9 @@ TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality
                                  ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
 
     ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
+    // Behavior change (spec 8.5): incompatible inputs no longer invalidate the reader
+    // permanently - it reports an Incompatible state and can recover on new descriptors
+    ASSERT_TRUE(reader.getIsValid());
 }
 
 class MockSignal
@@ -4821,14 +4872,17 @@ TEST_P(MinReadCountTest, MinReadCount)
 
     ASSERT_EQ(multi.getAvailableCount(), 0u);
 
+    // Behavior change (spec 6.2/3.1): the leftover segment shorter than minReadCount is
+    // discarded during evaluation, so the descriptor event surfaces on the first read;
+    // the old reader needed one extra read to drop the segment first
     count = 0;
     status = multi.read(nullptr, &count, timeoutMs);
     ASSERT_EQ(count, 0u);
-    ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
 
     count = 0;
     status = multi.read(nullptr, &count, timeoutMs);
-    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
     ASSERT_EQ(count, 0u);
 }
 
