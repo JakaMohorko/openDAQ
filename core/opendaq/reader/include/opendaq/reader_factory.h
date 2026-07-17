@@ -66,11 +66,30 @@ inline TailReaderStatusPtr TailReaderStatus(const EventPacketPtr& packet = nullp
 }
 
 inline MultiReaderStatusPtr MultiReaderStatus(const EventPacketPtr& mainDescriptor = nullptr,
-                                              const DictPtr<IString, IEventPacket>& eventPackets = nullptr, 
-                                              Bool valid = true, 
+                                              const DictPtr<IString, IEventPacket>& eventPackets = nullptr,
+                                              Bool valid = true,
                                               const NumberPtr& offset = 0)
 {
     return MultiReaderStatus_Create(mainDescriptor, eventPackets, valid, offset);
+}
+
+/*!
+ * @brief Creates a multi reader status carrying the reader state, its diagnostic message, the
+ * affected input indices and the ordered event list (eventInputIndices parallel to
+ * orderedEventPackets), in addition to the compatibility fields. The status validity is
+ * derived from the state (Incompatible, SynchronizationFailed and Error report invalid).
+ */
+inline MultiReaderStatusPtr MultiReaderStatusEx(const EventPacketPtr& mainDescriptor,
+                                                const DictPtr<IString, IEventPacket>& eventPackets,
+                                                const NumberPtr& offset,
+                                                MultiReaderState state,
+                                                const StringPtr& stateMessage = nullptr,
+                                                const ListPtr<IInteger>& affectedInputIndices = nullptr,
+                                                const ListPtr<IInteger>& eventInputIndices = nullptr,
+                                                const ListPtr<IEventPacket>& orderedEventPackets = nullptr)
+{
+    return MultiReaderStatusEx_Create(
+        mainDescriptor, eventPackets, offset, state, stateMessage, affectedInputIndices, eventInputIndices, orderedEventPackets);
 }
 
 /*!

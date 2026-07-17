@@ -15,6 +15,7 @@
  */
 #pragma once
 #include <opendaq/multi_reader.h>
+#include <opendaq/multi_reader_status.h>
 
 #include <opendaq/input_slot.h>
 #include <opendaq/multi_reader_builder_ptr.h>
@@ -32,25 +33,6 @@
 #include <vector>
 
 BEGIN_NAMESPACE_OPENDAQ
-
-/**
- * @brief Runtime states of the multi reader (spec section 6.1). Internal for now;
- * Phase 3 exposes the equivalent public RTGen enum through IMultiReaderStatus.
- */
-enum class MultiReaderState
-{
-    Inactive = 0,
-    WaitingForConnections,
-    WaitingForDescriptors,
-    Incompatible,
-    WaitingForData,
-    Synchronizing,
-    Synchronized,
-    EventPending,
-    SynchronizationFailed,
-    DataLost,
-    Error
-};
 
 /**
  * @brief Public facade of the multi reader: configuration, input order, the runtime state
@@ -152,6 +134,13 @@ private:
     void invalidateSynchronizationLocked();
     void invalidateModelLocked();
     void setStateLocked(MultiReaderState newState, std::string message = {}, std::vector<SizeT> affected = {});
+    /// Formats "<messagePrefix> [i, j, ...]<messageSuffix>" from the affected indices before
+    /// moving them into the state - never both format and move in one argument list (the
+    /// evaluation order of function arguments is unspecified).
+    void setStateWithAffectedLocked(MultiReaderState newState,
+                                    const char* messagePrefix,
+                                    const char* messageSuffix,
+                                    std::vector<SizeT> affected);
 
     /// Used inputs in slot order plus their slot indices; main input is the first used slot.
     std::vector<QueueReader*> collectUsedReaders(std::vector<SizeT>& slotIndices) const;
@@ -163,7 +152,12 @@ private:
     ErrCode readInternal(void** valueBuffers, void** domainBuffers, SizeT* count, SizeT timeoutMs, IMultiReaderStatus** status, bool skip);
     MultiReaderStatusPtr readEventsLocked();
     MultiReaderStatusPtr createStatusLocked(const DictPtr<IString, IEventPacket>& eventPackets = nullptr,
-                                            const NumberPtr& offset = nullptr) const;
+                                            const NumberPtr& offset = nullptr,
+                                            const ListPtr<IInteger>& eventInputIndices = nullptr,
+                                            const ListPtr<IEventPacket>& orderedEventPackets = nullptr);
+    /// Descriptor-changed packet for the status: main value descriptor + common output domain
+    /// descriptor (the domain of the status offset, spec section 8.2)
+    EventPacketPtr mainDescriptorPacketLocked();
     void updateMainDescriptorsLocked();
     std::optional<std::int64_t> currentReadOffsetLocked() const;
 
@@ -194,6 +188,34 @@ private:
 
     DataDescriptorPtr mainValueDescriptor;
     DataDescriptorPtr mainDomainDescriptor;
+
+    /// Status caching (spec section 8.2): the last event-less status is re-issued while its
+    /// visible content is unchanged; any content change (or any event) creates a new object.
+    /// The cache and the fingerprint are cleared whenever the cross-input model is
+    /// invalidated - the cached getMainDescriptor packet embeds the common output domain,
+    /// which any input's descriptor change can move.
+    MultiReaderStatusPtr cachedStatus;
+    struct StatusFingerprint
+    {
+        MultiReaderState state{};
+        std::string message;
+        std::vector<SizeT> affectedInputs;
+        std::int64_t offset{};
+        // Identity only; safe because the cache is dropped on every model invalidation,
+        // which every descriptor change triggers before a new descriptor can be adopted
+        IDataDescriptor* mainValue{};
+        IDataDescriptor* mainDomain{};
+
+        bool operator==(const StatusFingerprint& other) const
+        {
+            return state == other.state && message == other.message && affectedInputs == other.affectedInputs &&
+                   offset == other.offset && mainValue == other.mainValue && mainDomain == other.mainDomain;
+        }
+    };
+    StatusFingerprint cachedStatusFingerprint;
+
+    /// Common-output-domain descriptor for getMainDescriptor, built lazily per model build
+    DataDescriptorPtr cachedCommonDomainDescriptor;
 
     PropertyObjectPtr portBinder;
     ProcedurePtr readCallback;

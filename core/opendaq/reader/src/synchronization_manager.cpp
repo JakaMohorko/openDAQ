@@ -529,13 +529,7 @@ RatioPtr SynchronizationManager::startInterval() const
 
 std::int64_t SynchronizationManager::blockIntervalTicks() const
 {
-    // Ticks per common-rate sample; integral by construction - the common resolution folds
-    // in 1/commonSampleRate (spec section 4.1)
-    const auto& resolution = model.commonDomain.resolution;
-    if (!resolution.assigned() || model.commonSampleRate <= 0)
-        return 0;
-    const std::int64_t ticksPerSample = resolution.getDenominator() / (resolution.getNumerator() * model.commonSampleRate);
-    return static_cast<std::int64_t>(model.blockLcm) * ticksPerSample;
+    return static_cast<std::int64_t>(model.blockLcm) * model.ticksPerCommonSample();
 }
 
 bool SynchronizationManager::reachedAcceptable(const DomainValue& reached, const DomainValue& candidate) const

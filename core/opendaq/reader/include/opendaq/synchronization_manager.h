@@ -43,6 +43,16 @@ struct CommonModel
     SizeT blockLcm = 1;
     std::unique_ptr<DomainValue> commonStart;  // assigned only while synchronized
     SizeT mainPosition = 0;                    // position of the main input within the used-input vector
+
+    /// Common-domain ticks per common-rate sample; integral by construction because the
+    /// common resolution folds in 1/commonSampleRate (spec section 4.1). Zero when the
+    /// model is not usable.
+    std::int64_t ticksPerCommonSample() const
+    {
+        if (!commonDomain.resolution.assigned() || commonSampleRate <= 0)
+            return 0;
+        return commonDomain.resolution.getDenominator() / (commonDomain.resolution.getNumerator() * commonSampleRate);
+    }
 };
 
 enum class SyncSetupIssue

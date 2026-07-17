@@ -3,6 +3,7 @@
 #include <coretypes/validation.h>
 #include <opendaq/custom_log.h>
 #include <opendaq/data_descriptor_factory.h>
+#include <opendaq/data_rule_factory.h>
 #include <opendaq/event_packet_utils.h>
 #include <opendaq/input_port_factory.h>
 #include <opendaq/multi_reader_impl.h>
@@ -84,6 +85,8 @@ MultiReaderImpl::MultiReaderImpl(MultiReaderImpl* old, SampleType valueReadType,
     {
         std::scoped_lock lock(old->mutex);
         old->invalid = true;
+        // Keep the invariant invalid <=> Error: statuses derive their validity from the state
+        old->setStateLocked(MultiReaderState::Error, "Reader was invalidated by MultiReaderFromExisting");
 
         loggerComponent = old->loggerComponent;
         readMode = old->readMode;
@@ -321,6 +324,15 @@ void MultiReaderImpl::setStateLocked(MultiReaderState newState, std::string mess
     stateAffectedInputs = std::move(affected);
 }
 
+void MultiReaderImpl::setStateWithAffectedLocked(MultiReaderState newState,
+                                                 const char* messagePrefix,
+                                                 const char* messageSuffix,
+                                                 std::vector<SizeT> affected)
+{
+    auto message = fmt::format("{} [{}]{}", messagePrefix, fmt::join(affected, ", "), messageSuffix);
+    setStateLocked(newState, std::move(message), std::move(affected));
+}
+
 void MultiReaderImpl::invalidateSynchronizationLocked()
 {
     syncManager->clearSynchronization();
@@ -332,6 +344,12 @@ void MultiReaderImpl::invalidateModelLocked()
 {
     invalidateSynchronizationLocked();
     syncManager->invalidateModel();
+
+    // The cached status and the common-output-domain descriptor embed the model
+    // (epoch/resolution/rate) - any input's descriptor change can move it
+    cachedStatus = nullptr;
+    cachedStatusFingerprint = {};
+    cachedCommonDomainDescriptor = nullptr;
 }
 
 std::vector<QueueReader*> MultiReaderImpl::collectUsedReaders(std::vector<SizeT>& slotIndices) const
@@ -396,9 +414,7 @@ void MultiReaderImpl::evaluateStateLocked()
         if (!inactiveEventInputs.empty())
         {
             invalidateSynchronizationLocked();
-            setStateLocked(MultiReaderState::EventPending,
-                           fmt::format("Events pending on inputs [{}]", fmt::join(inactiveEventInputs, ", ")),
-                           std::move(inactiveEventInputs));
+            setStateWithAffectedLocked(MultiReaderState::EventPending, "Events pending on inputs", "", std::move(inactiveEventInputs));
         }
         else
         {
@@ -437,9 +453,7 @@ void MultiReaderImpl::evaluateStateLocked()
                 notificationCoordinator->setEvent(index, false);
 
             invalidateModelLocked();
-            setStateLocked(MultiReaderState::WaitingForConnections,
-                           fmt::format("Inputs [{}] have no signal connected", fmt::join(unconnected, ", ")),
-                           std::move(unconnected));
+            setStateWithAffectedLocked(MultiReaderState::WaitingForConnections, "Inputs", " have no signal connected", std::move(unconnected));
             return;
         }
     }
@@ -496,9 +510,7 @@ void MultiReaderImpl::evaluateStateLocked()
             }
 
             invalidateSynchronizationLocked();
-            setStateLocked(MultiReaderState::EventPending,
-                           fmt::format("Events pending on inputs [{}]", fmt::join(eventInputs, ", ")),
-                           std::move(eventInputs));
+            setStateWithAffectedLocked(MultiReaderState::EventPending, "Events pending on inputs", "", std::move(eventInputs));
             return;
         }
     }
@@ -513,9 +525,7 @@ void MultiReaderImpl::evaluateStateLocked()
         }
         if (!missing.empty())
         {
-            setStateLocked(MultiReaderState::WaitingForDescriptors,
-                           fmt::format("Inputs [{}] have no descriptors yet", fmt::join(missing, ", ")),
-                           std::move(missing));
+            setStateWithAffectedLocked(MultiReaderState::WaitingForDescriptors, "Inputs", " have no descriptors yet", std::move(missing));
             return;
         }
     }
@@ -533,9 +543,8 @@ void MultiReaderImpl::evaluateStateLocked()
         if (!invalidInputs.empty())
         {
             invalidateModelLocked();
-            setStateLocked(MultiReaderState::Incompatible,
-                           fmt::format("Inputs [{}] are not readable with the current descriptors", fmt::join(invalidInputs, ", ")),
-                           std::move(invalidInputs));
+            setStateWithAffectedLocked(
+                MultiReaderState::Incompatible, "Inputs", " are not readable with the current descriptors", std::move(invalidInputs));
             return;
         }
     }
@@ -568,9 +577,7 @@ void MultiReaderImpl::evaluateStateLocked()
             }
             if (!empty.empty())
             {
-                setStateLocked(MultiReaderState::WaitingForData,
-                               fmt::format("Waiting for data on inputs [{}]", fmt::join(empty, ", ")),
-                               std::move(empty));
+                setStateWithAffectedLocked(MultiReaderState::WaitingForData, "Waiting for data on inputs", "", std::move(empty));
                 return;
             }
         }
@@ -710,17 +717,70 @@ void MultiReaderImpl::slotPacketReceived(SizeT slotIndex)
 
 // --- Status and offset ------------------------------------------------------------------------
 
-MultiReaderStatusPtr MultiReaderImpl::createStatusLocked(const DictPtr<IString, IEventPacket>& eventPackets,
-                                                         const NumberPtr& offset) const
+EventPacketPtr MultiReaderImpl::mainDescriptorPacketLocked()
 {
-    auto mainDescriptor = DataDescriptorChangedEventPacket(descriptorToEventPacketParam(mainValueDescriptor),
-                                                           descriptorToEventPacketParam(mainDomainDescriptor));
-    // The status reports the stream condition (error contract section 3.3): reads in
-    // Incompatible/SynchronizationFailed carry an invalid status (ReadStatus::Fail without
-    // events) while the reader itself stays recoverable
-    const bool statusValid =
-        !invalid && state != MultiReaderState::Incompatible && state != MultiReaderState::SynchronizationFailed;
-    return MultiReaderStatus(mainDescriptor, eventPackets, statusValid, offset);
+    // The domain part is the common output domain - the domain the status offset is
+    // expressed in (spec sections 4.4 and 8.2) - not the main input's own domain. It is
+    // rebuilt lazily per model build (invalidateModelLocked clears it).
+    DataDescriptorPtr domainDescriptor = mainDomainDescriptor;
+    if (syncManager->hasModel() && mainDomainDescriptor.assigned())
+    {
+        const auto& model = syncManager->getModel();
+        if (!cachedCommonDomainDescriptor.assigned() && model.ticksPerCommonSample() > 0)
+        {
+            cachedCommonDomainDescriptor = DataDescriptorBuilderCopy(mainDomainDescriptor)
+                                               .setOrigin(reader::isoEpochString(model.commonDomain.epoch))
+                                               .setTickResolution(model.commonDomain.resolution)
+                                               .setRule(LinearDataRule(static_cast<Int>(model.ticksPerCommonSample()), 0))
+                                               .build();
+        }
+        if (cachedCommonDomainDescriptor.assigned())
+            domainDescriptor = cachedCommonDomainDescriptor;
+    }
+    return DataDescriptorChangedEventPacket(descriptorToEventPacketParam(mainValueDescriptor),
+                                            descriptorToEventPacketParam(domainDescriptor));
+}
+
+MultiReaderStatusPtr MultiReaderImpl::createStatusLocked(const DictPtr<IString, IEventPacket>& eventPackets,
+                                                         const NumberPtr& offset,
+                                                         const ListPtr<IInteger>& eventInputIndices,
+                                                         const ListPtr<IEventPacket>& orderedEventPackets)
+{
+    // The status derives its validity from the state (error contract section 3.3):
+    // Incompatible/SynchronizationFailed/Error report an invalid stream while the reader
+    // itself stays recoverable in all but Error. The invalid flag maps to Error here as a
+    // safety net - every path setting it is also expected to set the state.
+    const auto effectiveState = invalid && state != MultiReaderState::Error ? MultiReaderState::Error : state;
+
+    const bool hasEvents = eventPackets.assigned() && eventPackets.getCount() > 0;
+
+    // Cached-instance behavior (spec section 8.2): event-less statuses are re-issued while
+    // their visible content is unchanged; statuses carrying events are always fresh
+    StatusFingerprint fingerprint;
+    fingerprint.state = effectiveState;
+    fingerprint.message = stateMessage;
+    fingerprint.affectedInputs = stateAffectedInputs;
+    fingerprint.offset = offset.assigned() ? static_cast<std::int64_t>(offset.getIntValue()) : 0;
+    fingerprint.mainValue = mainValueDescriptor.getObject();
+    fingerprint.mainDomain = mainDomainDescriptor.getObject();
+
+    if (!hasEvents && cachedStatus.assigned() && fingerprint == cachedStatusFingerprint)
+        return cachedStatus;
+
+    auto status = MultiReaderStatusEx(mainDescriptorPacketLocked(),
+                                      eventPackets,
+                                      offset,
+                                      effectiveState,
+                                      String(stateMessage),
+                                      ListPtr<IInteger>::FromVector(stateAffectedInputs),
+                                      eventInputIndices,
+                                      orderedEventPackets);
+    if (!hasEvents)
+    {
+        cachedStatus = status;
+        cachedStatusFingerprint = std::move(fingerprint);
+    }
+    return status;
 }
 
 std::optional<std::int64_t> MultiReaderImpl::currentReadOffsetLocked() const
@@ -756,6 +816,8 @@ std::optional<std::int64_t> MultiReaderImpl::currentReadOffsetLocked() const
 MultiReaderStatusPtr MultiReaderImpl::readEventsLocked()
 {
     auto events = Dict<IString, EventPacketPtr>();
+    auto eventInputIndices = List<IInteger>();
+    auto orderedEventPackets = List<IEventPacket>();
     for (auto* slot : slots)
     {
         if (!slot->isUsed())
@@ -768,7 +830,11 @@ MultiReaderStatusPtr MultiReaderImpl::readEventsLocked()
         // One event per input per call (spec section 7.2); the pop applies descriptor changes
         auto packet = reader.popFrontEvent();
         if (packet.assigned())
+        {
             events.set(slot->getPort().getGlobalId(), packet);
+            eventInputIndices.pushBack(static_cast<Int>(slot->getIndex()));
+            orderedEventPackets.pushBack(packet);
+        }
 
         notificationCoordinator->setEvent(slot->getIndex(), reader.hasPendingEvents());
     }
@@ -780,7 +846,7 @@ MultiReaderStatusPtr MultiReaderImpl::readEventsLocked()
     updateMainDescriptorsLocked();
     evaluateStateLocked();
 
-    return createStatusLocked(events.getCount() > 0 ? events : DictPtr<IString, IEventPacket>(nullptr));
+    return createStatusLocked(events, nullptr, eventInputIndices, orderedEventPackets);
 }
 
 // --- Read path --------------------------------------------------------------------------------
@@ -916,13 +982,8 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
         return OPENDAQ_SUCCESS;
     }
 
-    if (plan.commonCount > 0 && nextReadTick.has_value() && model.commonSampleRate > 0)
-    {
-        // One common-rate sample spans a whole number of common ticks (spec section 4.1)
-        const auto ticksPerSample = model.commonDomain.resolution.getDenominator() /
-                                    (model.commonDomain.resolution.getNumerator() * model.commonSampleRate);
-        nextReadTick = *nextReadTick + static_cast<std::int64_t>(plan.commonCount) * ticksPerSample;
-    }
+    if (plan.commonCount > 0 && nextReadTick.has_value() && model.ticksPerCommonSample() > 0)
+        nextReadTick = *nextReadTick + static_cast<std::int64_t>(plan.commonCount) * model.ticksPerCommonSample();
 
     NumberPtr offsetNumber = offsetTick.has_value() ? NumberPtr(*offsetTick) : NumberPtr(0);
     if (status)
@@ -1112,8 +1173,7 @@ ErrCode MultiReaderImpl::getOrigin(IString** origin)
         return OPENDAQ_IGNORED;
     }
 
-    const auto originString = date::format("%FT%TZ", syncManager->getModel().commonDomain.epoch);
-    *origin = String(originString).detach();
+    *origin = String(reader::isoEpochString(syncManager->getModel().commonDomain.epoch)).detach();
     return OPENDAQ_SUCCESS;
 }
 
@@ -1456,7 +1516,10 @@ void MultiReaderImpl::internalDispose(bool)
     portBinder = nullptr;
     externalListener = nullptr;
     readCallback = nullptr;
+    cachedStatus = nullptr;
+    cachedCommonDomainDescriptor = nullptr;
     invalid = true;
+    setStateLocked(MultiReaderState::Error, "Reader was disposed");
     isActive = false;
 }
 

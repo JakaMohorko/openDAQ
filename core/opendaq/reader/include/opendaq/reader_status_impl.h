@@ -74,7 +74,21 @@ class MultiReaderStatusImpl final : public GenericReaderStatusImpl<IMultiReaderS
 {
 public:
     using Super = GenericReaderStatusImpl<IMultiReaderStatus>;
+
+    /// Compatibility constructor: the state is derived from the events and the valid flag.
     explicit MultiReaderStatusImpl(const EventPacketPtr& mainDescriptor, const DictPtr<IString, IEventPacket>& eventPackets, Bool valid, const NumberPtr& offset);
+
+    /// Full constructor carrying the reader state, diagnostics and the ordered event list
+    /// (eventInputIndices and orderedEventPackets are parallel). The validity is derived
+    /// from the state: Incompatible, SynchronizationFailed and Error report invalid.
+    explicit MultiReaderStatusImpl(const EventPacketPtr& mainDescriptor,
+                                   const DictPtr<IString, IEventPacket>& eventPackets,
+                                   const NumberPtr& offset,
+                                   MultiReaderState state,
+                                   const StringPtr& stateMessage,
+                                   const ListPtr<IInteger>& affectedInputIndices,
+                                   const ListPtr<IInteger>& eventInputIndices,
+                                   const ListPtr<IEventPacket>& orderedEventPackets);
 
     ErrCode INTERFACE_FUNC getReadStatus(ReadStatus* status) override;
 
@@ -84,8 +98,25 @@ public:
 
     ErrCode INTERFACE_FUNC getMainDescriptor(IEventPacket** descriptor) override;
 
+    ErrCode INTERFACE_FUNC getState(MultiReaderState* state) override;
+
+    ErrCode INTERFACE_FUNC getStateMessage(IString** message) override;
+
+    ErrCode INTERFACE_FUNC getAffectedInputCount(SizeT* count) override;
+
+    ErrCode INTERFACE_FUNC getAffectedInputIndex(SizeT statusIndex, SizeT* inputIndex) override;
+
+    ErrCode INTERFACE_FUNC getEventCount(SizeT* count) override;
+
+    ErrCode INTERFACE_FUNC getEvent(SizeT eventIndex, SizeT* inputIndex, IEventPacket** packet) override;
+
 private:
     DictPtr<IString, IEventPacket> eventPackets;
+    MultiReaderState state;
+    StringPtr stateMessage;
+    ListPtr<IInteger> affectedInputIndices;
+    ListPtr<IInteger> eventInputIndices;
+    ListPtr<IEventPacket> orderedEventPackets;
 };
 
 END_NAMESPACE_OPENDAQ
