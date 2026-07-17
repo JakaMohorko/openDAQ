@@ -45,8 +45,12 @@ struct IInputSlotListener
     virtual void slotConnected(SizeT slotIndex) = 0;
     /// The signal was disconnected from the slot's port.
     virtual void slotDisconnected(SizeT slotIndex) = 0;
-    /// First packet arrival since the last clearPacketPending() - fired once per pending cycle.
-    virtual void slotPacketPending(SizeT slotIndex) = 0;
+    /**
+     * @brief Every packet arrival (bounded producer path). Coalescing is the owner's
+     * job (NotificationCoordinator); the slot's packetPending bit stays set until
+     * clearPacketPending() for cheap "anything new since last evaluation" queries.
+     */
+    virtual void slotPacketReceived(SizeT slotIndex) = 0;
 };
 
 /**
@@ -84,6 +88,8 @@ public:
     // --- Owner-side API (owner state lock held) ---
 
     SizeT getIndex() const;
+    /// Owner reindexes remaining slots after removeInput; buffer order follows slot order.
+    void setIndex(SizeT newIndex);
 
     /**
      * @brief Identity used by removeInput/setInputUsed and the status event dictionary:
@@ -121,7 +127,7 @@ public:
 private:
     IInputSlotListener* getListener() const;
 
-    const SizeT index;
+    std::atomic<SizeT> index;
     const bool globalIdFromSignal;
 
     InputPortConfigPtr port;

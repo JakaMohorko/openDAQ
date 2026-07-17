@@ -1,6 +1,7 @@
 #include <opendaq/synchronization_manager.h>
 
 #include <coretypes/ratio_factory.h>
+#include <opendaq/custom_log.h>
 
 #include <algorithm>
 #include <limits>
@@ -428,9 +429,21 @@ SyncSetupResult SynchronizationManager::checkReferenceDomains(const std::vector<
 
         const auto referenceDomainInfo = descriptor.getReferenceDomainInfo();
         if (!referenceDomainInfo.assigned())
+        {
+            LOG_D("Input {} domain descriptor Reference Domain Info is not assigned.", slotIndices[i]);
             continue;
+        }
 
-        if (referenceDomainInfo.getReferenceTimeProtocol() != TimeProtocol::Unknown)
+        {
+            const auto referenceDomainId = referenceDomainInfo.getReferenceDomainId();
+            if (!referenceDomainId.assigned() || referenceDomainId.getLength() == 0)
+                LOG_D("Input {} Reference Domain ID not assigned.", slotIndices[i]);
+        }
+        if (referenceDomainInfo.getReferenceTimeProtocol() == TimeProtocol::Unknown)
+        {
+            LOG_D("Input {} Reference Time Source is Unknown.", slotIndices[i]);
+        }
+        else
         {
             if (knownProtocol != TimeProtocol::Unknown && referenceDomainInfo.getReferenceTimeProtocol() != knownProtocol)
             {
