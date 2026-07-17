@@ -30,7 +30,6 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
-// COMMENT: It is possible for domains to be set to nullptr. Do these events account for it?
 enum class SignalEventType
 {
     NoChange = 0,
@@ -58,6 +57,10 @@ private:
     SignalEventType eventType;
     DataDescriptorPtr domainDescriptor;
     DataDescriptorPtr valueDescriptor;
+    // A change may carry a null descriptor (descriptor removed); explicit flags keep
+    // "changed to null" distinguishable from "unchanged".
+    bool domainDescriptorChanged = false;
+    bool valueDescriptorChanged = false;
     Int gapDiff;
 };
 
@@ -121,6 +124,12 @@ public:
     Int getSampleRate();
 
     void dropOutdatedPacketSegments();
+
+    /**
+     * @brief Deactivation drop: discard queued data packets and gap events (raw and pending),
+     * keeping descriptor-change events pending so type state stays consistent while inactive.
+     */
+    void dropForInactive();
     
     /**
      * @brief Get the Available Samples in common rate equivalent
@@ -164,6 +173,12 @@ public:
 
     void domainChangeHandled();
     void updateConnection();
+
+    /**
+     * @brief Rebind to the port's current connection only if it differs from the cached one.
+     * @return true if the connection changed and the queue was re-drained.
+     */
+    bool refreshConnection();
     
     void setSampleRateDivider(SizeT divider);
     SizeT getSampleRateDivider() const;

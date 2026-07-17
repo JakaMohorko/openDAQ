@@ -141,6 +141,10 @@ public:
                                      const std::vector<SizeT>& slotIndices,
                                      SizeT mainPosition);
 
+    SyncSetupResult buildCommonModelImpl(const std::vector<QueueReader*>& inputs,
+                                         const std::vector<SizeT>& slotIndices,
+                                         SizeT mainPosition);
+
     bool hasModel() const;
     const CommonModel& getModel() const;
 

@@ -107,6 +107,14 @@ public:
     void rebindConnection();
 
     /**
+     * @brief Resync connected state and the QueueReader's connection from the port itself.
+     * Initial event packets are enqueued while the connection is still being constructed, before
+     * the connected() notification fires - the port is the source of truth, not the notifications.
+     * @return true if the QueueReader was rebound to a different connection.
+     */
+    bool syncConnection();
+
+    /**
      * @brief Used flag only - excluding the slot from masks, compatibility, synchronization and
      * availability is the owner's responsibility, as is deactivating the port (setPortActive)
      * and resetting/revalidating on re-enable.

@@ -108,6 +108,12 @@ void InputSlot::rebindConnection()
     queueReader.updateConnection();
 }
 
+bool InputSlot::syncConnection()
+{
+    connectedState = port.getConnection().assigned();
+    return queueReader.refreshConnection();
+}
+
 bool InputSlot::isUsed() const
 {
     return used;

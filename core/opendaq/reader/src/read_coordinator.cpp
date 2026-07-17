@@ -124,14 +124,22 @@ CommitResult ReadCoordinator::skip(const ReadPlan& plan, const std::vector<Queue
     return CommitResult::Ok;
 }
 
-std::vector<SizeT> ReadCoordinator::discardLeftoverSegments(const std::vector<QueueReader*>& inputs, const CommonModel& model)
+std::vector<SizeT> ReadCoordinator::discardLeftoverSegments(const std::vector<QueueReader*>& inputs,
+                                                            const CommonModel& model,
+                                                            SizeT minReadCount)
 {
     std::vector<SizeT> discarded;
-    const SizeT block = model.blockLcm > 0 ? model.blockLcm : 1;
+    // A segment shorter than the smallest servable request can never be read - use the
+    // same aligned minimum the availability check enforces, not just one block
+    const SizeT minimum = effectiveMinimum(model, minReadCount);
 
     for (SizeT i = 0; i < inputs.size(); ++i)
     {
-        if (inputs[i]->discardLeftoverSegment(block))
+        // An input already at an event boundary has nothing left to discard - the pending
+        // event surfaces through the state evaluation instead.
+        if (inputs[i]->hasPendingEvents())
+            continue;
+        if (inputs[i]->discardLeftoverSegment(minimum))
             discarded.push_back(i);
     }
     return discarded;

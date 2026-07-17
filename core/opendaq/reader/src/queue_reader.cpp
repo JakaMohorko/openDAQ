@@ -3,6 +3,7 @@
 #include <opendaq/custom_log.h>
 #include <opendaq/event_packet_utils.h>
 
+#include <algorithm>
 #include <limits>
 
 BEGIN_NAMESPACE_OPENDAQ
@@ -22,7 +23,11 @@ SignalEvent::SignalEvent(const EventPacketPtr& packet)
     }
     else
     {
+        // The parse distinguishes "changed to null" (explicit null marker) from "unchanged"
+        // (parameter absent) - a removed descriptor must not be mistaken for no change.
         const auto [valueDescChanged, domainDescChanged, newValueDescriptor, newDomainDescriptor] = parseDataDescriptorEventPacket(packet);
+        valueDescriptorChanged = valueDescChanged;
+        domainDescriptorChanged = domainDescChanged;
         domainDescriptor = newDomainDescriptor;
         valueDescriptor = newValueDescriptor;
         updateType();
@@ -34,15 +39,15 @@ void SignalEvent::updateType()
     if (eventType == SignalEventType::Gap)
         return;
 
-    if (domainDescriptor.assigned() && valueDescriptor.assigned())
+    if (domainDescriptorChanged && valueDescriptorChanged)
     {
         eventType = SignalEventType::DomainAndValueChanged;
     }
-    else if (domainDescriptor.assigned())
+    else if (domainDescriptorChanged)
     {
         eventType = SignalEventType::DomainChanged;
     }
-    else if (valueDescriptor.assigned())
+    else if (valueDescriptorChanged)
     {
         eventType = SignalEventType::ValueChanged;
     }
@@ -58,10 +63,16 @@ bool SignalEvent::merge(const SignalEvent& other)
     if (this->eventType == SignalEventType::Gap || other.eventType == SignalEventType::Gap)
         return false;
 
-    if (other.domainDescriptor.assigned())
+    if (other.domainDescriptorChanged)
+    {
+        domainDescriptorChanged = true;
         domainDescriptor = other.domainDescriptor;
-    if (other.valueDescriptor.assigned())
+    }
+    if (other.valueDescriptorChanged)
+    {
+        valueDescriptorChanged = true;
         valueDescriptor = other.valueDescriptor;
+    }
     updateType();
     return true;
 }
@@ -89,7 +100,11 @@ EventPacketPtr SignalEvent::toEventPacket() const
     }
     else
     {
-        return DataDescriptorChangedEventPacket(descriptorToEventPacketParam(valueDescriptor), descriptorToEventPacketParam(domainDescriptor));
+        // Unchanged descriptors stay absent (null parameter); a changed descriptor uses the
+        // explicit null marker when removed, so consumers can tell "removed" from "unchanged".
+        return DataDescriptorChangedEventPacket(
+            valueDescriptorChanged ? descriptorToEventPacketParam(valueDescriptor) : nullptr,
+            domainDescriptorChanged ? descriptorToEventPacketParam(domainDescriptor) : nullptr);
     }
 }
 
@@ -274,6 +289,34 @@ void QueueReader::checkConnection() const
         DAQ_THROW_EXCEPTION(InvalidOperationException, "Connection must be assigned for this operation.");
 }
 
+void QueueReader::dropForInactive()
+{
+    if (connection.assigned())
+        drainConnection();
+
+    // Pending gap events are meaningless once the data flow is suspended
+    events.erase(std::remove_if(events.begin(),
+                                events.end(),
+                                [](const SignalEvent& event) { return event.getType() == SignalEventType::Gap; }),
+                 events.end());
+
+    // Drop data packets and gap events up to the first descriptor event, which stays -
+    // the reader's type state must not silently diverge from the signal's
+    while (!packets.empty())
+    {
+        const auto& front = packets.front();
+        if (front.getType() == PacketType::Event)
+        {
+            const EventPacketPtr eventPacket = front.asPtr<IEventPacket>(true);
+            if (eventPacket.getEventId() != event_packet_id::IMPLICIT_DOMAIN_GAP_DETECTED)
+                break;
+        }
+        packets.pop_front();
+        readingPosition = 0;
+    }
+    consumeLeadingEventPackets();
+}
+
 void QueueReader::dropOutdatedPacketSegments()
 {
     checkConnection();
@@ -414,6 +457,20 @@ void QueueReader::updateConnection()
 {
     connection = port.getConnection();
     drainConnection();
+}
+
+bool QueueReader::refreshConnection()
+{
+    // The port can hold a connection whose notifications have not reached the owner yet -
+    // initial event packets are enqueued while the connection is still being constructed,
+    // before the connected() notification fires.
+    auto current = port.getConnection();
+    if (current == connection)
+        return false;
+
+    connection = std::move(current);
+    drainConnection();
+    return true;
 }
 
 void QueueReader::setSampleRateDivider(SizeT divider)
