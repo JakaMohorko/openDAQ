@@ -152,6 +152,14 @@ public:
      * @brief Evaluation step 11: the iterative alignment of spec section 5. Preconditions
      * (validity, no pending events, data on every input) are the state evaluation's job.
      * On Synchronized the model's commonStart is assigned; every other outcome leaves it null.
+     *
+     * Reached-value acceptance (spec section 4.3): an input whose sample grid is phase-offset
+     * from the aligned start grid can never reach the candidate tick exactly. Its reached value
+     * is accepted when it lies strictly within half the aligned block interval of the candidate -
+     * the sample then unambiguously belongs to the candidate's block, and the offset stays
+     * visible in the per-signal domain output (direct path, spec section 7.3). An offset of half
+     * the block interval or more is ambiguous and keeps re-targeting until the iteration bound
+     * reports NoCommonTick (the delta-2 odd/even case of spec section 5.7).
      */
     SyncResult synchronize(const std::vector<QueueReader*>& inputs, const std::vector<SizeT>& slotIndices);
 
@@ -168,6 +176,11 @@ public:
 private:
     SyncSetupResult checkReferenceDomains(const std::vector<QueueReader*>& inputs, const std::vector<SizeT>& slotIndices) const;
     RatioPtr startInterval() const;
+
+    /// Aligned block interval in common-domain ticks (blockLcm * ticks per common-rate sample).
+    std::int64_t blockIntervalTicks() const;
+    /// Reached-value acceptance rule documented on synchronize().
+    bool reachedAcceptable(const DomainValue& reached, const DomainValue& candidate) const;
 
     std::int64_t requiredCommonSampleRate = -1;
     bool allowDifferentRates = true;

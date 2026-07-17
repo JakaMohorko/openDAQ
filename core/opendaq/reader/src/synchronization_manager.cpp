@@ -4,6 +4,7 @@
 #include <opendaq/custom_log.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <limits>
 #include <numeric>
 #include <set>
@@ -40,6 +41,21 @@ std::string joinIndices(const std::vector<SizeT>& indices)
         result += std::to_string(index);
     }
     return result;
+}
+
+// All QueueReaders of one reader share a single integral domain read type, so common-domain
+// values are one of these instantiations; nullopt for anything else (falls back to exact match).
+std::optional<std::int64_t> domainTickOf(const DomainValue& value)
+{
+    if (const auto* typed = dynamic_cast<const DomainValueImpl<std::int64_t>*>(&value))
+        return typed->getValue();
+    if (const auto* typed = dynamic_cast<const DomainValueImpl<std::uint64_t>*>(&value))
+        return static_cast<std::int64_t>(typed->getValue());
+    if (const auto* typed = dynamic_cast<const DomainValueImpl<std::int32_t>*>(&value))
+        return typed->getValue();
+    if (const auto* typed = dynamic_cast<const DomainValueImpl<std::uint32_t>*>(&value))
+        return typed->getValue();
+    return std::nullopt;
 }
 
 }  // namespace
@@ -385,7 +401,7 @@ SyncResult SynchronizationManager::synchronize(const std::vector<QueueReader*>& 
             SizeT maxIndex = 0;
             for (SizeT i = 0; i < count; ++i)
             {
-                if (*reached[i] != *candidate)
+                if (!reachedAcceptable(*reached[i], *candidate))
                     allReachedCandidate = false;
                 if (*reached[i] > *reached[maxIndex])
                     maxIndex = i;
@@ -509,6 +525,30 @@ RatioPtr SynchronizationManager::startInterval() const
     // Direct path: the minimum aligned block. The resampled path (Phase 5) uses the
     // output sample period instead.
     return Ratio(static_cast<Int>(model.blockLcm), static_cast<Int>(model.commonSampleRate));
+}
+
+std::int64_t SynchronizationManager::blockIntervalTicks() const
+{
+    // Ticks per common-rate sample; integral by construction - the common resolution folds
+    // in 1/commonSampleRate (spec section 4.1)
+    const auto& resolution = model.commonDomain.resolution;
+    if (!resolution.assigned() || model.commonSampleRate <= 0)
+        return 0;
+    const std::int64_t ticksPerSample = resolution.getDenominator() / (resolution.getNumerator() * model.commonSampleRate);
+    return static_cast<std::int64_t>(model.blockLcm) * ticksPerSample;
+}
+
+bool SynchronizationManager::reachedAcceptable(const DomainValue& reached, const DomainValue& candidate) const
+{
+    const auto reachedTick = domainTickOf(reached);
+    const auto candidateTick = domainTickOf(candidate);
+    if (!reachedTick.has_value() || !candidateTick.has_value())
+        return reached == candidate;
+
+    const std::int64_t distance = std::abs(*reachedTick - *candidateTick);
+    if (distance == 0)
+        return true;
+    return 2 * distance < blockIntervalTicks();
 }
 
 END_NAMESPACE_OPENDAQ

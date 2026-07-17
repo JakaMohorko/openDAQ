@@ -2,11 +2,9 @@
 #include <opendaq/event_packet_params.h>
 #include <opendaq/input_port_factory.h>
 #include <opendaq/reader_config_ptr.h>
-#include <opendaq/reader_domain_info.h>
 #include <opendaq/reader_exceptions.h>
 #include <opendaq/reader_factory.h>
 #include <opendaq/time_reader.h>
-#include <opendaq/typed_reader.h>
 #include "reader_common.h"
 
 #include <gmock/gmock-matchers.h>
@@ -1589,8 +1587,14 @@ TEST_F(MultiReaderTest, SampleRateChanged)
     multi.readWithDomain(valuesPerSignal, domainPerSignal, &count);
     ASSERT_EQ(count, 632u);
 
+    // Behavior change (spec 6.1/8.5): a sample-rate change is a recoverable event, not a
+    // sticky invalidation - the next read returns the descriptor-change event and the
+    // reader resynchronizes with the new dividers
+    count = SAMPLES;
     auto status = multi.readWithDomain(valuesPerSignal, domainPerSignal, &count);
-    ASSERT_FALSE(status.getValid());
+    ASSERT_TRUE(status.getValid());
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+    ASSERT_EQ(count, 0u);
 
     printData(SAMPLES, time, values);
     roundData<std::chrono::microseconds>(SAMPLES, time);
@@ -1599,90 +1603,8 @@ TEST_F(MultiReaderTest, SampleRateChanged)
     ASSERT_THAT(time[1], ElementsAreArray(time[0]));
 }
 
-TEST_F(MultiReaderTest, ReuseReader)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    constexpr const auto SIG2_PACKET_SIZE = 843u;
-
-    // prevent vector from re-allocating, so we have "stable" pointers
-    readSignals.reserve(3);
-
-    auto& sig0 = addSignal(123, 523, createDomainSignal("2022-09-27T00:02:03+00:00"));
-    auto& sig1 = addSignal(134, 732, createDomainSignal("2022-09-27T00:02:04+00:00"));
-    auto& sig2 = addSignal(111, SIG2_PACKET_SIZE, createDomainSignal("2022-09-27T00:02:04.123+00:00"));
-
-    std::array<ComplexFloat64, NUM_SIGNALS> oldReaderNextValues{};
-
-    auto multi = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    {
-        TimeReader timeReader(multi);
-
-        {
-            SizeT count{0};
-            auto status = multi.read(nullptr, &count);
-            ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
-        }
-
-        auto available = multi.getAvailableCount();
-        ASSERT_EQ(available, 0u);
-
-        sig0.createAndSendPacket(0);
-        sig1.createAndSendPacket(0);
-        sig2.createAndSendPacket(0);
-
-        sig2.setValueDescriptor(setupDescriptor(SampleType::ComplexFloat64));
-
-        sig0.createAndSendPacket(1);
-        sig1.createAndSendPacket(1);
-        sig2.createAndSendPacket<ComplexFloat64>(1);
-
-        sig0.createAndSendPacket(2);
-        sig1.createAndSendPacket(2);
-        sig2.createAndSendPacket<ComplexFloat64>(2);
-
-        sig0.createAndSendPacket(3);
-
-        available = multi.getAvailableCount();
-        // 843 - 0 needed to synchronize until next descriptor
-        ASSERT_EQ(available, SIG2_PACKET_SIZE);
-
-        // Read over the signal-descriptor change
-        constexpr const SizeT SAMPLES = SIG2_PACKET_SIZE + 1;
-
-        std::array<double[SAMPLES], NUM_SIGNALS> values{};
-        std::array<std::chrono::system_clock::time_point[SAMPLES], NUM_SIGNALS> time{};
-
-        void* valuesPerSignal[NUM_SIGNALS]{values[0], values[1], values[2]};
-        void* domainPerSignal[NUM_SIGNALS]{time[0], time[1], time[2]};
-
-        SizeT count{SAMPLES};
-        multi.readWithDomain(valuesPerSignal, domainPerSignal, &count);
-        ASSERT_EQ(count, SIG2_PACKET_SIZE);
-
-        auto status = multi.readWithDomain(valuesPerSignal, domainPerSignal, &count);
-        ASSERT_FALSE(status.getValid());
-
-        roundData<std::chrono::microseconds>(SAMPLES, time);
-        ASSERT_THAT(time[1], ElementsAreArray(time[0]));
-        ASSERT_THAT(time[2], ElementsAreArray(time[0]));
-
-        for (int i = 0; i < NUM_SIGNALS; ++i)
-        {
-            oldReaderNextValues[i] = values[i][SIG2_PACKET_SIZE - 1] + 1;
-        }
-    }
-
-    auto reused = MultiReaderFromExisting<ComplexFloat64>(multi);
-
-    std::array<ComplexFloat64, NUM_SIGNALS> values{};
-    void* valuesPerSignal[NUM_SIGNALS]{&values[0], &values[1], &values[2]};
-
-    SizeT samples{1u};
-    reused.read(valuesPerSignal, &samples);
-
-    ASSERT_EQ(samples, 1u);
-    ASSERT_THAT(values, ElementsAreArray(oldReaderNextValues));
-}
+// The ReuseReader test was deleted (test plan Part C): MultiReaderFromExisting is removed by
+// the rework (spec 8.4) - recovery happens in the same reader instance via the state machine.
 
 TEST_F(MultiReaderTest, MultiReaderWithInputPort)
 {
@@ -4191,75 +4113,8 @@ TEST_F(MultiReaderTest, MultiReaderActive)
     ASSERT_EQ(count, NUM_SAMPLES);
 }
 
-TEST_F(MultiReaderTest, MultiReaderActiveCopyInactive)
-{
-    using namespace std::chrono_literals;
-
-    constexpr auto NUM_SIGNALS = SizeT{3};
-    constexpr auto NUM_SAMPLES = SizeT{10};
-    double values[NUM_SIGNALS][NUM_SAMPLES] = {};
-    double* valuesPerSignal[NUM_SIGNALS] = {values[0], values[1], values[2]};
-    int64_t domainValues[NUM_SIGNALS][NUM_SAMPLES] = {};
-    int64_t* domainValuesPerSignal[NUM_SIGNALS] = {domainValues[0], domainValues[1], domainValues[2]};
-    auto count = SizeT{0};
-
-    readSignals.reserve(NUM_SIGNALS);
-
-    auto signalReader = addSignal(0, NUM_SAMPLES, createDomainSignal());
-    addSignal(0, NUM_SAMPLES, createDomainSignal());
-    addSignal(0, NUM_SAMPLES, createDomainSignal());
-
-    auto portList = portsList();
-    auto multiReader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addInputPorts(portList).build();
-    auto status = daq::MultiReaderStatusPtr();
-
-    for (size_t i = 0; i < NUM_SIGNALS; i++)
-        portList[i].connect(readSignals[i].signal);
-
-    // send packets to active reader
-    SizeT packetIndex = 0;
-    sendPackets(packetIndex++);  // 0
-
-    // receive event packets
-    count = NUM_SAMPLES;
-    status = multiReader.readWithDomain(valuesPerSignal, domainValuesPerSignal, &count);
-
-    ASSERT_EQ(status.getReadStatus(), daq::ReadStatus::Event);
-    ASSERT_EQ(count, 0u);
-
-    // set inactive, try read and copy reader
-    multiReader.setActive(false);
-
-    count = NUM_SAMPLES;
-    status = multiReader.readWithDomain(valuesPerSignal, domainValuesPerSignal, &count);
-
-    ASSERT_EQ(status.getReadStatus(), daq::ReadStatus::Ok);
-    ASSERT_EQ(count, 0u);
-
-    auto multiReaderNew = MultiReaderFromExisting(multiReader);
-
-    ASSERT_FALSE(multiReaderNew.getActive());
-
-    // send packets to inactive copy of multireader
-    sendPackets(packetIndex++);  // 1
-
-    count = NUM_SAMPLES;
-    status = multiReaderNew.readWithDomain(valuesPerSignal, domainValuesPerSignal, &count);
-
-    ASSERT_EQ(status.getReadStatus(), daq::ReadStatus::Ok);
-    ASSERT_EQ(count, 0u);
-
-    // set new multireader active and try to read samples
-    multiReaderNew.setActive(true);
-
-    sendPackets(packetIndex++);  // 1
-
-    count = NUM_SAMPLES;
-    status = multiReaderNew.readWithDomain(valuesPerSignal, domainValuesPerSignal, &count);
-
-    ASSERT_EQ(status.getReadStatus(), daq::ReadStatus::Ok);
-    ASSERT_EQ(count, NUM_SAMPLES);
-}
+// The MultiReaderActiveCopyInactive test was deleted (test plan Part C): MultiReaderFromExisting
+// is removed by the rework (spec 8.4) - recovery happens in the same reader instance.
 
 TEST_F(MultiReaderTest, MultiReaderActiveFromPorts)
 {
@@ -4937,11 +4792,14 @@ TEST_F(MultiReaderTest, TestTickOffsetExceeded)
     auto status = multiReader.read(nullptr, &count);
     ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
 
+    // Behavior change (spec 8.4/8.5): tickOffsetTolerance is deprecated and ignored - the
+    // sub-tick epoch offsets no longer fail synchronization, and a sync failure would no
+    // longer deactivate the reader either. The read succeeds and the reader stays active.
     count = 10;
     status = multiReader.readWithDomain(dataBuffers.data(), domainBuffers.data(), &count);
     ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
-    ASSERT_EQ(count, 0u);
-    ASSERT_FALSE(multiReader.getActive());
+    ASSERT_EQ(count, 10u);
+    ASSERT_TRUE(multiReader.getActive());
 
     for (SizeT i = 0; i < kSignalCount; ++i)
     {
@@ -4999,11 +4857,14 @@ TEST_F(MultiReaderTest, TestTickOffsetExceededByOffset)
     auto status = multiReader.read(nullptr, &count);
     ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
 
+    // Behavior change (spec 5.7/8.4/8.5): tickOffsetTolerance is deprecated and ignored.
+    // These delta-2 grids are phase-shifted by one tick and share no common grid point, so
+    // the reader never synchronizes and returns no data - but a synchronization failure no
+    // longer deactivates the reader.
     count = 10;
     status = multiReader.readWithDomain(dataBuffers.data(), domainBuffers.data(), &count);
-    ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
     ASSERT_EQ(count, 0u);
-    ASSERT_EQ(multiReader.getActive(), false);
+    ASSERT_EQ(multiReader.getActive(), true);
 
     for (SizeT i = 0; i < kSignalCount; ++i)
     {
@@ -5411,9 +5272,13 @@ TEST_F(MultiReaderTest, CheckSpecificCase)
         auto available = multiReader.getAvailableCount();
         ASSERT_EQ(available, 0);
 
+        // Behavior change (spec 7.2/8.5): the two samples left in front of the descriptor
+        // change are less than one aligned block and are silently discarded, so the pending
+        // event surfaces on this read instead of staying buried behind an unreadable segment
         SizeT count{2};
         auto status = multiReader.read(data, &count);
-        ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
+        ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+        ASSERT_EQ(count, 0u);
     }
 
     {

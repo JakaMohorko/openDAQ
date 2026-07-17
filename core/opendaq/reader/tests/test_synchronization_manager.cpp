@@ -394,6 +394,47 @@ TEST_F(SyncManagerTest, SyncNoCommonTick)
     ASSERT_EQ(manager->getCommonStart(), nullptr);
 }
 
+TEST_F(SyncManagerTest, SyncIntersampleOffsetWithinHalfBlockAccepted)
+{
+    // b's grid is phase-shifted by one tick (a tenth of the sample period) - it can never
+    // reach an aligned tick exactly. The offset is well below half the aligned block, so the
+    // reached sample is unambiguous and synchronization succeeds with the offset preserved
+    // in b's own domain (spec section 4.3, direct-path domain output section 7.3).
+    auto& a = addInput("a", domainDescriptor(Ratio(1, 1000), 10));
+    auto& b = addInput("b", domainDescriptor(Ratio(1, 1000), 10));
+    send(a, 30, 500);
+    send(b, 30, 501);
+
+    ASSERT_TRUE(manager->buildCommonModel(readers(), slots(), 0).ok());
+    const auto result = manager->synchronize(readers(), slots());
+
+    ASSERT_EQ(result.outcome, SyncOutcome::Synchronized) << result.message;
+    ASSERT_EQ(commonTick(manager->getCommonStart()), 510);
+    ASSERT_EQ(firstTick(*a.reader), 510);
+    ASSERT_EQ(firstTick(*b.reader), 511);
+}
+
+TEST_F(SyncManagerTest, SyncHalfSamplePeriodOffsetWithinHalfBlockAccepted)
+{
+    // b is offset by half its own sample period, but the aligned block (two 500 Hz samples,
+    // four ticks) is larger - the reached sample is still strictly nearest to the candidate,
+    // so the pair synchronizes (the same shape as reading a 250 Hz and an odd-tick 500 Hz
+    // signal together). Contrast with SyncNoCommonTick, where the offset equals half the block.
+    auto& a = addInput("a", domainDescriptor(Ratio(1, 1000), 4));
+    auto& b = addInput("b", domainDescriptor(Ratio(1, 1000), 2));
+    send(a, 30, 500);
+    send(b, 30, 501);
+
+    ASSERT_TRUE(manager->buildCommonModel(readers(), slots(), 0).ok());
+    ASSERT_EQ(manager->getModel().blockLcm, 2u);
+    const auto result = manager->synchronize(readers(), slots());
+
+    ASSERT_EQ(result.outcome, SyncOutcome::Synchronized) << result.message;
+    ASSERT_EQ(commonTick(manager->getCommonStart()), 504);
+    ASSERT_EQ(firstTick(*a.reader), 504);
+    ASSERT_EQ(firstTick(*b.reader), 505);
+}
+
 TEST_F(SyncManagerTest, SyncStartOnFullUnitOfDomain)
 {
     manager->setStartOnFullUnitOfDomain(true);
