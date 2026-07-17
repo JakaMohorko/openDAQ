@@ -61,11 +61,9 @@ ErrCode InputSlot::packetReceived(IInputPort* /*inputPort*/)
     return daqTry([&]
     {
         lastPacketArrival.store(SteadyClock::now());
-        if (!packetPending.exchange(true))
-        {
-            if (auto* const target = getListener())
-                target->slotPacketPending(index);
-        }
+        packetPending = true;
+        if (auto* const target = getListener())
+            target->slotPacketReceived(index);
         return OPENDAQ_SUCCESS;
     });
 }
@@ -73,6 +71,11 @@ ErrCode InputSlot::packetReceived(IInputPort* /*inputPort*/)
 SizeT InputSlot::getIndex() const
 {
     return index;
+}
+
+void InputSlot::setIndex(SizeT newIndex)
+{
+    index = newIndex;
 }
 
 StringPtr InputSlot::getInputId() const

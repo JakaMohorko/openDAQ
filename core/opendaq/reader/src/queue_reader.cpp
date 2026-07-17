@@ -361,6 +361,46 @@ const DataDescriptorPtr& QueueReader::getDomainDescriptor() const
     return typeCtx.domainLayout.descriptor;
 }
 
+void QueueReader::seedDescriptors(const DataDescriptorPtr& valueDescriptor, const DataDescriptorPtr& domainDescriptor)
+{
+    if (valueDescriptor.assigned())
+        typeCtx.valueLayout.descriptor = valueDescriptor;
+    if (domainDescriptor.assigned())
+        typeCtx.domainLayout.descriptor = domainDescriptor;
+    if (typeCtx.valueLayout.descriptor.assigned() || typeCtx.domainLayout.descriptor.assigned())
+        parseCachedDescriptors();
+}
+
+SampleType QueueReader::getValueReadType() const
+{
+    return typeCtx.valueOut;
+}
+
+SampleType QueueReader::getDomainReadType() const
+{
+    return typeCtx.domainOut;
+}
+
+void QueueReader::setValueTransformFunction(const FunctionPtr& transform)
+{
+    typeCtx.valueTransform = transform;
+}
+
+void QueueReader::setDomainTransformFunction(const FunctionPtr& transform)
+{
+    typeCtx.domainTransform = transform;
+}
+
+const FunctionPtr& QueueReader::getValueTransformFunction() const
+{
+    return typeCtx.valueTransform;
+}
+
+const FunctionPtr& QueueReader::getDomainTransformFunction() const
+{
+    return typeCtx.domainTransform;
+}
+
 void QueueReader::updateConnection()
 {
     connection = port.getConnection();
@@ -655,7 +695,11 @@ void QueueReader::parseDomainDescriptor()
     }
 
     std::string origin = descriptor.getOrigin();
-    auto newOrigin = reader::tryParseEpoch(origin);
+    // A blank origin is a legitimate relative domain: samples count from the epoch zero point.
+    // Only a non-blank origin that fails to parse is an issue.
+    const bool originBlank = origin.find_first_not_of(" \t") == std::string::npos;
+    auto newOrigin = originBlank ? std::optional<std::chrono::system_clock::time_point>(std::chrono::system_clock::time_point{})
+                                 : reader::tryParseEpoch(origin);
     if (newOrigin.has_value() && typeCtx.domainInfo.epoch != newOrigin.value())
     {
         typeCtx.domainInfo.epoch = newOrigin.value();

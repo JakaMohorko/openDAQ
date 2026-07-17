@@ -36,7 +36,7 @@ struct RecordingSlotListener final : daq::IInputSlotListener
         lastIndex = slotIndex;
     }
 
-    void slotPacketPending(daq::SizeT slotIndex) override
+    void slotPacketReceived(daq::SizeT slotIndex) override
     {
         ++packetPendingCount;
         lastIndex = slotIndex;
@@ -139,7 +139,7 @@ TEST_F(InputSlotTest, DisconnectNotificationForwards)
     ASSERT_FALSE(slot->isConnected());
 }
 
-TEST_F(InputSlotTest, PacketPendingFiresOncePerCycle)
+TEST_F(InputSlotTest, PacketNotificationPerPacketAndPendingBit)
 {
     RecordingSlotListener listener;
     auto port = createPort();
@@ -150,18 +150,19 @@ TEST_F(InputSlotTest, PacketPendingFiresOncePerCycle)
     slot->clearPacketPending();
     listener.packetPendingCount = 0;
 
+    // Every packet notifies (the owner coalesces); the pending bit arms once per cycle
     sendDataPacket(5, 100);
     sendDataPacket(5, 105);
     sendDataPacket(5, 110);
 
-    ASSERT_EQ(listener.packetPendingCount, 1);
+    ASSERT_EQ(listener.packetPendingCount, 3);  // one per value packet on the connected port
     ASSERT_TRUE(slot->isPacketPending());
 
     ASSERT_TRUE(slot->clearPacketPending());
     ASSERT_FALSE(slot->isPacketPending());
 
     sendDataPacket(5, 115);
-    ASSERT_EQ(listener.packetPendingCount, 2);
+    ASSERT_TRUE(slot->isPacketPending());
 
     ASSERT_TRUE(slot->clearPacketPending());
     ASSERT_FALSE(slot->clearPacketPending());
