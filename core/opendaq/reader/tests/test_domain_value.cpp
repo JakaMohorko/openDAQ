@@ -94,33 +94,12 @@ TEST_F(DomainValueTest, StoresDaqRange)
     checkTypedDomainValue<daq::RangeType64>();
 }
 
-template <typename T>
-void checkTypedDomainValueComplex()
-{
-    auto epoch = daq::reader::parseEpoch("2026-01-01T00:00:00+00:00");
-    daq::DomainInfo domain = {epoch, daq::Ratio(1, 1000000)};
-
-    T tick = {12.3, 15.4};
-    std::unique_ptr<daq::DomainValue> value = std::make_unique<daq::DomainValueImpl<T>>(domain, tick);
-    ASSERT_TRUE(value->getDomain() == domain);
-
-    auto* castValue = dynamic_cast<daq::DomainValueImpl<T>*>(value.get());
-    ASSERT_TRUE(castValue != nullptr);
-
-    ASSERT_THROW(castValue->getValue(), daq::NotSupportedException);
-
-    T greaterTick = {16.2, 25.3};
-
-    std::unique_ptr<daq::DomainValue> greaterValue = std::make_unique<daq::DomainValueImpl<T>>(domain, greaterTick);
-    ASSERT_THROW((void) (*value < *greaterValue), daq::NotSupportedException);
-    ASSERT_THROW((void) (*greaterValue < *value), daq::NotSupportedException);
-}
-
-TEST_F(DomainValueTest, ThrowsForComplex)
-{
-    checkTypedDomainValueComplex<daq::ComplexFloat32>();
-    checkTypedDomainValueComplex<daq::ComplexFloat64>();
-}
+// Complex values are rejected at compile time (#15): the reading utilities never
+// instantiate DomainValueImpl for a sample type that cannot represent a domain value
+static_assert(!daq::isDomainValueType<daq::ComplexFloat32>);
+static_assert(!daq::isDomainValueType<daq::ComplexFloat64>);
+static_assert(daq::isDomainValueType<daq::Int>);
+static_assert(daq::isDomainValueType<daq::RangeType64>);
 
 TEST_F(DomainValueTest, Scaling)
 {
@@ -136,11 +115,11 @@ TEST_F(DomainValueTest, Scaling)
     auto value1 = std::make_unique<daq::DomainValueImpl<daq::Int>>(domain1, 10000);
     ASSERT_EQ(value1->getValue(), 10000u);
 
-    auto value1InCommonDomain = value1->toCommonDomain(commonDomain);
+    auto value1InCommonDomain = value1->toDomain(commonDomain);
     auto* value1InCommonDomainP = dynamic_cast<daq::DomainValueImpl<daq::Int>*>(value1InCommonDomain.get());
     ASSERT_EQ(value1InCommonDomainP->getValue(), 2000000u);
 
-    auto value1BackInRegularDomain = value1InCommonDomain->fromCommonDomain(domain1);
+    auto value1BackInRegularDomain = value1InCommonDomain->fromDomain(domain1);
     auto* value1BackInRegularDomainP = dynamic_cast<daq::DomainValueImpl<daq::Int>*>(value1BackInRegularDomain.get());
     ASSERT_EQ(value1BackInRegularDomainP->getValue(), 10000u);
 }
@@ -161,12 +140,12 @@ TEST_F(DomainValueTest, Offset)
     auto value1 = std::make_unique<daq::DomainValueImpl<daq::Int>>(domain1, 13000);
     ASSERT_EQ(value1->getValue(), 13000u);
 
-    auto value1InCommonDomain = value1->toCommonDomain(commonDomain);
+    auto value1InCommonDomain = value1->toDomain(commonDomain);
     auto* value1InCommonDomainP = dynamic_cast<daq::DomainValueImpl<daq::Int>*>(value1InCommonDomain.get());
     ASSERT_EQ(value1InCommonDomainP->getValue(), 63000u);
     ASSERT_EQ(value1InCommonDomainP->getDomain(), commonDomain);
 
-    auto value1BackInRegularDomain = value1InCommonDomain->fromCommonDomain(domain1);
+    auto value1BackInRegularDomain = value1InCommonDomain->fromDomain(domain1);
     auto* value1BackInRegularDomainP = dynamic_cast<daq::DomainValueImpl<daq::Int>*>(value1BackInRegularDomain.get());
     ASSERT_EQ(value1BackInRegularDomainP->getValue(), 13000u);
     ASSERT_EQ(value1BackInRegularDomainP->getDomain(), domain1);
@@ -187,7 +166,7 @@ TEST_F(DomainValueTest, SameDomainSameType)
 
     auto value1 = std::make_unique<daq::DomainValueImpl<daq::Int>>(domain1, 13000);
     daq::DomainValue* value1P = value1.get();
-    auto value1InCommonDomain = value1->toCommonDomain(commonDomain);
+    auto value1InCommonDomain = value1->toDomain(commonDomain);
     auto* value1InCommonDomainP = dynamic_cast<daq::DomainValueImpl<daq::Int>*>(value1InCommonDomain.get());
 
     ASSERT_THROW((void) (*value1P < *value1InCommonDomainP), daq::InvalidParameterException);
@@ -211,9 +190,9 @@ TEST_F(DomainValueTest, RealisticTimeStamp)
     daq::DomainInfo domain1 = {epoch1, resolution1};
 
     auto value1 = std::make_unique<daq::DomainValueImpl<daq::Int>>(domain1, 50000001);
-    auto value1InCommonDomain = value1->toCommonDomain(commonDomain);
+    auto value1InCommonDomain = value1->toDomain(commonDomain);
 
-    auto value1BackInRegularDomain = value1InCommonDomain->fromCommonDomain(domain1);
+    auto value1BackInRegularDomain = value1InCommonDomain->fromDomain(domain1);
     auto* value1BackInRegularDomainP = dynamic_cast<daq::DomainValueImpl<daq::Int>*>(value1BackInRegularDomain.get());
     ASSERT_EQ(value1BackInRegularDomainP->getValue(), value1->getValue());
 }
@@ -230,8 +209,8 @@ TEST_F(DomainValueTest, NonRepresentibleConversions)
 
     {
         std::unique_ptr<daq::DomainValue> valueInFine = std::make_unique<daq::DomainValueImpl<daq::Int>>(commonDomain, 1002); // 1002 / 1 000 000
-        auto valueInCoarse = valueInFine->fromCommonDomain(coarseDomain); // 1 / 1 000
-        auto valueBackInFine = valueInCoarse->toCommonDomain(commonDomain); // 1 000 / 1 000 000
+        auto valueInCoarse = valueInFine->fromDomain(coarseDomain); // 1 / 1 000
+        auto valueBackInFine = valueInCoarse->toDomain(commonDomain); // 1 000 / 1 000 000
     
         // During a lossful conversion fine1->coarse->fine2 where coarse == fine2 it may be fine2 != fine1. Currently, the nearest tick is taken in the coarse domain.
         // It may be required that if we find index that satisfies domain[index] >= coarse we found the correct sample.
@@ -241,8 +220,8 @@ TEST_F(DomainValueTest, NonRepresentibleConversions)
 
     {
         std::unique_ptr<daq::DomainValue> valueInFine = std::make_unique<daq::DomainValueImpl<daq::Int>>(commonDomain, 998); // 998 / 1 000 000
-        auto valueInCoarse = valueInFine->fromCommonDomain(coarseDomain); // 1 / 1 000
-        auto valueBackInFine = valueInCoarse->toCommonDomain(commonDomain); // 1 000 / 1 000 000
+        auto valueInCoarse = valueInFine->fromDomain(coarseDomain); // 1 / 1 000
+        auto valueBackInFine = valueInCoarse->toDomain(commonDomain); // 1 000 / 1 000 000
     
         // Rounding up case
         ASSERT_TRUE(*valueInFine < *valueBackInFine);
@@ -261,16 +240,16 @@ TEST_F(DomainValueTest, NonRepresentibleConversions2)
 
     {
         std::unique_ptr<daq::DomainValue> valueInFine = std::make_unique<daq::DomainValueImpl<daq::Int>>(commonDomain, 2);
-        auto valueInCoarse = valueInFine->fromCommonDomain(coarseDomain);
-        auto valueBackInFine = valueInCoarse->toCommonDomain(commonDomain);
+        auto valueInCoarse = valueInFine->fromDomain(coarseDomain);
+        auto valueBackInFine = valueInCoarse->toDomain(commonDomain);
     
         ASSERT_FALSE(*valueInFine < *valueBackInFine || *valueBackInFine < *valueInFine);
     }
     
     {
         std::unique_ptr<daq::DomainValue> valueInCoarse = std::make_unique<daq::DomainValueImpl<daq::Int>>(coarseDomain, 5);
-        auto valueInFine = valueInCoarse->toCommonDomain(commonDomain);
-        auto valueBackInCoarse = valueInFine->fromCommonDomain(coarseDomain);
+        auto valueInFine = valueInCoarse->toDomain(commonDomain);
+        auto valueBackInCoarse = valueInFine->fromDomain(coarseDomain);
     
         ASSERT_FALSE(*valueInCoarse < *valueBackInCoarse || *valueBackInCoarse < *valueInCoarse);
     }

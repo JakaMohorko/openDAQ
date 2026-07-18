@@ -138,19 +138,19 @@ void QueueReader::adoptPackets()
     }
 }
 
-DomainInfo QueueReader::getDomainInfo()
+void QueueReader::drain()
 {
     checkConnection();
-
     drainConnection();
+}
+
+DomainInfo QueueReader::getDomainInfo() const
+{
     return typeCtx.domainInfo;
 }
 
-std::unique_ptr<DomainValue> QueueReader::getFirstSampleDomainValue()
+std::unique_ptr<DomainValue> QueueReader::getFirstSampleDomainValue() const
 {
-    checkConnection();
-    drainConnection();
-
     if (packets.empty() || packets.front().getType() != PacketType::Data)
     {
         return nullptr;
@@ -168,9 +168,6 @@ std::unique_ptr<DomainValue> QueueReader::getFirstSampleDomainValue()
 
 AdvanceOutcome QueueReader::advanceToDomainValue(const DomainValue* domainValue)
 {
-    checkConnection();
-    drainConnection();
-
     // Pending events must be popped before advancing - the owner would otherwise
     // step over a reportable event boundary without handling it.
     if (!events.empty())
@@ -248,7 +245,7 @@ AdvanceOutcome QueueReader::advanceToDomainValue(const DomainValue* domainValue)
     return {AdvanceResult::NeedMoreData, nullptr};
 }
 
-std::optional<std::chrono::system_clock::time_point> QueueReader::getFirstSampleAbsoluteTime()
+std::optional<std::chrono::system_clock::time_point> QueueReader::getFirstSampleAbsoluteTime() const
 {
     const auto firstSample = getFirstSampleDomainValue();
     if (!firstSample)
@@ -256,11 +253,8 @@ std::optional<std::chrono::system_clock::time_point> QueueReader::getFirstSample
     return firstSample->toAbsoluteTime();
 }
 
-Int QueueReader::getSampleRate()
+Int QueueReader::getSampleRate() const
 {
-    checkConnection();
-    drainConnection();
-
     return sampleRate;
 }
 
@@ -319,9 +313,6 @@ void QueueReader::dropForInactive()
 
 void QueueReader::dropOutdatedPacketSegments()
 {
-    checkConnection();
-    drainConnection();
-
     while (getNumberOfEventPacketsInQueue() >= 2)
     {
         auto foundEvent = dropUntilEvent();
@@ -332,11 +323,8 @@ void QueueReader::dropOutdatedPacketSegments()
     consumeLeadingEventPackets();
 }
 
-SizeT QueueReader::getAvailableSamplesNative()
+SizeT QueueReader::getAvailableSamplesNative() const
 {
-    checkConnection();
-    drainConnection();
-
     SizeT count = 0;
     SizeT packetReadingPosition = readingPosition;
     for (const auto& packet : packets)
@@ -353,33 +341,26 @@ SizeT QueueReader::getAvailableSamplesNative()
     return count;
 }
 
-SizeT QueueReader::getAvailableSamples()
+SizeT QueueReader::getAvailableSamples() const
 {
     return getAvailableSamplesNative() * sampleRateDivider;
 }
 
-// COMMENT: Should this be in the divided or non-divided rate? Which is more clear?
-SizeT QueueReader::getAvailableSamplesUntilEvent()
+SizeT QueueReader::getAvailableSamplesUntilEvent() const
 {
     // The native counter stops at the first non-data packet, so the available count
     // already ends at the next event boundary; this alias makes that contract explicit.
+    // Counts are in the common-rate equivalent: the owner-facing unit (spec section 7.1).
     return getAvailableSamplesNative() * sampleRateDivider;
 }
 
-bool QueueReader::hasPendingEvents()
-{ 
-    // COMMENT: These connection checks and drained don't make sense here. This results in change of state
-    //          in the middle of a user API call. We should probably just: check if readers are ready -> 
-    //          update internal state -> execute command (getAvailable, read...)
-    checkConnection();
-    drainConnection();
+bool QueueReader::hasPendingEvents() const
+{
     return !events.empty();
 }
 
 EventPacketPtr QueueReader::popFrontEvent()
 {
-    checkConnection();
-    drainConnection();
     if (events.empty())
         return nullptr;
 
@@ -388,14 +369,11 @@ EventPacketPtr QueueReader::popFrontEvent()
     return eventPacket;
 }
 
-// COMMENT: Is this still needed? We probably just needs a "ready" flag the reader, the other error states are more explicit now.
-bool QueueReader::isValid()
+bool QueueReader::isValid() const
 {
-    if (!connection.assigned())
-        return false;
-
-    drainConnection();
-    return issues.empty();
+    // A convenience over the issue flags: connected and free of descriptor issues (#11) -
+    // the owner consumes the per-slot issues for its Incompatible diagnostics
+    return connection.assigned() && issues.empty();
 }
 
 void QueueReader::domainChangeHandled()
@@ -512,6 +490,7 @@ AdvanceResult QueueReader::readNative(void* valueBuffer, void* domainBuffer, Siz
     if (*count == 0)
         return AdvanceResult::Success;
 
+    // The owner drains at its evaluation points; pending events block data operations
     if (hasPendingEvents())
     {
         *count = 0;
@@ -730,20 +709,12 @@ void QueueReader::parseDomainDescriptor()
         typeCtx.domainIn = postScaling.getInputSampleType();
     }
 
-    typeCtx.domainLayout.rawSampleSize = descriptor.getRawSampleSize();
+    // One layout builder for every reader (#17); the scalar check stays here because it is
+    // a domain-specific constraint, not a layout property
+    typeCtx.domainLayout = TypedReadingUtils::createReadLayout(descriptor);
     {
-        SizeT valuesPerSample = 1;
-        SizeT dimensionCount = 0;
-        auto dimensions = descriptor.getDimensions();
-        if (dimensions.assigned())
-        {
-            dimensionCount = dimensions.getCount();
-            for (const auto& dimension : dimensions)
-                valuesPerSample *= static_cast<SizeT>(dimension.getSize());
-        }
-        typeCtx.domainLayout.valuesPerSample = valuesPerSample;
-        // Domain samples must be scalar - a vector timestamp has no meaning
-        issues.set(QueueReaderIssue::UnsupportedDimensions, dimensionCount != 0);
+        const auto dimensions = descriptor.getDimensions();
+        issues.set(QueueReaderIssue::DomainNotScalar, dimensions.assigned() && dimensions.getCount() != 0);
     }
 
     typeCtx.domainInfo = DomainInfo::fromDescriptor(descriptor);
@@ -854,6 +825,8 @@ void QueueReader::parseDomainDescriptor()
 void QueueReader::parseValueDescriptor()
 {
     auto& descriptor = typeCtx.valueLayout.descriptor;
+    if (!descriptor.assigned())
+        return;
 
     auto postScaling = descriptor.getPostScaling();
     if (!postScaling.assigned() || readMode == ReadMode::Scaled)
@@ -865,18 +838,9 @@ void QueueReader::parseValueDescriptor()
         typeCtx.valueIn = postScaling.getInputSampleType();
     }
 
-    {
-        typeCtx.valueLayout.rawSampleSize = descriptor.getRawSampleSize();
-        // Values of any rank are readable - one sample is a fixed-size block of product-of-dimensions values
-        SizeT valuesPerSample = 1;
-        auto dimensions = descriptor.getDimensions();
-        if (dimensions.assigned())
-        {
-            for (const auto& dimension : dimensions)
-                valuesPerSample *= static_cast<SizeT>(dimension.getSize());
-        }
-        typeCtx.valueLayout.valuesPerSample = valuesPerSample;
-    }
+    // Values of any rank are readable - one sample is a fixed-size block of
+    // product-of-dimensions values (the one layout builder computes that, #17)
+    typeCtx.valueLayout = TypedReadingUtils::createReadLayout(descriptor);
 
     if (typeCtx.valueOut == SampleType::Undefined)  // Dynamically determine output type
     {

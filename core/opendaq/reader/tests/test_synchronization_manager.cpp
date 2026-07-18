@@ -61,6 +61,7 @@ protected:
             input.port, SampleType::Float64, SampleType::Int64, ReadMode::Scaled, loggerComponent, false);
 
         // Consume the initial descriptor event so the cached descriptors are active
+        input.reader->drain();
         if (input.reader->hasPendingEvents())
             input.reader->popFrontEvent();
         return input;
@@ -75,6 +76,8 @@ protected:
             values[i] = static_cast<double>(i);
         input.domainSignal.sendPacket(domainPacket);
         input.signal.sendPacket(valuePacket);
+        // Queues refresh only at explicit drain points (#10)
+        input.reader->drain();
     }
 
     std::vector<QueueReader*> readers() const

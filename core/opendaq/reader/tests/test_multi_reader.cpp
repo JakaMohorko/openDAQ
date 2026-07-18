@@ -422,8 +422,10 @@ TEST_F(MultiReaderTest, IsSynchronized)
     sig1.createAndSendPacket(2);
     sig2.createAndSendPacket(2);
 
-    // Behavior change (spec 6.2): the reader synchronizes eagerly when data arrives
-    // (SameThread notification), not lazily on the next accessor call
+    // Behavior change (spec 6.2): the reader synchronizes eagerly when data arrives - the
+    // coalesced evaluation runs on the scheduler, so wait for it instead of calling an
+    // accessor that would evaluate lazily (getIsSynchronized only inspects the state)
+    context.getScheduler().waitAll();
     ASSERT_TRUE(multi.getIsSynchronized());
 
     available = multi.getAvailableCount();

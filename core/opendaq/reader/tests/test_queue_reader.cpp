@@ -35,14 +35,36 @@ protected:
         signal.setDomainSignal(domainSignal);
     }
 
+    // The owner drains at explicit points (#10); this harness mirrors that by draining the
+    // reader under test after every stimulus so the assertions keep reading naturally
+    QueueReader& createReader(const InputPortConfigPtr& port,
+                              SampleType valueReadType = SampleType::Float64,
+                              SampleType domainReadType = SampleType::Int64,
+                              ReadMode mode = ReadMode::Scaled)
+    {
+        readerHolder = std::make_unique<QueueReader>(port, valueReadType, domainReadType, mode, loggerComponent, false);
+        drainTarget = readerHolder.get();
+        if (port.getConnection().assigned())
+            drainTarget->drain();
+        return *drainTarget;
+    }
+
+    void drainReader()
+    {
+        if (drainTarget != nullptr)
+            drainTarget->drain();
+    }
+
     void setDomainDescriptor(const DataDescriptorPtr& descriptor)
     {
         domainSignal.setDescriptor(descriptor);
+        drainReader();
     }
 
     void setValueDescriptor(const DataDescriptorPtr& descriptor)
     {
         signal.setDescriptor(descriptor);
+        drainReader();
     }
 
     void setPacketSize(SizeT size)
@@ -74,6 +96,7 @@ protected:
 
         domainSignal.sendPacket(domainPacket);
         signal.sendPacket(valuePacket);
+        drainReader();
 
         samples += packetSize;
         offset += packetSize * delta;
@@ -87,6 +110,8 @@ protected:
     SizeT samples = 0;
 
     SignalConfigPtr domainSignal;
+    std::unique_ptr<QueueReader> readerHolder;
+    QueueReader* drainTarget = nullptr;
 };
 
 void assertReaderAtDomainValue(QueueReader& reader, Int tick)
@@ -118,7 +143,7 @@ TEST_F(QueueReaderTest, AdvancePastEnd)
     auto inputPort = InputPort(context, nullptr, "port", true);
     inputPort.connect(signal);
 
-    QueueReader reader = QueueReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled, loggerComponent, false);
+    auto& reader = createReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled);
 
     for (int c = 0; c < 3; ++c)
     {
@@ -189,7 +214,7 @@ TEST_F(QueueReaderTest, DomainChangeDetection)
     auto inputPort = InputPort(context, nullptr, "port", true);
     inputPort.connect(signal);
 
-    QueueReader reader = QueueReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled, loggerComponent, false);
+    auto& reader = createReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled);
 
     sendNextPacket();
 
@@ -276,7 +301,7 @@ TEST_F(QueueReaderTest, CreateBeforeConnection)
 {
     auto inputPort = InputPort(context, nullptr, "port", true);
 
-    QueueReader reader = QueueReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled, loggerComponent, false);
+    auto& reader = createReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled);
     std::unique_ptr<DomainValue> domainValue =
         std::make_unique<DomainValueImpl<Int>>(DomainInfo{std::chrono::system_clock::time_point{}, Ratio(1, 1000)}, 512);
 
@@ -284,13 +309,16 @@ TEST_F(QueueReaderTest, CreateBeforeConnection)
     ASSERT_NO_THROW(valid = reader.isValid());
     ASSERT_FALSE(valid);
 
-    ASSERT_THROW(reader.getDomainInfo(), InvalidOperationException);
-    ASSERT_THROW(reader.getFirstSampleDomainValue(), InvalidOperationException);
-    ASSERT_THROW(reader.advanceToDomainValue(domainValue.get()), InvalidOperationException);
-    ASSERT_THROW(reader.getSampleRate(), InvalidOperationException);
-    ASSERT_THROW(reader.dropOutdatedPacketSegments(), InvalidOperationException);
-    ASSERT_THROW(reader.hasPendingEvents(), InvalidOperationException);
-    ASSERT_THROW(reader.popFrontEvent(), InvalidOperationException);
+    // The connection requirement lives on the explicit drain point (#10); every accessor
+    // is a pure query over the (empty) adopted state
+    ASSERT_THROW(reader.drain(), InvalidOperationException);
+    ASSERT_NO_THROW(reader.getDomainInfo());
+    ASSERT_EQ(reader.getFirstSampleDomainValue(), nullptr);
+    ASSERT_EQ(reader.advanceToDomainValue(domainValue.get()).result, AdvanceResult::NeedMoreData);
+    ASSERT_NO_THROW(reader.getSampleRate());
+    ASSERT_NO_THROW(reader.dropOutdatedPacketSegments());
+    ASSERT_FALSE(reader.hasPendingEvents());
+    ASSERT_EQ(reader.popFrontEvent(), nullptr);
 }
 
 TEST_F(QueueReaderTest, CreateBeforeConnectionRecovery)
@@ -314,10 +342,10 @@ TEST_F(QueueReaderTest, CreateBeforeConnectionRecovery)
 
     auto inputPort = InputPort(context, nullptr, "port", true);
 
-    QueueReader reader = QueueReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled, loggerComponent, false);
+    auto& reader = createReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled);
 
     ASSERT_FALSE(reader.isValid());
-    ASSERT_THROW(reader.getDomainInfo(), InvalidOperationException);
+    ASSERT_THROW(reader.drain(), InvalidOperationException);
 
     inputPort.connect(signal);
     reader.updateConnection();
@@ -362,10 +390,10 @@ TEST_F(QueueReaderTest, InvalidDomainAndBack)
     auto inputPort = InputPort(context, nullptr, "port", true);
     inputPort.setNotificationMethod(PacketReadyNotification::SameThread);
 
-    QueueReader reader = QueueReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled, loggerComponent, false);
+    auto& reader = createReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled);
 
     ASSERT_FALSE(reader.isValid());
-    ASSERT_THROW(reader.getDomainInfo(), InvalidOperationException);
+    ASSERT_THROW(reader.drain(), InvalidOperationException);
 
     inputPort.connect(signal);
     reader.updateConnection();
@@ -550,7 +578,7 @@ TEST_F(QueueReaderTest, CheckAdvanceDomainEdgeCases)
 
     auto inputPort = InputPort(context, nullptr, "port", true);
     inputPort.connect(signal);
-    QueueReader reader = QueueReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled, loggerComponent, false);
+    auto& reader = createReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled);
 
     sendNextPacket(); // [500 - 504]
     sendNextPacket();
@@ -686,7 +714,7 @@ TEST_F(QueueReaderTest, DropOutdatedPacketSegments)
 
     auto inputPort = InputPort(context, nullptr, "port", true);
     inputPort.connect(signal);
-    QueueReader reader = QueueReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled, loggerComponent, false);
+    auto& reader = createReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled);
 
     sendNextPacket(); // [500 - 504]
     sendNextPacket();
@@ -752,7 +780,7 @@ TEST_F(QueueReaderTest, DiscardLeftoverSegment)
 
     auto inputPort = InputPort(context, nullptr, "port", true);
     inputPort.connect(signal);
-    QueueReader reader = QueueReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled, loggerComponent, false);
+    auto& reader = createReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled);
 
     sendNextPacket(); // [500 - 504]
     sendNextPacket();
@@ -848,7 +876,7 @@ TEST_F(QueueReaderTest, LeftoverSegmentPartialPackets)
 
     auto inputPort = InputPort(context, nullptr, "port", true);
     inputPort.connect(signal);
-    QueueReader reader = QueueReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled, loggerComponent, false);
+    auto& reader = createReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled);
 
     sendNextPacket(); // [500 - 699]
     sendNextPacket(); // [700 - 899]
@@ -926,7 +954,7 @@ TEST_F(QueueReaderTest, AdvanceReachedValueBetweenTicks)
 
     auto inputPort = InputPort(context, nullptr, "port", true);
     inputPort.connect(signal);
-    QueueReader reader = QueueReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled, loggerComponent, false);
+    auto& reader = createReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled);
 
     sendNextPacket();
     reader.popFrontEvent();
@@ -961,7 +989,7 @@ TEST_F(QueueReaderTest, FirstSampleAbsoluteTime)
 
     auto inputPort = InputPort(context, nullptr, "port", true);
     inputPort.connect(signal);
-    QueueReader reader = QueueReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled, loggerComponent, false);
+    auto& reader = createReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled);
 
     // No data yet - no absolute time
     ASSERT_FALSE(reader.getFirstSampleAbsoluteTime().has_value());
@@ -993,7 +1021,7 @@ TEST_F(QueueReaderTest, AvailableUntilEventMatchesSegment)
 
     auto inputPort = InputPort(context, nullptr, "port", true);
     inputPort.connect(signal);
-    QueueReader reader = QueueReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled, loggerComponent, false);
+    auto& reader = createReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled);
 
     sendNextPacket(); // [500 - 504]
     sendNextPacket(); // [505 - 509]
@@ -1038,7 +1066,7 @@ TEST_F(QueueReaderTest, VectorValueSignalLayout)
 
     auto inputPort = InputPort(context, nullptr, "port", true);
     inputPort.connect(signal);
-    QueueReader reader = QueueReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled, loggerComponent, false);
+    auto& reader = createReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled);
 
     const auto domainPacket = DataPacket(domainSignal.getDescriptor(), sampleCount, 500);
     const auto valuePacket = DataPacketWithDomain(domainPacket, signal.getDescriptor(), sampleCount);
@@ -1047,6 +1075,7 @@ TEST_F(QueueReaderTest, VectorValueSignalLayout)
         values[i] = static_cast<double>(i);
     domainSignal.sendPacket(domainPacket);
     signal.sendPacket(valuePacket);
+    drainReader();
 
     reader.popFrontEvent();
     ASSERT_TRUE(reader.isValid());
@@ -1086,7 +1115,7 @@ TEST_F(QueueReaderTest, MatrixValueSignalReadable)
 
     auto inputPort = InputPort(context, nullptr, "port", true);
     inputPort.connect(signal);
-    QueueReader reader = QueueReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled, loggerComponent, false);
+    auto& reader = createReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled);
 
     const auto domainPacket = DataPacket(domainSignal.getDescriptor(), sampleCount, 500);
     const auto valuePacket = DataPacketWithDomain(domainPacket, signal.getDescriptor(), sampleCount);
@@ -1095,6 +1124,7 @@ TEST_F(QueueReaderTest, MatrixValueSignalReadable)
         values[i] = static_cast<double>(i);
     domainSignal.sendPacket(domainPacket);
     signal.sendPacket(valuePacket);
+    drainReader();
 
     reader.popFrontEvent();
     ASSERT_TRUE(reader.isValid());
@@ -1143,7 +1173,7 @@ TEST_F(QueueReaderTest, StructValueSignalReadable)
     auto inputPort = InputPort(context, nullptr, "port", true);
     inputPort.connect(signal);
     // Undefined read type resolves dynamically to the signal's type - structs read as raw bytes
-    QueueReader reader = QueueReader(inputPort, SampleType::Undefined, SampleType::Int64, ReadMode::Scaled, loggerComponent, false);
+    auto& reader = createReader(inputPort, SampleType::Undefined, SampleType::Int64, ReadMode::Scaled);
 
     const auto domainPacket = DataPacket(domainSignal.getDescriptor(), sampleCount, 500);
     const auto valuePacket = DataPacketWithDomain(domainPacket, signal.getDescriptor(), sampleCount);
@@ -1155,6 +1185,7 @@ TEST_F(QueueReaderTest, StructValueSignalReadable)
     }
     domainSignal.sendPacket(domainPacket);
     signal.sendPacket(valuePacket);
+    drainReader();
 
     reader.popFrontEvent();
     ASSERT_TRUE(reader.isValid());
@@ -1189,7 +1220,7 @@ TEST_F(QueueReaderTest, DomainWithDimensionsRejected)
 
     auto inputPort = InputPort(context, nullptr, "port", true);
     inputPort.connect(signal);
-    QueueReader reader = QueueReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled, loggerComponent, false);
+    auto& reader = createReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled);
 
     reader.popFrontEvent();
     ASSERT_FALSE(reader.isValid());
@@ -1216,7 +1247,7 @@ TEST_F(QueueReaderTest, TestReading)
 
     auto inputPort = InputPort(context, nullptr, "port", true);
     inputPort.connect(signal);
-    QueueReader reader = QueueReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled, loggerComponent, false);
+    auto& reader = createReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled);
 
     sendNextPacket(); // [500 - 504]
     sendNextPacket();
@@ -1311,7 +1342,7 @@ TEST_F(QueueReaderTest, ReadingEdgeCases)
 
     auto inputPort = InputPort(context, nullptr, "port", true);
     inputPort.connect(signal);
-    QueueReader reader = QueueReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled, loggerComponent, false);
+    auto& reader = createReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled);
 
     sendNextPacket(); // [500 - 504]
     sendNextPacket();
