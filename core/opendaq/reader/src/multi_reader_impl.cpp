@@ -25,6 +25,8 @@ BEGIN_NAMESPACE_OPENDAQ
 
 // --- Construction -----------------------------------------------------------------------------
 
+// COMMENT: I would remove this constructor and delegate it to the builder constructor.
+//          In general, the builder constructor should be used in every case.
 MultiReaderImpl::MultiReaderImpl(const ListPtr<IComponent>& list,
                                  SampleType valueReadType,
                                  SampleType domainReadType,
@@ -252,6 +254,7 @@ MultiReaderImpl::~MultiReaderImpl()
     }
 }
 
+// COMMENT: This feels like it's doing two unconnected things for no reason.
 void MultiReaderImpl::checkListSizeAndCacheContext(const ListPtr<IComponent>& list)
 {
     if (!list.assigned())
@@ -261,6 +264,7 @@ void MultiReaderImpl::checkListSizeAndCacheContext(const ListPtr<IComponent>& li
     context = list[0].getContext();
 }
 
+// COMMENT: Is this needed? We should cache it when we check if all the source components are the same.
 MultiReaderImpl::InputType MultiReaderImpl::sourceComponentsType(const ListPtr<IComponent>& sources) const
 {
     if (sources.getCount() == 0)
@@ -439,6 +443,7 @@ std::vector<QueueReader*> MultiReaderImpl::collectUsedReaders(std::vector<SizeT>
     return readers;
 }
 
+// COMMENT: What does "main descriptors locked" mean?
 void MultiReaderImpl::updateMainDescriptorsLocked()
 {
     if (slots.empty())
@@ -474,6 +479,12 @@ SizeT MultiReaderImpl::mainSlotIndexLocked() const
     return findSlotByIdLocked(mainInputId);
 }
 
+// COMMENT: It seems like this function is called a lot. Even on every read. It looks very bulky, expensive
+//          and does a lot of checks. Are all of these necessary? Are all relevant to every time this is evaluated?
+//          I'd imagine that once we're synced no checks at all need to be done until: an event is encountered or 
+//          data is lost. We're now doing a bulk check of every single thing in too many places.
+
+// COMMENT: Same here, what does "state locked" mean? The "locked" naming seems odd.
 void MultiReaderImpl::evaluateStateLocked()
 {
     // 1. Error is terminal; inactivity gates everything else
@@ -488,6 +499,10 @@ void MultiReaderImpl::evaluateStateLocked()
         for (SizeT i = 0; i < slots.size(); ++i)
             dataLossMonitor->setMonitored(i, false);
 
+        // COMMENT: This should have clearer documentation and reasoning for why this is here.
+        //          Events on "unused" ports should be reported to the user so they can react to them.
+        // COMMENT: The "inactive" and "used" terminology is getting mixed up.
+        
         // Inactivity suspends data flow only: descriptor/gap events are enqueued regardless
         // of the active flag and must still surface through reads (and through the
         // dataAvailable callback, which is why the event bits are maintained here too)

@@ -30,6 +30,12 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Runtime states of the multi reader. Every state except Error is recoverable in the
  * same reader instance; the sensible recovery actions follow from the state, the affected
  * inputs and the state message.
+ *
+ * // COMMENT: There's too many statuses here. This is user-facing API, they shouldn't need this information to react 
+ * //          to read outcomes. The state here should provide information that the FB or application can react to.
+ * //          We don't really want each FB or application to have a giant switch for the state. The only actions an app/fb
+ * //          can take are: setActive(false) -> stop reading or setUnused(port) -> read only a subset of inputs.
+ * //          Compact the states into app/fb relevant ones. Move the rest to the string message output.
  */
 enum class MultiReaderState : EnumType
 {
@@ -62,7 +68,6 @@ DECLARE_OPENDAQ_INTERFACE(IMultiReaderStatus, IReaderStatus)
      */
     virtual ErrCode INTERFACE_FUNC getEventPackets(IDict** eventPackets) = 0;
 
-
     /*!
      * @brief Retrieves the combined descriptor-changed event packet carrying the value descriptor of
      * the main input and the common output domain descriptor (the domain in which the status offset
@@ -83,8 +88,16 @@ DECLARE_OPENDAQ_INTERFACE(IMultiReaderStatus, IReaderStatus)
      * @param[out] message The diagnostic message; empty when there is nothing to report.
      */
     virtual ErrCode INTERFACE_FUNC getStateMessage(IString** message) = 0;
-
+   
     /*!
+     * // COMMENT: The bottom few API methods don't make sense. All events are already obtained through `getEventPackets`.
+     * //          We might rework that part of the API later, but not now. What we actually need is per-input statuses.
+     * //          When the reader is in an error state, the multi reader owner should be able to know which input ports
+     * //          failed to sync/have incompatible descriptors, have data loss... They should be able to set those as 
+     * //          unused and continue operation. This should be an addition to the sum reader fb - it should have a property
+     * //          where the user can choose that the multi reader always works and ignores faulty inputs. It should as a status
+     * //          report which ones are failing.
+     * 
      * @brief Retrieves the number of inputs affected by the reported condition.
      * @param[out] count The number of affected inputs.
      */
@@ -126,6 +139,9 @@ OPENDAQ_DECLARE_CLASS_FACTORY (
     INumber*, offset
 )
 
+// COMMENT: If we have such a large factory, we should instead introduce a builder object. We should, however,
+//          consider if we need all of these fields. 
+//
 // The status validity is derived from the state (Incompatible, SynchronizationFailed and
 // Error are the invalid-stream conditions), so the extended factory does not take a valid flag.
 // [elementType(affectedInputIndices, IInteger)]

@@ -94,6 +94,8 @@ public:
     ErrCode INTERFACE_FUNC getInputUsed(IString* id, Bool* isUsed) override;
     ErrCode INTERFACE_FUNC setMainInput(IString* id) override;
     ErrCode INTERFACE_FUNC getMainInput(IString** id) override;
+
+    // COMMENT: As mentioned, these should not be on the Multi Reader interface.
     ErrCode INTERFACE_FUNC setMaxSynchronizationDistance(IRatio* distance) override;
     ErrCode INTERFACE_FUNC getMaxSynchronizationDistance(IRatio** distance) override;
     ErrCode INTERFACE_FUNC setDataLossTimeout(IRatio* timeout) override;
@@ -107,6 +109,8 @@ public:
         dataLossMonitor->setClockForTest(std::move(clock));
     }
 
+    // COMMENT: Why do we need the notifications on both the multi reader and the input slot? This seems
+    //          like either a bug or an overcomplication. Input ports can anyhow only have 1 listener assigned.
     // IInputPortNotifications (compat surface; the per-port listeners are the InputSlots)
     ErrCode INTERFACE_FUNC acceptsSignal(IInputPort* port, ISignal* signal, Bool* accept) override;
     ErrCode INTERFACE_FUNC connected(IInputPort* port) override;
@@ -132,6 +136,8 @@ private:
     };
 
     // --- IInputSlotListener (semantic port notifications from the slots) ---
+    // COMMENT: These are probably necessary, but even then I'm not 100% certain.
+    //          Probably must be there to synchronize calls to the external listeners.
     bool slotAcceptsSignal(SizeT slotIndex, const SignalPtr& signal) override;
     void slotConnected(SizeT slotIndex) override;
     void slotDisconnected(SizeT slotIndex) override;
