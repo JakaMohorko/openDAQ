@@ -216,6 +216,8 @@ DECLARE_OPENDAQ_INTERFACE(IMultiReader, ISampleReader)
      * threshold fail the synchronization with per-input diagnostics in the status; the reader
      * stays active. Zero disables the check (default).
      * @param distance Threshold in seconds; must not be negative.
+     *
+     * // COMMENT: The max sync and data loss timeout API methods should only be in the builder
      */
     virtual ErrCode INTERFACE_FUNC setMaxSynchronizationDistance(IRatio* distance) = 0;
 
