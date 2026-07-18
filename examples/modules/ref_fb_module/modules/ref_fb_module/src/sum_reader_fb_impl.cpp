@@ -1,6 +1,7 @@
 #include <ref_fb_module/sum_reader_fb_impl.h>
 #include <opendaq/function_block_ptr.h>
 #include <opendaq/data_descriptor_ptr.h>
+#include <opendaq/data_rule_factory.h>
 #include <opendaq/event_packet_ptr.h>
 #include <opendaq/signal_factory.h>
 #include <opendaq/event_packet_params.h>
@@ -9,6 +10,13 @@
 #include <opendaq/sample_type_traits.h>
 #include <opendaq/reader_factory.h>
 #include <opendaq/reader_config_ptr.h>
+#include <opendaq/reader_utils.h>
+#include <opendaq/work_factory.h>
+
+#include <algorithm>
+#include <cmath>
+#include <numeric>
+#include <unordered_set>
 
 BEGIN_NAMESPACE_REF_FB_MODULE
 
@@ -20,23 +28,19 @@ static bool descriptorNotNull(const DataDescriptorPtr& descriptor)
     return descriptor.assigned() && descriptor != NullDataDescriptor();
 }
 
-static void getDataDescriptors(const EventPacketPtr& eventPacket, DataDescriptorPtr& valueDesc, DataDescriptorPtr& domainDesc)
-{
-    if (eventPacket.getEventId() == event_packet_id::DATA_DESCRIPTOR_CHANGED)
-    {
-        valueDesc = eventPacket.getParameters().get(event_packet_param::DATA_DESCRIPTOR);
-        domainDesc = eventPacket.getParameters().get(event_packet_param::DOMAIN_DATA_DESCRIPTOR);
-    }
-}
-
 static bool getDomainDescriptor(const EventPacketPtr& eventPacket, DataDescriptorPtr& domainDesc)
 {
-    if (eventPacket.getEventId() == event_packet_id::DATA_DESCRIPTOR_CHANGED)
+    if (eventPacket.assigned() && eventPacket.getEventId() == event_packet_id::DATA_DESCRIPTOR_CHANGED)
     {
         domainDesc = eventPacket.getParameters().get(event_packet_param::DOMAIN_DATA_DESCRIPTOR);
         return true;
     }
     return false;
+}
+
+static RatioPtr secondsToRatio(double seconds)
+{
+    return Ratio(static_cast<Int>(std::llround(seconds * 1000.0)), 1000);
 }
 
 SumReaderFbImpl::SumReaderFbImpl(const ContextPtr& ctx, const ComponentPtr& parent, const StringPtr& localId, const PropertyObjectPtr& config)
@@ -50,8 +54,9 @@ SumReaderFbImpl::SumReaderFbImpl(const ContextPtr& ctx, const ComponentPtr& pare
     else
         notificationMode = PacketReadyNotification::Scheduler;
 
+    initProperties();
     createDisconnectedPort();
-    createReader();
+    createReaderLocked();
     createSignals();
 }
 
@@ -65,7 +70,28 @@ FunctionBlockTypePtr SumReaderFbImpl::CreateType()
             {static_cast<Int>(PacketReadyNotification::Scheduler), "Scheduler"}}),
         2));
 
-    return FunctionBlockType("RefFBModuleSumReader", "Sum with reader", "Calculates equal-rate signal sum using multi reader", config);
+    return FunctionBlockType("RefFBModuleSumReader", "Sum with reader", "Calculates signal sum using multi reader", config);
+}
+
+void SumReaderFbImpl::initProperties()
+{
+    // Property-write handlers run under the property object's config lock (the same mutex the
+    // acquisition lock wraps), so they act directly without re-locking
+    objPtr.addProperty(SelectionProperty("Mode", List<IString>("EqualRates", "MultiRate"), 0));
+    objPtr.getOnPropertyValueWrite("Mode") +=
+        [this](PropertyObjectPtr&, PropertyValueEventArgsPtr&) { modeChanged(); };
+
+    objPtr.addProperty(FloatProperty("DataLossTimeout", 5.0));
+    objPtr.getOnPropertyValueWrite("DataLossTimeout") +=
+        [this](PropertyObjectPtr&, PropertyValueEventArgsPtr&) { readerConfigChanged(); };
+
+    objPtr.addProperty(FloatProperty("MaxSynchronizationDistance", 5.0));
+    objPtr.getOnPropertyValueWrite("MaxSynchronizationDistance") +=
+        [this](PropertyObjectPtr&, PropertyValueEventArgsPtr&) { readerConfigChanged(); };
+
+    objPtr.addProperty(FloatProperty("RecoveryRetryInterval", 5.0));
+    objPtr.getOnPropertyValueWrite("RecoveryRetryInterval") +=
+        [this](PropertyObjectPtr&, PropertyValueEventArgsPtr&) { readerConfigChanged(); };
 }
 
 std::string SumReaderFbImpl::getNextPortID() const
@@ -98,16 +124,18 @@ void SumReaderFbImpl::createDisconnectedPort()
     disconnectedPort = inputPort;
 }
 
-bool SumReaderFbImpl::updateInputPorts()
+bool SumReaderFbImpl::updateInputPortsLocked()
 {
     bool connectedPortsChanged = false;
     if (disconnectedPort.assigned() && disconnectedPort.getConnection().assigned())
     {
+        const auto portId = disconnectedPort.getGlobalId().toStdString();
         connectedPorts.emplace_back(disconnectedPort);
-        cachedDescriptors.insert(std::make_pair(disconnectedPort.getGlobalId(), NullDataDescriptor()));
+        cachedValueDescriptors.insert(std::make_pair(portId, NullDataDescriptor()));
+        cachedDomainDescriptors.insert(std::make_pair(portId, NullDataDescriptor()));
 
         // Activate the newly connected port
-        reader.setInputUsed(disconnectedPort.getGlobalId(), true);
+        reader.setInputUsed(portId, true);
         disconnectedPort.release();
         connectedPortsChanged = true;
     }
@@ -116,9 +144,16 @@ bool SumReaderFbImpl::updateInputPorts()
     {
         if (!it->getConnection().assigned())
         {
+            const auto portId = it->getGlobalId().toStdString();
             reader.removeInput(it->getGlobalId());
 
-            cachedDescriptors.erase(it->getGlobalId());
+            cachedValueDescriptors.erase(portId);
+            cachedDomainDescriptors.erase(portId);
+            parkedPorts.erase(portId);
+            if (probingPortId == portId)
+                probingPortId.clear();
+            readerPorts.erase(std::remove(readerPorts.begin(), readerPorts.end(), *it), readerPorts.end());
+
             this->inputPorts.removeItem(*it);
             it = connectedPorts.erase(it);
             connectedPortsChanged = true;
@@ -136,34 +171,53 @@ bool SumReaderFbImpl::updateInputPorts()
         // Add the empty port to the multi reader and mark it unused
         reader.addInput(disconnectedPort);
         reader.setInputUsed(disconnectedPort.getGlobalId(), false);
+        readerPorts.push_back(disconnectedPort);
     }
 
-    if (connectedPorts.empty())
-    {
-        setComponentStatusWithMessage(ComponentStatus::Warning, "No signals connected!");
-        return false;
-    }
+    if (connectedPortsChanged)
+        rateModelDirty = true;
 
+    updateComponentStatusLocked();
     return connectedPortsChanged;
 }
 
-void SumReaderFbImpl::createReader()
+void SumReaderFbImpl::createReaderLocked()
 {
     if (!disconnectedPort.assigned())
         return;
 
     // Disposing the reader is necessary to release port ownership
-    reader.dispose();
+    if (reader.assigned())
+    {
+        reader.dispose();
+        reader.release();
+    }
+
+    // No descriptor replay is needed here: adopting a connected port re-enqueues the last
+    // descriptor event (setListener calls enqueueLastDescriptor), so the new reader learns
+    // the current descriptors on adoption.
     auto builder = MultiReaderBuilder()
                        .setDomainReadType(SampleType::Int64)
                        .setValueReadType(SampleType::Float64)
-                       .setAllowDifferentSamplingRates(false)
+                       .setAllowDifferentSamplingRates(mode != SumMode::EqualRates)
                        .setInputPortNotificationMethod(notificationMode);
 
+    for (const auto& port : connectedPorts)
+        builder.addInputPort(port);
     builder.addInputPort(disconnectedPort);
 
     reader = builder.build();
     reader.setInputUsed(disconnectedPort.getGlobalId(), false);
+
+    readerPorts.assign(connectedPorts.begin(), connectedPorts.end());
+    readerPorts.push_back(disconnectedPort);
+
+    parkedPorts.clear();
+    probingPortId.clear();
+    readerErrored = false;
+    rateModelDirty = true;
+
+    applyReaderConfigLocked();
 
     reader.setExternalListener(this->thisPtr<InputPortNotificationsPtr>());
     auto thisWeakRef = this->template getWeakRefInternal<IFunctionBlock>();
@@ -176,91 +230,30 @@ void SumReaderFbImpl::createReader()
         });
 }
 
-void SumReaderFbImpl::configure(const DataDescriptorPtr& domainDescriptor, const ListPtr<IDataDescriptor>& valueDescriptors)
+void SumReaderFbImpl::applyReaderConfigLocked()
 {
-    try
-    {
-        if (!recoverReaderIfNecessary())
-        {
-            throw std::runtime_error("Reader failed to recover from invalid state");
-        }
+    dataLossTimeoutSeconds = objPtr.getPropertyValue("DataLossTimeout");
+    maxSyncDistanceSeconds = objPtr.getPropertyValue("MaxSynchronizationDistance");
+    recoveryRetryIntervalSeconds = objPtr.getPropertyValue("RecoveryRetryInterval");
 
-        if (!domainDescriptor.assigned() || domainDescriptor == NullDataDescriptor())
-        {
-            throw std::runtime_error("Input domain descriptor is not set");
-        }
-
-        if (valueDescriptors.getCount() != connectedPorts.size())
-        {
-            throw std::runtime_error("Missing input value descriptors!");
-        }
-
-        UnitPtr unit = nullptr;
-
-        double lowValue = 0;
-        double highValue = 0;
-        for (const auto& descriptor : valueDescriptors)
-        {
-            if (descriptor == NullDataDescriptor())
-                throw std::runtime_error("An input value descriptor is not set!");
-
-            if (!unit.assigned())
-                unit = valueDescriptors[0].getUnit();
-            else if (descriptor.getUnit() != unit)
-                throw std::runtime_error("Input value descriptor units must be equal!");
-
-            int sampleType = static_cast<int>(descriptor.getSampleType());
-            if (sampleType > static_cast<int>(SampleType::Int64) || sampleType == 0)
-                throw std::runtime_error("Inputs with non-scalar sample type are not accepted!");
-
-            auto range = descriptor.getValueRange();
-            if (range.assigned())
-            {
-                lowValue += range.getLowValue().getFloatValue();
-                highValue += range.getHighValue().getFloatValue();
-            }
-        }
-
-        RangePtr range;
-        if (std::fabs(lowValue - highValue) > 1e-9)
-            range = Range(lowValue, highValue);
-        else
-            range = Range(-10, 10);
-
-        sumDataDescriptor = DataDescriptorBuilder().setSampleType(SampleType::Float64).setUnit(unit).setValueRange(range).build();
-        sumDomainDataDescriptor = domainDescriptor;
-
-        sumSignal.setDescriptor(sumDataDescriptor);
-        sumDomainSignal.setDescriptor(sumDomainDataDescriptor);
-
-        setComponentStatus(ComponentStatus::Ok);
-        reader.setActive(True);
-    }
-    catch (const std::exception& e)
-    {
-        setComponentStatusWithMessage(ComponentStatus::Warning, fmt::format("Failed to configure sum FB: {}", e.what()));
-        reader.setActive(False);
-    }
+    reader.setDataLossTimeout(secondsToRatio(dataLossTimeoutSeconds));
+    reader.setMaxSynchronizationDistance(secondsToRatio(maxSyncDistanceSeconds));
 }
 
-void SumReaderFbImpl::reconfigure()
+void SumReaderFbImpl::modeChanged()
 {
-    auto descriptorList = List<IDataDescriptor>();
-    for (const auto& descriptor : cachedDescriptors)
-        descriptorList.pushBack(descriptor.second);
+    mode = static_cast<SumMode>(static_cast<Int>(objPtr.getPropertyValue("Mode")));
 
-    if (descriptorList.getCount() > 0)
-        configure(sumDomainDataDescriptor, descriptorList);
+    // A mode change rebuilds the reader (allowDifferentSamplingRates is builder-time
+    // configuration); the parked set is cleared and re-derived from the new mode's rules
+    createReaderLocked();
+    updateComponentStatusLocked();
 }
 
-bool SumReaderFbImpl::recoverReaderIfNecessary()
+void SumReaderFbImpl::readerConfigChanged()
 {
-    if (reader.asPtr<IReaderConfig>().getIsValid())
-        return true;
-
-    LOG_D("Sum Reader FB: Attempting reader recovery")
-    reader = MultiReaderFromExisting(reader, SampleType::Float64, SampleType::Int64);
-    return reader.asPtr<IReaderConfig>().getIsValid();
+    if (reader.assigned())
+        applyReaderConfigLocked();
 }
 
 void SumReaderFbImpl::onConnected(const InputPortPtr& inputPort)
@@ -269,7 +262,7 @@ void SumReaderFbImpl::onConnected(const InputPortPtr& inputPort)
 
     LOG_D("Sum Reader FB: Input port {} connected", inputPort.getLocalId())
 
-    updateInputPorts();
+    updateInputPortsLocked();
 }
 
 void SumReaderFbImpl::onDisconnected(const InputPortPtr& inputPort)
@@ -277,86 +270,598 @@ void SumReaderFbImpl::onDisconnected(const InputPortPtr& inputPort)
     auto lock = this->getAcquisitionLock2();
 
     LOG_D("Sum Reader FB: Input port {} disconnected", inputPort.getLocalId())
-    if (updateInputPorts())
+    if (updateInputPortsLocked())
+        configureValueDescriptorLocked();
+}
+
+void SumReaderFbImpl::onPacketReceived(const InputPortPtr& inputPort)
+{
+    // This notification can be delivered synchronously on a producer's stack - even from
+    // inside a connect still being constructed - so the reader must not be re-entered from
+    // here. Only decide whether anything needs evaluating and defer the work to a task.
+    bool schedule = false;
     {
-        reconfigure();
+        auto lock = this->getAcquisitionLock2();
+        if (!reader.assigned() || readerErrored)
+            return;
+
+        const auto now = std::chrono::steady_clock::now();
+        const auto portId = inputPort.getGlobalId().toStdString();
+
+        if (probingPortId.empty() && parkedPorts.find(portId) != parkedPorts.end())
+        {
+            // Event-driven probe: activity on a parked port re-tests it (pacing is applied
+            // when the deferred check runs)
+            if (pendingProbePortId.empty())
+                pendingProbePortId = portId;
+            schedule = true;
+        }
+        else if (!probingPortId.empty())
+        {
+            // A pending probe resolves at status evaluation points; drive them from the
+            // packet stream, since a probe of a data-starved input produces no data callbacks
+            schedule = true;
+        }
+        else if (dataLossTimeoutSeconds > 0 &&
+                 now - lastReaderCheck >= std::chrono::duration<double>(dataLossTimeoutSeconds))
+        {
+            // Failure states that block data flow (a dead input never becomes ready) never
+            // invoke the data callback; stuck conditions are observed from the packet stream
+            // of the healthy inputs instead
+            schedule = true;
+        }
+        else if (!parkedPorts.empty() && recoveryRetryIntervalSeconds > 0 &&
+                 now - lastProbeTime >= std::chrono::duration<double>(recoveryRetryIntervalSeconds))
+        {
+            // Periodic fallback probing is due
+            schedule = true;
+        }
+
+        if (schedule && deferredCheckScheduled.exchange(true))
+            schedule = false;
     }
+
+    if (schedule)
+        scheduleDeferredCheck();
+}
+
+void SumReaderFbImpl::scheduleDeferredCheck()
+{
+    const auto scheduler = this->context.getScheduler();
+    if (!scheduler.assigned())
+    {
+        deferredCheckScheduled = false;
+        return;
+    }
+
+    auto thisWeakRef = this->template getWeakRefInternal<IFunctionBlock>();
+    scheduler.scheduleWork(Work(
+        [this, thisWeakRef = std::move(thisWeakRef)]
+        {
+            const auto thisFb = thisWeakRef.getRef();
+            if (thisFb.assigned())
+                this->deferredCheck();
+        }));
+}
+
+void SumReaderFbImpl::deferredCheck()
+{
+    auto lock = this->getAcquisitionLock2();
+    deferredCheckScheduled = false;
+    if (!reader.assigned() || readerErrored)
+        return;
+
+    // Event-driven probes run immediately: they only fire on event packets reaching a parked
+    // (inactive) port - descriptor changes - which may be the last wakeup this function block
+    // gets while every input is parked (data packets on inactive ports are dropped silently).
+    // Probe flapping on persistently bad ports is bounded by the event rate; the periodic
+    // fallback in maybeProbeLocked stays paced by the retry interval.
+    std::string probeTarget;
+    std::swap(probeTarget, pendingProbePortId);
+    if (!probeTarget.empty() && probingPortId.empty())
+        probePortLocked(probeTarget);
+
+    processReaderLocked();
 }
 
 void SumReaderFbImpl::onDataReceived()
 {
     auto lock = this->getAcquisitionLock2();
+    processReaderLocked();
+}
 
-    SizeT cnt = reader.getAvailableCount();
+void SumReaderFbImpl::processReaderLocked()
+{
+    if (!reader.assigned() || readerErrored)
+        return;
 
-    // +1: Disconnected port is added to the reader but unused
-    auto numPorts = connectedPorts.size() + 1;
-    std::vector<std::unique_ptr<double[]>> data;
-    data.reserve(numPorts);
+    lastReaderCheck = std::chrono::steady_clock::now();
 
-    for (size_t i = 0; i < numPorts; ++i)
-        data.push_back(std::make_unique<double[]>(cnt));
-
-    const MultiReaderStatusPtr status = reader.read(data.data(), &cnt);
-
-    if (cnt > 0)
+    for (int iteration = 0; iteration < 64; ++iteration)
     {
-        const auto sumDomainPacket = DataPacket(sumDomainSignal.getDescriptor(), cnt, status.getOffset());
-        const auto sumValuePacket = DataPacketWithDomain(sumDomainPacket, sumSignal.getDescriptor(), cnt);
-        double* sumValueData = static_cast<double*>(sumValuePacket.getRawData());
-        std::fill_n(sumValueData, cnt, 0.0);
+        SizeT count = reader.getAvailableCount();
 
-        data.pop_back();  // Remove last buffer (unused disconnected port)
-        for (const std::unique_ptr<double[]>& sigData : data)
+        // Rate model underivable with data pending should not happen (data implies a built
+        // model); fall back to a zero-count status read
+        if (count > 0 && !ensureRateModelLocked())
+            count = 0;
+
+        std::vector<std::unique_ptr<double[]>> buffers;
+        std::vector<double*> rawBuffers;
+        std::vector<SizeT> strides;
+        buffers.reserve(readerPorts.size());
+        rawBuffers.reserve(readerPorts.size());
+        strides.reserve(readerPorts.size());
+
+        for (const auto& port : readerPorts)
         {
-            const double* sigDataPtr = sigData.get();
-            for (size_t i = 0; i < cnt; ++i)
-                sumValueData[i] += sigDataPtr[i];
-        }
-
-        sumDomainSignal.sendPacket(sumDomainPacket);
-        sumSignal.sendPacket(sumValuePacket);
-    }
-
-    if (status.getReadStatus() == ReadStatus::Event)
-    {
-        const auto eventPackets = status.getEventPackets();
-        if (eventPackets.getCount() > 0)
-        {
-            DataDescriptorPtr domainDescriptor;
-            ListPtr<IDataDescriptor> valueDescriptors = List<IDataDescriptor>();
-
-            bool domainChanged = false;
-            bool valueSigChanged = false;
-
-            for (const auto& port : connectedPorts)
+            const auto portId = port.getGlobalId().toStdString();
+            SizeT divider = 0;
+            if (count > 0 && isActivePortLocked(portId))
             {
-                auto portGlobalId = port.getGlobalId();
-                DataDescriptorPtr valueDescriptor;
-                if (eventPackets.hasKey(portGlobalId))
-                {
-                    getDataDescriptors(eventPackets.get(portGlobalId), valueDescriptor, domainDescriptor);
-
-                    if (descriptorNotNull(valueDescriptor))
-                    {
-                        valueSigChanged = true;
-                        valueDescriptors.pushBack(valueDescriptor);
-                        cachedDescriptors[portGlobalId] = valueDescriptor;
-                    }
-
-                    domainChanged |= descriptorNotNull(domainDescriptor);
-                }
-
-                if (!descriptorNotNull(valueDescriptor))
-                    valueDescriptors.pushBack(cachedDescriptors[portGlobalId]);
+                const auto it = portDividers.find(portId);
+                divider = it != portDividers.end() ? it->second : 0;
             }
 
-            getDomainDescriptor(status.getMainDescriptor(), domainDescriptor);
+            if (divider > 0)
+            {
+                buffers.push_back(std::make_unique<double[]>(count / divider));
+                rawBuffers.push_back(buffers.back().get());
+                strides.push_back(blockLcm / divider);
+            }
+            else
+            {
+                // Unused inputs (spare and parked ports) contribute nothing; their buffer
+                // pointer may be null per the read contract
+                rawBuffers.push_back(nullptr);
+                strides.push_back(0);
+            }
+        }
 
-            if (valueSigChanged || domainChanged || !status.getValid())
-                configure(domainDescriptor, valueDescriptors);
+        const MultiReaderStatusPtr status = reader.read(rawBuffers.data(), &count);
+
+        if (count > 0)
+            emitSumLocked(rawBuffers, strides, count, status);
+
+        bool acted = false;
+        if (status.getReadStatus() == ReadStatus::Event)
+        {
+            handleEventsLocked(status);
+            acted = true;
+        }
+
+        acted |= handleStateLocked(status);
+        if (readerErrored)
+            return;
+
+        if (!acted && count == 0)
+            break;
+    }
+
+    maybeProbeLocked();
+}
+
+void SumReaderFbImpl::emitSumLocked(const std::vector<double*>& buffers,
+                                    const std::vector<SizeT>& strides,
+                                    SizeT commonCount,
+                                    const MultiReaderStatusPtr& status)
+{
+    if (!descriptorNotNull(sumDataDescriptor) || !descriptorNotNull(sumDomainDataDescriptor))
+        return;
+
+    const SizeT blocks = commonCount / blockLcm;
+    if (blocks == 0)
+        return;
+
+    // The status offset is the common-domain tick of the first sample of this read; reads are
+    // block-aligned, so it is also the first output sample's tick
+    const auto sumDomainPacket = DataPacket(sumDomainDataDescriptor, blocks, status.getOffset());
+    const auto sumValuePacket = DataPacketWithDomain(sumDomainPacket, sumDataDescriptor, blocks);
+    double* sumValueData = static_cast<double*>(sumValuePacket.getRawData());
+    std::fill_n(sumValueData, blocks, 0.0);
+
+    for (SizeT slot = 0; slot < buffers.size(); ++slot)
+    {
+        const double* signalData = buffers[slot];
+        if (!signalData || strides[slot] == 0)
+            continue;
+
+        // The sum is defined at ticks where every input has a sample - the block starts;
+        // input `slot` carries `strides[slot] == blockLcm / divider` samples per block
+        const SizeT stride = strides[slot];
+        for (SizeT block = 0; block < blocks; ++block)
+            sumValueData[block] += signalData[block * stride];
+    }
+
+    sumDomainSignal.sendPacket(sumDomainPacket);
+    sumSignal.sendPacket(sumValuePacket);
+}
+
+void SumReaderFbImpl::handleEventsLocked(const MultiReaderStatusPtr& status)
+{
+    bool valueDescriptorsChanged = false;
+
+    for (const auto& [portId, packet] : status.getEventPackets())
+    {
+        const EventPacketPtr event = packet;
+        // Gap events need no action here: the reader resynchronizes in-band
+        if (!event.assigned() || event.getEventId() != event_packet_id::DATA_DESCRIPTOR_CHANGED)
+            continue;
+
+        const DataDescriptorPtr valueDesc = event.getParameters().get(event_packet_param::DATA_DESCRIPTOR);
+        const DataDescriptorPtr domainDesc = event.getParameters().get(event_packet_param::DOMAIN_DATA_DESCRIPTOR);
+        const auto id = StringPtr(portId).toStdString();
+
+        if (descriptorNotNull(valueDesc))
+        {
+            cachedValueDescriptors[id] = valueDesc;
+            valueDescriptorsChanged = true;
+        }
+        if (descriptorNotNull(domainDesc))
+        {
+            cachedDomainDescriptors[id] = domainDesc;
+            rateModelDirty = true;
         }
     }
+
+    // The main descriptor's domain part is the common output domain - the grid the status
+    // offset is expressed in
+    DataDescriptorPtr commonDomain;
+    if (getDomainDescriptor(status.getMainDescriptor(), commonDomain) && descriptorNotNull(commonDomain))
+    {
+        commonDomainDescriptor = commonDomain;
+        rateModelDirty = true;
+    }
+
+    if (valueDescriptorsChanged)
+        configureValueDescriptorLocked();
+}
+
+bool SumReaderFbImpl::handleStateLocked(const MultiReaderStatusPtr& status)
+{
+    const auto state = status.getState();
+
+    // Only the Error state is unrecoverable; getValid() is also false for the recoverable
+    // invalid-stream states (Incompatible, SynchronizationFailed), which are parked below
+    if (state == MultiReaderState::Error)
+    {
+        // Unrecoverable: report and stop issuing reads. No silent reader re-creation - an
+        // internal invariant broke, and surfacing it is the handling. A mode change or
+        // reconnect still rebuilds the reader through the normal path (explicit user action).
+        readerErrored = true;
+        const StringPtr message = status.getStateMessage();
+        setComponentStatusWithMessage(
+            ComponentStatus::Error,
+            fmt::format("Reader failed unrecoverably: {}", message.assigned() ? message.toStdString() : "unknown error"));
+        return false;
+    }
+
+    switch (state)
+    {
+        case MultiReaderState::Incompatible:
+        case MultiReaderState::SynchronizationFailed:
+        case MultiReaderState::DataLost:
+        {
+            std::string reason;
+            switch (state)
+            {
+                case MultiReaderState::Incompatible:
+                {
+                    const StringPtr message = status.getStateMessage();
+                    reason = fmt::format("incompatible: {}", message.assigned() ? message.toStdString() : "");
+                    break;
+                }
+                case MultiReaderState::SynchronizationFailed:
+                    reason = "cannot synchronize";
+                    break;
+                default:
+                    reason = "no data";
+                    break;
+            }
+
+            bool acted = false;
+            std::unordered_set<std::string> affected;
+            const SizeT affectedCount = status.getAffectedInputCount();
+            for (SizeT i = 0; i < affectedCount; ++i)
+            {
+                const SizeT slotIndex = status.getAffectedInputIndex(i);
+                if (slotIndex >= readerPorts.size())
+                    continue;
+
+                const auto& port = readerPorts[slotIndex];
+                if (!port.getConnection().assigned())
+                    continue;
+
+                const auto portId = port.getGlobalId().toStdString();
+                affected.insert(portId);
+                if (parkedPorts.find(portId) == parkedPorts.end() || portId == probingPortId)
+                {
+                    parkPortLocked(port, reason);
+                    acted = true;
+                }
+            }
+
+            // A pending probe not implicated in this failure has proven itself
+            if (!probingPortId.empty() && affected.find(probingPortId) == affected.end())
+            {
+                unparkLocked(probingPortId);
+                acted = true;
+            }
+
+            if (acted)
+                configureValueDescriptorLocked();
+            return acted;
+        }
+        case MultiReaderState::Synchronized:
+            if (!probingPortId.empty())
+            {
+                unparkLocked(probingPortId);
+                configureValueDescriptorLocked();
+                return true;
+            }
+            return false;
+        default:
+            return false;
+    }
+}
+
+void SumReaderFbImpl::configureValueDescriptorLocked()
+{
+    UnitPtr unit;
+    bool unitSeen = false;
+    double lowValue = 0;
+    double highValue = 0;
+    bool allKnown = true;
+    std::vector<InputPortPtr> mismatched;
+
+    for (const auto& port : connectedPorts)
+    {
+        const auto portId = port.getGlobalId().toStdString();
+        if (!isActivePortLocked(portId))
+            continue;
+
+        const auto it = cachedValueDescriptors.find(portId);
+        if (it == cachedValueDescriptors.end() || !descriptorNotNull(it->second))
+        {
+            // Still waiting for this input's descriptors; the reader reports the same via
+            // WaitingForDescriptors
+            allKnown = false;
+            continue;
+        }
+
+        const auto& descriptor = it->second;
+        if (!unitSeen)
+        {
+            unit = descriptor.getUnit();
+            unitSeen = true;
+        }
+        else if (descriptor.getUnit() != unit)
+        {
+            // Unit compatibility is this function block's own rule, not the reader's;
+            // parking the offender keeps the rest summing
+            mismatched.push_back(port);
+            continue;
+        }
+
+        const auto range = descriptor.getValueRange();
+        if (range.assigned())
+        {
+            lowValue += range.getLowValue().getFloatValue();
+            highValue += range.getHighValue().getFloatValue();
+        }
+    }
+
+    for (const auto& port : mismatched)
+        parkPortLocked(port, "unit mismatch");
+
+    if (!allKnown || !unitSeen)
+    {
+        updateComponentStatusLocked();
+        return;
+    }
+
+    RangePtr range;
+    if (std::fabs(lowValue - highValue) > 1e-9)
+        range = Range(lowValue, highValue);
+    else
+        range = Range(-10, 10);
+
+    sumDataDescriptor = DataDescriptorBuilder().setSampleType(SampleType::Float64).setUnit(unit).setValueRange(range).build();
+    if (sumSignal.getDescriptor() != sumDataDescriptor)
+        sumSignal.setDescriptor(sumDataDescriptor);
+
+    updateComponentStatusLocked();
+}
+
+bool SumReaderFbImpl::ensureRateModelLocked()
+{
+    if (!rateModelDirty)
+        return true;
+
+    if (!descriptorNotNull(commonDomainDescriptor))
+        return false;
+
+    const Int commonSampleRate = reader.getCommonSampleRate();
+    const RatioPtr resolution = reader.getTickResolution();
+    if (commonSampleRate <= 0 || !resolution.assigned())
+        return false;
+
+    std::unordered_map<std::string, SizeT> dividers;
+    SizeT lcmOfDividers = 1;
+    for (const auto& port : connectedPorts)
+    {
+        const auto portId = port.getGlobalId().toStdString();
+        if (!isActivePortLocked(portId))
+            continue;
+
+        const auto it = cachedDomainDescriptors.find(portId);
+        if (it == cachedDomainDescriptors.end() || !descriptorNotNull(it->second))
+            return false;
+
+        std::int64_t rate = 0;
+        try
+        {
+            rate = reader::getSampleRate(it->second);
+        }
+        catch (const DaqException&)
+        {
+            return false;
+        }
+        if (rate <= 0 || commonSampleRate % rate != 0)
+            return false;
+
+        const auto divider = static_cast<SizeT>(commonSampleRate / rate);
+        dividers[portId] = divider;
+        lcmOfDividers = std::lcm(lcmOfDividers, divider);
+    }
+
+    if (dividers.empty())
+        return false;
+
+    portDividers = std::move(dividers);
+    blockLcm = lcmOfDividers;
+
+    // Output grid: one sample per aligned block, i.e. every blockLcm-th common-rate sample.
+    // One common-rate sample period is a whole number of common-domain ticks by construction.
+    const std::int64_t ticksPerCommonSample =
+        resolution.getDenominator() / (resolution.getNumerator() * commonSampleRate);
+    if (ticksPerCommonSample <= 0)
+        return false;
+
+    const auto commonRule = commonDomainDescriptor.getRule();
+    const NumberPtr ruleStart = commonRule.assigned() ? commonRule.getParameters().get("start") : NumberPtr(0);
+    sumDomainDataDescriptor =
+        DataDescriptorBuilderCopy(commonDomainDescriptor)
+            .setRule(LinearDataRule(static_cast<Int>(ticksPerCommonSample * static_cast<std::int64_t>(blockLcm)), ruleStart))
+            .build();
+    if (sumDomainSignal.getDescriptor() != sumDomainDataDescriptor)
+        sumDomainSignal.setDescriptor(sumDomainDataDescriptor);
+
+    rateModelDirty = false;
+    return true;
+}
+
+void SumReaderFbImpl::parkPortLocked(const InputPortPtr& port, const std::string& reason)
+{
+    const auto portId = port.getGlobalId().toStdString();
+    reader.setInputUsed(port.getGlobalId(), false);
+
+    auto& info = parkedPorts[portId];
+    info.reason = reason;
+    info.since = std::chrono::steady_clock::now();
+    if (probingPortId == portId)
+        probingPortId.clear();
+
+    rateModelDirty = true;
+    LOG_D("Sum Reader FB: Parked input {} ({})", port.getLocalId(), reason)
+    updateComponentStatusLocked();
+}
+
+void SumReaderFbImpl::unparkLocked(const std::string& portId)
+{
+    parkedPorts.erase(portId);
+    if (probingPortId == portId)
+        probingPortId.clear();
+    rateModelDirty = true;
+
+    const auto port = findPortByIdLocked(portId);
+    if (port.assigned())
+        LOG_D("Sum Reader FB: Recovered input {}", port.getLocalId())
+    updateComponentStatusLocked();
+}
+
+void SumReaderFbImpl::probePortLocked(const std::string& portId)
+{
+    const auto parked = parkedPorts.find(portId);
+    if (parked == parkedPorts.end())
+        return;
+
+    probingPortId = portId;
+    lastProbeTime = std::chrono::steady_clock::now();
+
+    // Re-testing = marking the input used again; the next status evaluation either clears it
+    // (recovered) or re-reports the failure (re-parked)
+    reader.setInputUsed(String(portId), true);
+    rateModelDirty = true;
+}
+
+void SumReaderFbImpl::maybeProbeLocked()
+{
+    if (readerErrored || !probingPortId.empty() || parkedPorts.empty())
+        return;
+    if (recoveryRetryIntervalSeconds <= 0)
+        return;
+
+    const auto now = std::chrono::steady_clock::now();
+    if (now - lastProbeTime < std::chrono::duration<double>(recoveryRetryIntervalSeconds))
+        return;
+
+    // Periodic fallback: probe the oldest parked port, one at a time, so a bad port cannot
+    // repeatedly interrupt the healthy ones
+    auto oldest = parkedPorts.begin();
+    for (auto it = std::next(parkedPorts.begin()); it != parkedPorts.end(); ++it)
+    {
+        if (it->second.since < oldest->second.since)
+            oldest = it;
+    }
+    probePortLocked(oldest->first);
+}
+
+void SumReaderFbImpl::updateComponentStatusLocked()
+{
+    // Error is latched until an explicit rebuild (mode change or reconnect)
+    if (readerErrored)
+        return;
+
+    if (connectedPorts.empty())
+    {
+        setComponentStatusWithMessage(ComponentStatus::Warning, "No signals connected!");
+        return;
+    }
+
+    if (!parkedPorts.empty())
+    {
+        std::string parkedList;
+        for (const auto& [portId, info] : parkedPorts)
+        {
+            const auto port = findPortByIdLocked(portId);
+            if (!parkedList.empty())
+                parkedList += ", ";
+            parkedList += fmt::format("{} ({})", port.assigned() ? port.getLocalId().toStdString() : portId, info.reason);
+        }
+
+        if (parkedPorts.size() >= connectedPorts.size())
+            setComponentStatusWithMessage(ComponentStatus::Warning, fmt::format("No usable inputs - all excluded from sum: {}", parkedList));
+        else
+            setComponentStatusWithMessage(ComponentStatus::Warning, fmt::format("Inputs excluded from sum: {}", parkedList));
+        return;
+    }
+
+    setComponentStatus(ComponentStatus::Ok);
+}
+
+bool SumReaderFbImpl::isActivePortLocked(const std::string& portId) const
+{
+    // A port under probe is marked used again - the reader delivers its samples, so the sum
+    // must include them even though the port stays in the parked set until confirmed
+    if (parkedPorts.find(portId) != parkedPorts.end() && portId != probingPortId)
+        return false;
+    for (const auto& port : connectedPorts)
+    {
+        if (port.getGlobalId().toStdString() == portId)
+            return true;
+    }
+    return false;
+}
+
+InputPortPtr SumReaderFbImpl::findPortByIdLocked(const std::string& portId) const
+{
+    for (const auto& port : readerPorts)
+    {
+        if (port.getGlobalId().toStdString() == portId)
+            return port;
+    }
+    return nullptr;
 }
 }
 

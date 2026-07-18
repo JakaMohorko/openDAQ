@@ -72,6 +72,9 @@ MultiReaderImpl::MultiReaderImpl(const ListPtr<IComponent>& list,
         createSlots(ports);
 
         std::lock_guard lock(mutex);
+        // Adopted ports may arrive deactivated (a previous owner parked them via
+        // setInputUsed(false)); their active state belongs to this reader now
+        setPortsActiveLocked(isActive);
         evaluateStateLocked();
     }
     catch (...)
@@ -220,6 +223,9 @@ MultiReaderImpl::MultiReaderImpl(const MultiReaderBuilderPtr& builder)
         std::lock_guard lock(mutex);
         if (mainInputId.assigned() && findSlotByIdLocked(mainInputId) == notFound)
             DAQ_THROW_EXCEPTION(NotFoundException, "The selected main input does not match any source component");
+        // Adopted ports may arrive deactivated (a previous owner parked them via
+        // setInputUsed(false)); their active state belongs to this reader now
+        setPortsActiveLocked(isActive);
         applyDataLossTimeoutLocked();
         evaluateStateLocked();
     }
@@ -1522,10 +1528,12 @@ ErrCode MultiReaderImpl::setInputUsed(IString* id, Bool isUsed)
 
     if (isUsed)
     {
-        // Re-enabled inputs restart from the live stream: revalidation and
-        // resynchronization run on the next evaluation
+        // Re-enabled inputs restart from the live stream: data and gaps queued while the
+        // input was unused are dropped (descriptor changes are kept, so the type state
+        // stays coherent); revalidation and resynchronization run on the next evaluation
         slot->setPortActive(this->isActive);
         slot->rebindConnection();
+        slot->getQueueReader().dropForInactive();
     }
     else
     {
@@ -1765,7 +1773,10 @@ void MultiReaderImpl::internalDispose(bool)
     for (auto* slot : slots)
         slot->detachListener();
 
-    portBinder = nullptr;
+    // portBinder is deliberately kept: it marks the ports as externally owned, and the
+    // destructor must not remove() adopted ports of a disposed reader (dispose-and-rebuild
+    // is the documented consumer pattern for reconfiguring on the same ports). The binder
+    // itself dies with the reader, which releases port ownership for re-adoption.
     externalListener = nullptr;
     readCallback = nullptr;
     cachedStatus = nullptr;
