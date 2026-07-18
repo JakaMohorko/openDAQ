@@ -293,10 +293,15 @@ SyncResult SynchronizationManager::synchronize(const std::vector<QueueReader*>& 
     model.commonStart = nullptr;
 
     const SizeT count = inputs.size();
-    constexpr int maxIterations = 8;
-    int iteration = 0;
+    const auto blockTicks = blockIntervalTicks();
+    const auto floorMod = [](std::int64_t value, std::int64_t modulus) { return ((value % modulus) + modulus) % modulus; };
 
-    while (true)  // re-entered only after an overshoot, bounded by the shared iteration counter
+    constexpr int maxIterations = 8;
+
+    // Each round recomputes the first samples (advances move the cursors), picks the start
+    // candidate and tries to advance every input to it; rounds repeat only when the data
+    // itself moved (gaps, overshoots), bounded by the iteration counter.
+    for (int iteration = 0; iteration < maxIterations; ++iteration)
     {
         // Step 2: first samples, converted to the common domain (exact by construction)
         std::vector<std::unique_ptr<DomainValue>> firstsCommon(count);
@@ -335,86 +340,103 @@ SyncResult SynchronizationManager::synchronize(const std::vector<QueueReader*>& 
             }
         }
 
-        // Step 4: candidate start = latest first sample rounded up on the start grid
+        // Step 4: pick the start candidate at or after the latest first sample
         SizeT latestIndex = 0;
         for (SizeT i = 1; i < count; ++i)
         {
             if (*firstsCommon[i] > *firstsCommon[latestIndex])
                 latestIndex = i;
         }
-        auto candidate = std::move(firstsCommon[latestIndex]);
-        try
+
+        // Every input samples on a periodic grid in the common domain: ticks congruent to
+        // its phase modulo its period (period_i = divider_i * ticksPerCommonSample). The
+        // candidate walks the MAIN input's grid (spec section 4.4 - the main input defines
+        // the output grid phase) searching one aligned block for a point every input hits
+        // exactly; the grid pattern repeats after one block, so a longer search cannot help.
+        // Without an exact point the first main-grid candidate is used and the other inputs
+        // may start up to half a block later (the acceptance rule of spec section 4.3);
+        // half a block or more means ambiguous block attribution -> NoCommonTick.
+        std::vector<std::int64_t> firstTicks(count);
+        bool ticksKnown = blockTicks > 0 && !startOnFullUnitOfDomain && model.mainPosition < count &&
+                          model.sampleRateDividers.size() == count && model.ticksPerCommonSample() > 0;
+        if (ticksKnown)
         {
-            candidate->roundUpOnDomainInterval(startInterval());
-        }
-        catch (const NotSupportedException& e)
-        {
-            return {SyncOutcome::Failed, SyncFailureReason::TargetNotRepresentable, {}, e.what()};
+            for (SizeT i = 0; i < count; ++i)
+            {
+                const auto tick = domainTickOf(*firstsCommon[i]);
+                if (!tick.has_value())
+                {
+                    ticksKnown = false;
+                    break;
+                }
+                firstTicks[i] = *tick;
+            }
         }
 
-        // Steps 5-6: advance every input to the candidate and verify the reached values
-        bool overshoot = false;
-        while (!overshoot)
+        auto candidate = std::move(firstsCommon[latestIndex]);
+        if (ticksKnown)
         {
-            if (++iteration > maxIterations)
+            const auto period = [&](SizeT i)
+            { return static_cast<std::int64_t>(model.sampleRateDividers[i]) * model.ticksPerCommonSample(); };
+
+            const auto latestTick = firstTicks[latestIndex];
+            const auto mainPeriod = period(model.mainPosition);
+            const auto mainPhase = floorMod(firstTicks[model.mainPosition], mainPeriod);
+
+            // First main-grid point at or after the latest first sample
+            const auto gridStart = latestTick + floorMod(mainPhase - latestTick, mainPeriod);
+
+            // One pass over the block finds both the best outcomes: the first mutually
+            // exact point, and - as the fallback - the first point where every input's
+            // forward phase offset is unambiguous (strictly less than half the block).
+            // The offset pattern repeats after one block, so a longer search cannot help;
+            // the cap only guards pathological divider combinations (huge blockLcm).
+            constexpr std::int64_t maxSearchSteps = 1024;
+            std::optional<std::int64_t> exactStep;
+            std::optional<std::int64_t> tolerableStep;
+            std::vector<SizeT> misaligned;
+            for (std::int64_t step = gridStart, steps = 0; step < gridStart + blockTicks && steps < maxSearchSteps;
+                 step += mainPeriod, ++steps)
+            {
+                bool exact = true;
+                bool tolerable = true;
+                misaligned.clear();
+                for (SizeT i = 0; i < count; ++i)
+                {
+                    const auto offset = floorMod(firstTicks[i] - step, period(i));
+                    if (offset == 0)
+                        continue;
+                    exact = false;
+                    if (2 * offset >= blockTicks)
+                    {
+                        tolerable = false;
+                        misaligned.push_back(slotIndices[i]);
+                    }
+                }
+                if (exact)
+                {
+                    exactStep = step;
+                    break;
+                }
+                if (tolerable && !tolerableStep)
+                    tolerableStep = step;
+            }
+
+            if (!exactStep && !tolerableStep)
             {
                 return {SyncOutcome::Failed,
                         SyncFailureReason::NoCommonTick,
-                        slotIndices,
-                        "Inputs share no common tick on the aligned start grid (iteration bound exceeded)"};
+                        misaligned.empty() ? slotIndices : misaligned,
+                        "Inputs [" + joinIndices(misaligned.empty() ? slotIndices : misaligned) +
+                            "] share no common tick with the main input's aligned start grid"};
             }
 
-            std::vector<std::unique_ptr<DomainValue>> reached(count);
-            std::vector<SizeT> eventInputs;
-            std::vector<SizeT> needMoreInputs;
-
-            for (SizeT i = 0; i < count; ++i)
-            {
-                const auto target = candidate->fromCommonDomain(inputs[i]->getDomainInfo());
-                auto outcome = inputs[i]->advanceToDomainValue(target.get());
-                switch (outcome.result)
-                {
-                    case AdvanceResult::Success:
-                        reached[i] = outcome.reachedValue->toCommonDomain(model.commonDomain);
-                        break;
-                    case AdvanceResult::NeedMoreData:
-                        needMoreInputs.push_back(slotIndices[i]);
-                        break;
-                    case AdvanceResult::DomainChanged:
-                    case AdvanceResult::Error:  // pending events block advancing
-                        eventInputs.push_back(slotIndices[i]);
-                        break;
-                    case AdvanceResult::OvershotError:
-                        overshoot = true;
-                        break;
-                }
-            }
-
-            if (!eventInputs.empty())
-                return {SyncOutcome::EventPending, SyncFailureReason::None, eventInputs, "Events must be handled before synchronization"};
-            if (!needMoreInputs.empty())
-                return {SyncOutcome::NeedMoreData, SyncFailureReason::None, needMoreInputs, "Waiting for data to reach the aligned start"};
-            if (overshoot)
-                break;  // first samples moved past the candidate - re-derive it from step 2
-
-            bool allReachedCandidate = true;
-            SizeT maxIndex = 0;
-            for (SizeT i = 0; i < count; ++i)
-            {
-                if (!reachedAcceptable(*reached[i], *candidate))
-                    allReachedCandidate = false;
-                if (*reached[i] > *reached[maxIndex])
-                    maxIndex = i;
-            }
-
-            if (allReachedCandidate)
-            {
-                model.commonStart = std::move(candidate);
-                return {SyncOutcome::Synchronized, SyncFailureReason::None, {}, {}};
-            }
-
-            // Re-target: the farthest reached value, rounded up on the start grid
-            candidate = std::move(reached[maxIndex]);
+            candidate->shiftTicks((exactStep ? *exactStep : *tolerableStep) - latestTick);
+        }
+        else
+        {
+            // Tick values unavailable (unusual domain read type) or full-unit start requested:
+            // round the latest first sample up on the absolute start grid
             try
             {
                 candidate->roundUpOnDomainInterval(startInterval());
@@ -424,7 +446,60 @@ SyncResult SynchronizationManager::synchronize(const std::vector<QueueReader*>& 
                 return {SyncOutcome::Failed, SyncFailureReason::TargetNotRepresentable, {}, e.what()};
             }
         }
+
+        // Steps 5-6: advance every input to the candidate and verify the reached values
+        std::vector<std::unique_ptr<DomainValue>> reached(count);
+        std::vector<SizeT> eventInputs;
+        std::vector<SizeT> needMoreInputs;
+        bool overshoot = false;
+
+        for (SizeT i = 0; i < count; ++i)
+        {
+            const auto target = candidate->fromCommonDomain(inputs[i]->getDomainInfo());
+            auto outcome = inputs[i]->advanceToDomainValue(target.get());
+            switch (outcome.result)
+            {
+                case AdvanceResult::Success:
+                    reached[i] = outcome.reachedValue->toCommonDomain(model.commonDomain);
+                    break;
+                case AdvanceResult::NeedMoreData:
+                    needMoreInputs.push_back(slotIndices[i]);
+                    break;
+                case AdvanceResult::DomainChanged:
+                case AdvanceResult::Error:  // pending events block advancing
+                    eventInputs.push_back(slotIndices[i]);
+                    break;
+                case AdvanceResult::OvershotError:
+                    overshoot = true;
+                    break;
+            }
+        }
+
+        if (!eventInputs.empty())
+            return {SyncOutcome::EventPending, SyncFailureReason::None, eventInputs, "Events must be handled before synchronization"};
+        if (!needMoreInputs.empty())
+            return {SyncOutcome::NeedMoreData, SyncFailureReason::None, needMoreInputs, "Waiting for data to reach the aligned start"};
+        if (overshoot)
+            continue;  // a first sample moved past the candidate - recompute from fresh firsts
+
+        bool allReachedCandidate = true;
+        for (SizeT i = 0; i < count && allReachedCandidate; ++i)
+            allReachedCandidate = reachedAcceptable(*reached[i], *candidate);
+
+        if (allReachedCandidate)
+        {
+            model.commonStart = std::move(candidate);
+            return {SyncOutcome::Synchronized, SyncFailureReason::None, {}, {}};
+        }
+
+        // Data was sparser than the grid predicted (a jump without a gap event) - the
+        // cursors moved to the actually reached samples; recompute from fresh firsts
     }
+
+    return {SyncOutcome::Failed,
+            SyncFailureReason::NoCommonTick,
+            slotIndices,
+            "Inputs share no common tick on the aligned start grid (iteration bound exceeded)"};
 }
 
 void SynchronizationManager::clearSynchronization()
@@ -529,7 +604,11 @@ RatioPtr SynchronizationManager::startInterval() const
 
 std::int64_t SynchronizationManager::blockIntervalTicks() const
 {
-    return static_cast<std::int64_t>(model.blockLcm) * model.ticksPerCommonSample();
+    const auto ticksPerSample = model.ticksPerCommonSample();
+    if (ticksPerSample <= 0 ||
+        static_cast<std::int64_t>(model.blockLcm) > std::numeric_limits<std::int64_t>::max() / ticksPerSample)
+        return 0;  // callers fall back to the non-tick path
+    return static_cast<std::int64_t>(model.blockLcm) * ticksPerSample;
 }
 
 bool SynchronizationManager::reachedAcceptable(const DomainValue& reached, const DomainValue& candidate) const

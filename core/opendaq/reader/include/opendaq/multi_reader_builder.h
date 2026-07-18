@@ -242,6 +242,44 @@ DECLARE_OPENDAQ_INTERFACE(IMultiReaderBuilder, IBaseObject)
      * If a method is set to "Unspecified", the reader keeps the mode of the input port. When building with signals, "Unspecified" is an invalid configuration.
      */
     virtual ErrCode INTERFACE_FUNC getInputPortNotificationMethods(IList * *notificationMethods) = 0;
+
+    // [returnSelf]
+    /*!
+     * @brief Selects the main input - the input supplying the output grid identity (domain phase
+     * and default rate). Empty or null selects the default (the first used input).
+     * @param id Global ID of one of the source components.
+     */
+    virtual ErrCode INTERFACE_FUNC setMainInput(IString* id) = 0;
+
+    /*!
+     * @brief Gets the global ID of the explicitly selected main input; null when the default applies.
+     */
+    virtual ErrCode INTERFACE_FUNC getMainInput(IString** id) = 0;
+
+    // [returnSelf]
+    /*!
+     * @brief Sets the maximum allowed distance, in seconds, between the first unread samples of
+     * the used inputs when synchronization starts. Zero disables the check (default).
+     * @param distance Threshold in seconds; must not be negative.
+     */
+    virtual ErrCode INTERFACE_FUNC setMaxSynchronizationDistance(IRatio* distance) = 0;
+
+    /*!
+     * @brief Gets the maximum synchronization distance in seconds; zero when disabled.
+     */
+    virtual ErrCode INTERFACE_FUNC getMaxSynchronizationDistance(IRatio** distance) = 0;
+
+    // [returnSelf]
+    /*!
+     * @brief Sets the per-input packet-liveness deadline in seconds. Zero disables monitoring (default).
+     * @param timeout Deadline in seconds; must not be negative.
+     */
+    virtual ErrCode INTERFACE_FUNC setDataLossTimeout(IRatio* timeout) = 0;
+
+    /*!
+     * @brief Gets the data-loss timeout in seconds; zero when disabled.
+     */
+    virtual ErrCode INTERFACE_FUNC getDataLossTimeout(IRatio** timeout) = 0;
 };
 
 /*!@}*/

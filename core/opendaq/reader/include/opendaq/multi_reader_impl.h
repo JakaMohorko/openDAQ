@@ -17,6 +17,7 @@
 #include <opendaq/multi_reader.h>
 #include <opendaq/multi_reader_status.h>
 
+#include <opendaq/data_loss_monitor.h>
 #include <opendaq/input_slot.h>
 #include <opendaq/multi_reader_builder_ptr.h>
 #include <opendaq/notification_coordinator.h>
@@ -91,6 +92,20 @@ public:
     ErrCode INTERFACE_FUNC removeInput(IString* id) override;
     ErrCode INTERFACE_FUNC setInputUsed(IString* id, Bool isUsed) override;
     ErrCode INTERFACE_FUNC getInputUsed(IString* id, Bool* isUsed) override;
+    ErrCode INTERFACE_FUNC setMainInput(IString* id) override;
+    ErrCode INTERFACE_FUNC getMainInput(IString** id) override;
+    ErrCode INTERFACE_FUNC setMaxSynchronizationDistance(IRatio* distance) override;
+    ErrCode INTERFACE_FUNC getMaxSynchronizationDistance(IRatio** distance) override;
+    ErrCode INTERFACE_FUNC setDataLossTimeout(IRatio* timeout) override;
+    ErrCode INTERFACE_FUNC getDataLossTimeout(IRatio** timeout) override;
+
+    /// Test hook (test scaffolding section 2.7): replaces the data-loss time source so
+    /// deadline tests run on virtual time with zero real sleeps. Inline so tests can call
+    /// it without the implementation being exported from the library.
+    void setDataLossClockForTest(DataLossMonitor::Clock clock)
+    {
+        dataLossMonitor->setClockForTest(std::move(clock));
+    }
 
     // IInputPortNotifications (compat surface; the per-port listeners are the InputSlots)
     ErrCode INTERFACE_FUNC acceptsSignal(IInputPort* port, ISignal* signal, Bool* accept) override;
@@ -165,6 +180,11 @@ private:
     void reindexSlotsLocked();
     void setPortsActiveLocked(bool active);
 
+    /// Slot index of the explicitly selected main input; notFound when the default
+    /// (first used input) applies or the selection is dangling.
+    SizeT mainSlotIndexLocked() const;
+    void applyDataLossTimeoutLocked();
+
     static constexpr SizeT notFound = static_cast<SizeT>(-1);
 
     // --- State ---
@@ -181,7 +201,6 @@ private:
 
     std::unique_ptr<SynchronizationManager> syncManager;
     std::unique_ptr<ReadCoordinator> readCoordinator;
-    std::unique_ptr<NotificationCoordinator> notificationCoordinator;
 
     /// Common-domain tick of the next unread output sample while synchronized (spec section 7.4)
     std::optional<std::int64_t> nextReadTick;
@@ -226,6 +245,9 @@ private:
 
     // --- Configuration ---
     RatioPtr tickOffsetTolerance;  // deprecated; value ignored (spec section 8.4)
+    StringPtr mainInputId;         // explicitly selected main input; null -> first used input
+    RatioPtr maxSynchronizationDistance;  // seconds; null/zero disables
+    RatioPtr dataLossTimeout;             // seconds; null/zero disables
     std::int64_t requiredCommonSampleRate = -1;
     Bool allowDifferentRates = true;
     bool startOnFullUnitOfDomain = false;
@@ -240,6 +262,14 @@ private:
     ReadMode readMode{ReadMode::Scaled};
 
     InputType typeOfInputs{InputType::Unknown};
+
+    // Declared last on purpose: members destroy in reverse declaration order, so the
+    // monitor (whose waiter thread can trigger an evaluation) and the notification
+    // coordinator (whose queued task can do the same) are torn down before any member
+    // their callbacks touch - including on the constructor-throw unwinding path where
+    // ~MultiReaderImpl never runs
+    std::unique_ptr<NotificationCoordinator> notificationCoordinator;
+    std::unique_ptr<DataLossMonitor> dataLossMonitor;
 };
 
 END_NAMESPACE_OPENDAQ

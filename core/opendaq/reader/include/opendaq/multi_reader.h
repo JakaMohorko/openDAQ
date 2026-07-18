@@ -193,6 +193,50 @@ DECLARE_OPENDAQ_INTERFACE(IMultiReader, ISampleReader)
      * @param unused Output parameter
      */
     virtual ErrCode INTERFACE_FUNC getInputUsed(IString* id, Bool* isUsed) = 0;
+
+    /*!
+     * @brief Selects the main input - the input supplying the output grid identity (domain phase
+     * and default rate). Changing it at runtime invalidates the synchronization; the next read
+     * realigns on the new grid. A disconnected selected main input puts the reader into the
+     * WaitingForConnections state - it is never silently replaced.
+     * @param id Global ID of a component previously added into the MultiReader; empty or null
+     * selects the default (the first used input in construction order).
+     */
+    virtual ErrCode INTERFACE_FUNC setMainInput(IString* id) = 0;
+
+    /*!
+     * @brief Gets the global ID of the explicitly selected main input.
+     * @param[out] id The selected main input id; null when the default (first used input) applies.
+     */
+    virtual ErrCode INTERFACE_FUNC getMainInput(IString** id) = 0;
+
+    /*!
+     * @brief Sets the maximum allowed distance, in seconds, between the first unread samples of
+     * the used inputs when synchronization starts. Inputs farther from the latest start than the
+     * threshold fail the synchronization with per-input diagnostics in the status; the reader
+     * stays active. Zero disables the check (default).
+     * @param distance Threshold in seconds; must not be negative.
+     */
+    virtual ErrCode INTERFACE_FUNC setMaxSynchronizationDistance(IRatio* distance) = 0;
+
+    /*!
+     * @brief Gets the maximum synchronization distance in seconds; zero when disabled.
+     */
+    virtual ErrCode INTERFACE_FUNC getMaxSynchronizationDistance(IRatio** distance) = 0;
+
+    /*!
+     * @brief Sets the per-input packet-liveness deadline in seconds. Monitoring arms for each
+     * used, connected input after its first packet; an input missing the deadline puts the
+     * reader into the DataLost state listing every lost input, and recovers per input on its
+     * next packet. Zero disables monitoring (default).
+     * @param timeout Deadline in seconds; must not be negative.
+     */
+    virtual ErrCode INTERFACE_FUNC setDataLossTimeout(IRatio* timeout) = 0;
+
+    /*!
+     * @brief Gets the data-loss timeout in seconds; zero when disabled.
+     */
+    virtual ErrCode INTERFACE_FUNC getDataLossTimeout(IRatio** timeout) = 0;
 };
 
 /*!@}*/

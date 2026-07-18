@@ -58,6 +58,14 @@ MultiReaderImpl::MultiReaderImpl(const ListPtr<IComponent>& list,
         readCoordinator = std::make_unique<ReadCoordinator>(loggerComponent);
         notificationCoordinator = std::make_unique<NotificationCoordinator>(context.getScheduler(), loggerComponent);
         notificationCoordinator->setEvaluationCallback([this] { onCoalescedEvaluation(); });
+        dataLossMonitor = std::make_unique<DataLossMonitor>();
+        dataLossMonitor->setDeadlineCallback(
+            [this]
+            {
+                // Deadlines enter the same coalesced evaluation path as packets (spec section 9.5)
+                notificationCoordinator->requestEvaluation();
+                notifyCondition.notify_all();
+            });
         applyConfigToSyncManager();
 
         auto ports = createOrAdoptPorts(list);
@@ -96,6 +104,9 @@ MultiReaderImpl::MultiReaderImpl(MultiReaderImpl* old, SampleType valueReadType,
         isActive = old->isActive;
         minReadCount = old->minReadCount;
         tickOffsetTolerance = old->tickOffsetTolerance;
+        mainInputId = old->mainInputId;
+        maxSynchronizationDistance = old->maxSynchronizationDistance;
+        dataLossTimeout = old->dataLossTimeout;
         requiredCommonSampleRate = old->requiredCommonSampleRate;
         allowDifferentRates = old->allowDifferentRates;
         notificationMethod = old->notificationMethod;
@@ -124,6 +135,14 @@ MultiReaderImpl::MultiReaderImpl(MultiReaderImpl* old, SampleType valueReadType,
         readCoordinator = std::make_unique<ReadCoordinator>(loggerComponent);
         notificationCoordinator = std::make_unique<NotificationCoordinator>(context.getScheduler(), loggerComponent);
         notificationCoordinator->setEvaluationCallback([this] { onCoalescedEvaluation(); });
+        dataLossMonitor = std::make_unique<DataLossMonitor>();
+        dataLossMonitor->setDeadlineCallback(
+            [this]
+            {
+                // Deadlines enter the same coalesced evaluation path as packets (spec section 9.5)
+                notificationCoordinator->requestEvaluation();
+                notifyCondition.notify_all();
+            });
         applyConfigToSyncManager();
 
         createSlots(ports);
@@ -135,6 +154,7 @@ MultiReaderImpl::MultiReaderImpl(MultiReaderImpl* old, SampleType valueReadType,
             notificationCoordinator->setUsed(i, usedFlags[i]);
             slots[i]->getQueueReader().seedDescriptors(oldValueDescriptors[i], oldDomainDescriptors[i]);
         }
+        applyDataLossTimeoutLocked();
         evaluateStateLocked();
     }
     catch (...)
@@ -165,18 +185,42 @@ MultiReaderImpl::MultiReaderImpl(const MultiReaderBuilderPtr& builder)
         loggerComponent = context.getLogger().getOrAddComponent("MultiReader");
         typeOfInputs = sourceComponentsType(sourceComponents);
 
+        // Deprecated (spec section 8.4): the value is ignored; kept on the builder for compatibility
+        if (tickOffsetTolerance.assigned() && tickOffsetTolerance.getNumerator() != 0)
+        {
+            LOG_W("MultiReaderBuilder::setTickOffsetTolerance is deprecated and its value is ignored; "
+                  "use setMaxSynchronizationDistance instead");
+        }
+
+        mainInputId = builder.getMainInput();
+        if (mainInputId.assigned() && mainInputId.getLength() == 0)
+            mainInputId = nullptr;
+        maxSynchronizationDistance = builder.getMaxSynchronizationDistance();
+        dataLossTimeout = builder.getDataLossTimeout();
+
         resolvedDomainReadType = domainReadType == SampleType::Undefined ? SampleType::Int64 : domainReadType;
 
         syncManager = std::make_unique<SynchronizationManager>(loggerComponent);
         readCoordinator = std::make_unique<ReadCoordinator>(loggerComponent);
         notificationCoordinator = std::make_unique<NotificationCoordinator>(context.getScheduler(), loggerComponent);
         notificationCoordinator->setEvaluationCallback([this] { onCoalescedEvaluation(); });
+        dataLossMonitor = std::make_unique<DataLossMonitor>();
+        dataLossMonitor->setDeadlineCallback(
+            [this]
+            {
+                // Deadlines enter the same coalesced evaluation path as packets (spec section 9.5)
+                notificationCoordinator->requestEvaluation();
+                notifyCondition.notify_all();
+            });
         applyConfigToSyncManager();
 
         auto ports = createOrAdoptPorts(sourceComponents);
         createSlots(ports);
 
         std::lock_guard lock(mutex);
+        if (mainInputId.assigned() && findSlotByIdLocked(mainInputId) == notFound)
+            DAQ_THROW_EXCEPTION(NotFoundException, "The selected main input does not match any source component");
+        applyDataLossTimeoutLocked();
         evaluateStateLocked();
     }
     catch (...)
@@ -188,6 +232,8 @@ MultiReaderImpl::MultiReaderImpl(const MultiReaderBuilderPtr& builder)
 
 MultiReaderImpl::~MultiReaderImpl()
 {
+    if (dataLossMonitor)
+        dataLossMonitor->detach();
     if (notificationCoordinator)
         notificationCoordinator->detach();
     for (auto* slot : slots)
@@ -306,13 +352,34 @@ void MultiReaderImpl::createSlots(const ListPtr<IInputPortConfig>& inputPorts)
     }
 
     notificationCoordinator->resize(slots.size());
+    dataLossMonitor->resize(slots.size());
 }
+
+namespace
+{
+
+std::chrono::system_clock::duration ratioSecondsToDuration(const RatioPtr& seconds)
+{
+    if (!seconds.assigned() || seconds.getDenominator() == 0 || seconds.getNumerator() <= 0)
+        return {};
+    const auto secs = static_cast<double>(seconds.getNumerator()) / static_cast<double>(seconds.getDenominator());
+    return std::chrono::duration_cast<std::chrono::system_clock::duration>(std::chrono::duration<double>(secs));
+}
+
+}  // namespace
 
 void MultiReaderImpl::applyConfigToSyncManager()
 {
     syncManager->setRequiredCommonSampleRate(requiredCommonSampleRate);
     syncManager->setAllowDifferentRates(allowDifferentRates);
     syncManager->setStartOnFullUnitOfDomain(startOnFullUnitOfDomain);
+    syncManager->setMaxSynchronizationDistance(ratioSecondsToDuration(maxSynchronizationDistance));
+}
+
+void MultiReaderImpl::applyDataLossTimeoutLocked()
+{
+    const auto duration = ratioSecondsToDuration(dataLossTimeout);
+    dataLossMonitor->setTimeout(std::chrono::duration_cast<std::chrono::nanoseconds>(duration));
 }
 
 // --- State machine ----------------------------------------------------------------------------
@@ -371,12 +438,34 @@ void MultiReaderImpl::updateMainDescriptorsLocked()
     if (slots.empty())
         return;
 
-    // The main input is the first slot (construction order); Phase 4 makes it selectable
-    auto& reader = slots.front()->getQueueReader();
+    // The explicitly selected main input, or the first used input in construction order;
+    // the first slot as a last resort while nothing is used
+    SizeT mainSlot = mainSlotIndexLocked();
+    if (mainSlot == notFound)
+    {
+        mainSlot = 0;
+        for (SizeT i = 0; i < slots.size(); ++i)
+        {
+            if (slots[i]->isUsed())
+            {
+                mainSlot = i;
+                break;
+            }
+        }
+    }
+
+    auto& reader = slots[mainSlot]->getQueueReader();
     if (reader.getValueDescriptor().assigned())
         mainValueDescriptor = reader.getValueDescriptor();
     if (reader.getDomainDescriptor().assigned())
         mainDomainDescriptor = reader.getDomainDescriptor();
+}
+
+SizeT MultiReaderImpl::mainSlotIndexLocked() const
+{
+    if (!mainInputId.assigned())
+        return notFound;
+    return findSlotByIdLocked(mainInputId);
 }
 
 void MultiReaderImpl::evaluateStateLocked()
@@ -389,6 +478,10 @@ void MultiReaderImpl::evaluateStateLocked()
     }
     if (!isActive)
     {
+        // Inactive readers are not monitored for data loss (spec section 3.6)
+        for (SizeT i = 0; i < slots.size(); ++i)
+            dataLossMonitor->setMonitored(i, false);
+
         // Inactivity suspends data flow only: descriptor/gap events are enqueued regardless
         // of the active flag and must still surface through reads (and through the
         // dataAvailable callback, which is why the event bits are maintained here too)
@@ -423,7 +516,8 @@ void MultiReaderImpl::evaluateStateLocked()
         return;
     }
 
-    // 2. Resolve the used set
+    // 2. Resolve the used set and the main input (spec section 4.4: the explicitly
+    // selected main input is never silently replaced)
     std::vector<SizeT> slotIndices;
     const auto usedReaders = collectUsedReaders(slotIndices);
     if (usedReaders.empty())
@@ -431,6 +525,22 @@ void MultiReaderImpl::evaluateStateLocked()
         invalidateSynchronizationLocked();
         setStateLocked(MultiReaderState::WaitingForConnections, "No used inputs");
         return;
+    }
+
+    SizeT mainPosition = 0;
+    if (mainInputId.assigned())
+    {
+        const auto mainSlot = mainSlotIndexLocked();
+        const auto position = std::find(slotIndices.begin(), slotIndices.end(), mainSlot);
+        if (mainSlot == notFound || position == slotIndices.end())
+        {
+            invalidateModelLocked();
+            setStateLocked(MultiReaderState::WaitingForConnections,
+                           "The selected main input is not among the used inputs",
+                           mainSlot == notFound ? std::vector<SizeT>{} : std::vector<SizeT>{mainSlot});
+            return;
+        }
+        mainPosition = static_cast<SizeT>(position - slotIndices.begin());
     }
 
     // 3. Connections - resynced from the ports themselves: initial event packets arrive
@@ -456,6 +566,14 @@ void MultiReaderImpl::evaluateStateLocked()
             setStateWithAffectedLocked(MultiReaderState::WaitingForConnections, "Inputs", " have no signal connected", std::move(unconnected));
             return;
         }
+    }
+
+    // Data-loss monitoring covers exactly the used, connected inputs of an active reader
+    // (spec section 3.6); everything else is unmonitored and disarmed
+    for (SizeT i = 0; i < slots.size(); ++i)
+    {
+        const bool monitored = slots[i]->isUsed() && slots[i]->isConnected();
+        dataLossMonitor->setMonitored(i, monitored);
     }
 
     // While synchronized, partial blocks in front of an event are silently discarded so
@@ -506,7 +624,7 @@ void MultiReaderImpl::evaluateStateLocked()
                         modelBuildable = false;
                 }
                 if (modelBuildable)
-                    syncManager->buildCommonModel(usedReaders, slotIndices, 0);
+                    syncManager->buildCommonModel(usedReaders, slotIndices, mainPosition);
             }
 
             invalidateSynchronizationLocked();
@@ -549,6 +667,19 @@ void MultiReaderImpl::evaluateStateLocked()
         }
     }
 
+    // 9. Data-loss deadlines (spec section 3.6): checked ahead of alignment so a stalled
+    // input surfaces even while the reader is synchronized; recovery is per input on its
+    // next packet, after which synchronization is re-established
+    {
+        auto lost = dataLossMonitor->lostSlots();
+        if (!lost.empty())
+        {
+            invalidateSynchronizationLocked();
+            setStateWithAffectedLocked(MultiReaderState::DataLost, "Inputs", " missed their packet deadline", std::move(lost));
+            return;
+        }
+    }
+
     // Already synchronized: nothing further to establish
     if (syncManager->getCommonStart() != nullptr)
     {
@@ -557,7 +688,7 @@ void MultiReaderImpl::evaluateStateLocked()
     else
     {
         // 8. Cross-input compatibility and the common model
-        auto setup = syncManager->buildCommonModel(usedReaders, slotIndices, 0);
+        auto setup = syncManager->buildCommonModel(usedReaders, slotIndices, mainPosition);
         if (!setup.ok())
         {
             readCoordinator->invalidate();
@@ -688,6 +819,10 @@ void MultiReaderImpl::slotDisconnected(SizeT slotIndex)
         std::lock_guard lock(mutex);
         if (slotIndex < slots.size())
         {
+            // Disarm immediately - the state evaluation may return before its monitor
+            // refresh while other inputs are unconnected, and a stale arrival must not
+            // count toward a deadline after a reconnect
+            dataLossMonitor->setMonitored(slotIndex, false);
             slots[slotIndex]->rebindConnection();
             invalidateModelLocked();
             evaluateStateLocked();
@@ -704,7 +839,8 @@ void MultiReaderImpl::slotDisconnected(SizeT slotIndex)
 
 void MultiReaderImpl::slotPacketReceived(SizeT slotIndex)
 {
-    // Bounded producer path: no locks, no queue access (spec section 9)
+    // Bounded producer path: no state mutex, no queue access (spec section 9)
+    dataLossMonitor->onPacket(slotIndex);
     notificationCoordinator->requestEvaluation();
     notifyCondition.notify_all();
 
@@ -1328,6 +1464,12 @@ ErrCode MultiReaderImpl::removeInput(IString* id)
     if (position == notFound)
         return OPENDAQ_NOTFOUND;
 
+    if (mainInputId.assigned() && mainInputId == StringPtr::Borrow(id))
+    {
+        LOG_W("The selected main input was removed; reverting to the default (first used input)");
+        mainInputId = nullptr;
+    }
+
     auto* slot = slots[position];
     slot->detachListener();
     if (!portBinder.assigned())
@@ -1341,6 +1483,11 @@ ErrCode MultiReaderImpl::removeInput(IString* id)
     notificationCoordinator->resize(slots.size());
     for (SizeT i = 0; i < slots.size(); ++i)
         notificationCoordinator->setUsed(i, slots[i]->isUsed());
+
+    // Slot indices shifted - drop all per-slot monitor state; the remaining inputs re-arm
+    // on their next packets
+    dataLossMonitor->resize(0);
+    dataLossMonitor->resize(slots.size());
 
     invalidateModelLocked();
     evaluateStateLocked();
@@ -1360,6 +1507,8 @@ ErrCode MultiReaderImpl::setInputUsed(IString* id, Bool isUsed)
     auto* slot = slots[position];
     slot->setUsed(isUsed);
     notificationCoordinator->setUsed(position, isUsed);
+    if (!isUsed)
+        dataLossMonitor->setMonitored(position, false);
 
     if (isUsed)
     {
@@ -1392,6 +1541,97 @@ ErrCode MultiReaderImpl::getInputUsed(IString* id, Bool* isUsed)
     *isUsed = slots[position]->isUsed() ? True : False;
     return OPENDAQ_SUCCESS;
 }
+
+ErrCode MultiReaderImpl::setMainInput(IString* id)
+{
+    {
+        std::lock_guard lock(mutex);
+
+        StringPtr newId = StringPtr::Borrow(id);
+        if (newId.assigned() && newId.getLength() == 0)
+            newId = nullptr;
+
+        if (newId.assigned())
+        {
+            const auto position = findSlotByIdLocked(newId);
+            if (position == notFound)
+                return OPENDAQ_ERR_NOTFOUND;
+            if (!slots[position]->isUsed())
+                return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPARAMETER, "The selected main input is not used.");
+        }
+
+        mainInputId = newId;
+
+        // The main input defines the output grid identity - changing it invalidates the
+        // synchronization; the next evaluation realigns on the new grid (spec section 5)
+        invalidateModelLocked();
+        evaluateStateLocked();
+    }
+    notifyCondition.notify_all();
+    return OPENDAQ_SUCCESS;
+}
+
+ErrCode MultiReaderImpl::getMainInput(IString** id)
+{
+    OPENDAQ_PARAM_NOT_NULL(id);
+
+    std::lock_guard lock(mutex);
+    // Empty string means automatic selection - the first used input (error contract 3.3)
+    *id = (mainInputId.assigned() ? mainInputId : String("")).addRefAndReturn();
+    return OPENDAQ_SUCCESS;
+}
+
+ErrCode MultiReaderImpl::setMaxSynchronizationDistance(IRatio* distance)
+{
+    OPENDAQ_PARAM_NOT_NULL(distance);
+    if (RatioPtr::Borrow(distance).getNumerator() < 0)
+        return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPARAMETER, "Maximum synchronization distance must not be negative.");
+
+    {
+        std::lock_guard lock(mutex);
+        maxSynchronizationDistance = distance;
+        syncManager->setMaxSynchronizationDistance(ratioSecondsToDuration(maxSynchronizationDistance));
+        invalidateSynchronizationLocked();
+        evaluateStateLocked();
+    }
+    notifyCondition.notify_all();
+    return OPENDAQ_SUCCESS;
+}
+
+ErrCode MultiReaderImpl::getMaxSynchronizationDistance(IRatio** distance)
+{
+    OPENDAQ_PARAM_NOT_NULL(distance);
+
+    std::lock_guard lock(mutex);
+    *distance = (maxSynchronizationDistance.assigned() ? maxSynchronizationDistance : Ratio(0, 1)).addRefAndReturn();
+    return OPENDAQ_SUCCESS;
+}
+
+ErrCode MultiReaderImpl::setDataLossTimeout(IRatio* timeout)
+{
+    OPENDAQ_PARAM_NOT_NULL(timeout);
+    if (RatioPtr::Borrow(timeout).getNumerator() < 0)
+        return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPARAMETER, "Data-loss timeout must not be negative.");
+
+    {
+        std::lock_guard lock(mutex);
+        dataLossTimeout = timeout;
+        applyDataLossTimeoutLocked();
+        evaluateStateLocked();
+    }
+    notifyCondition.notify_all();
+    return OPENDAQ_SUCCESS;
+}
+
+ErrCode MultiReaderImpl::getDataLossTimeout(IRatio** timeout)
+{
+    OPENDAQ_PARAM_NOT_NULL(timeout);
+
+    std::lock_guard lock(mutex);
+    *timeout = (dataLossTimeout.assigned() ? dataLossTimeout : Ratio(0, 1)).addRefAndReturn();
+    return OPENDAQ_SUCCESS;
+}
+
 
 // --- IInputPortNotifications (compat pass-through; slots are the real listeners) ---------------
 
@@ -1508,6 +1748,8 @@ ErrCode MultiReaderImpl::getIsValid(Bool* isValid)
 
 void MultiReaderImpl::internalDispose(bool)
 {
+    if (dataLossMonitor)
+        dataLossMonitor->detach();
     if (notificationCoordinator)
         notificationCoordinator->detach();
     for (auto* slot : slots)
