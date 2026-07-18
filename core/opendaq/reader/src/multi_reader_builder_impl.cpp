@@ -235,6 +235,56 @@ ErrCode MultiReaderBuilderImpl::getInputPortNotificationMethods(IList** notifica
     return OPENDAQ_SUCCESS;
 }
 
+ErrCode MultiReaderBuilderImpl::setMainInput(IString* id)
+{
+    this->mainInputId = id;
+    return OPENDAQ_SUCCESS;
+}
+
+ErrCode MultiReaderBuilderImpl::getMainInput(IString** id)
+{
+    OPENDAQ_PARAM_NOT_NULL(id);
+
+    *id = this->mainInputId.addRefAndReturn();
+    return OPENDAQ_SUCCESS;
+}
+
+ErrCode MultiReaderBuilderImpl::setMaxSynchronizationDistance(IRatio* distance)
+{
+    OPENDAQ_PARAM_NOT_NULL(distance);
+    if (RatioPtr::Borrow(distance).getNumerator() < 0)
+        return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPARAMETER, "Maximum synchronization distance must not be negative.");
+
+    this->maxSynchronizationDistance = distance;
+    return OPENDAQ_SUCCESS;
+}
+
+ErrCode MultiReaderBuilderImpl::getMaxSynchronizationDistance(IRatio** distance)
+{
+    OPENDAQ_PARAM_NOT_NULL(distance);
+
+    *distance = (this->maxSynchronizationDistance.assigned() ? this->maxSynchronizationDistance : Ratio(0, 1)).addRefAndReturn();
+    return OPENDAQ_SUCCESS;
+}
+
+ErrCode MultiReaderBuilderImpl::setDataLossTimeout(IRatio* timeout)
+{
+    OPENDAQ_PARAM_NOT_NULL(timeout);
+    if (RatioPtr::Borrow(timeout).getNumerator() < 0)
+        return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPARAMETER, "Data-loss timeout must not be negative.");
+
+    this->dataLossTimeout = timeout;
+    return OPENDAQ_SUCCESS;
+}
+
+ErrCode MultiReaderBuilderImpl::getDataLossTimeout(IRatio** timeout)
+{
+    OPENDAQ_PARAM_NOT_NULL(timeout);
+
+    *timeout = (this->dataLossTimeout.assigned() ? this->dataLossTimeout : Ratio(0, 1)).addRefAndReturn();
+    return OPENDAQ_SUCCESS;
+}
+
 /////////////////////
 ////
 //// FACTORIES

@@ -104,11 +104,12 @@ MultiReaderState deriveCompatState(const DictPtr<IString, IEventPacket>& eventPa
     return MultiReaderState::Synchronized;
 }
 
-// The stream is invalid exactly in the failure states (error contract section 3.3)
+// The stream is invalid exactly in the failure states (error contract section 3.3,
+// spec section 6.1: Incompatible, SynchronizationFailed, DataLost and Error read as Fail)
 Bool deriveValidity(MultiReaderState state)
 {
     return state != MultiReaderState::Incompatible && state != MultiReaderState::SynchronizationFailed &&
-           state != MultiReaderState::Error;
+           state != MultiReaderState::DataLost && state != MultiReaderState::Error;
 }
 
 }  // namespace

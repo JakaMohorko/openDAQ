@@ -67,6 +67,15 @@ public:
     ErrCode INTERFACE_FUNC setInputPortNotificationMethods(IList* notificationMethods) override;
     ErrCode INTERFACE_FUNC getInputPortNotificationMethods(IList** notificationMethods) override;
 
+    ErrCode INTERFACE_FUNC setMainInput(IString* id) override;
+    ErrCode INTERFACE_FUNC getMainInput(IString** id) override;
+
+    ErrCode INTERFACE_FUNC setMaxSynchronizationDistance(IRatio* distance) override;
+    ErrCode INTERFACE_FUNC getMaxSynchronizationDistance(IRatio** distance) override;
+
+    ErrCode INTERFACE_FUNC setDataLossTimeout(IRatio* timeout) override;
+    ErrCode INTERFACE_FUNC getDataLossTimeout(IRatio** timeout) override;
+
 private:
     ListPtr<IComponent> sources;
     SampleType valueReadType;
@@ -80,6 +89,9 @@ private:
     Bool allowDifferentRates;
     PacketReadyNotification notificationMethod;
     ListPtr<PacketReadyNotification> notificationMethodsList;
+    StringPtr mainInputId;
+    RatioPtr maxSynchronizationDistance;
+    RatioPtr dataLossTimeout;
     ContextPtr context;
 };
 

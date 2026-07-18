@@ -89,6 +89,10 @@ public:
 
     virtual void roundUpOnDomainInterval(const RatioPtr& interval) = 0;
 
+    /// Shift the value by a whole number of ticks of its own domain (used to anchor
+    /// grid rounding at an arbitrary phase, spec section 5).
+    virtual void shiftTicks(std::int64_t delta) = 0;
+
     /**
      * @brief System-clock time this value represents (epoch + tick * resolution).
      * Used for synchronization-distance diagnostics; not for tick-exact comparisons.
@@ -218,6 +222,11 @@ public:
         value = static_cast<Type>((((value * num + den - 1) / den) * den) / num);
     }
 
+    void shiftTicks(std::int64_t delta) override
+    {
+        value = static_cast<Type>(value + delta);
+    }
+
     std::chrono::system_clock::time_point toAbsoluteTime() const override
     {
         return reader::toSysTime(value, domain.epoch, domain.resolution);
@@ -336,6 +345,13 @@ public:
         DAQ_THROW_EXCEPTION(NotSupportedException);
     }
 
+    void shiftTicks(std::int64_t delta) override
+    {
+        value.start += delta;
+        if (value.end != -1)
+            value.end += delta;
+    }
+
     std::chrono::system_clock::time_point toAbsoluteTime() const override
     {
         return reader::toSysTime(value.start, domain.epoch, domain.resolution);
@@ -405,6 +421,11 @@ public:
         DAQ_THROW_EXCEPTION(NotSupportedException);
     }
 
+    void shiftTicks(std::int64_t delta) override
+    {
+        DAQ_THROW_EXCEPTION(NotSupportedException);
+    }
+
     std::chrono::system_clock::time_point toAbsoluteTime() const override
     {
         DAQ_THROW_EXCEPTION(NotSupportedException);
@@ -448,6 +469,11 @@ public:
     }
 
     void roundUpOnDomainInterval(const RatioPtr& interval) override
+    {
+        DAQ_THROW_EXCEPTION(NotSupportedException);
+    }
+
+    void shiftTicks(std::int64_t delta) override
     {
         DAQ_THROW_EXCEPTION(NotSupportedException);
     }

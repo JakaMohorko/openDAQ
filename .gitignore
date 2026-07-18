@@ -55,3 +55,5 @@ shared/tools/license-header-checker/bin/
 
 # Generated verion file
 bindings/dotnet/openDAQ.Net/OpenDaqNetVersion.props
+# Added by code-review-graph
+.code-review-graph/

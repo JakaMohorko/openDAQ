@@ -1,6 +1,7 @@
 #include <opendaq/custom_log.h>
 #include <opendaq/event_packet_params.h>
 #include <opendaq/input_port_factory.h>
+#include <opendaq/multi_reader_impl.h>
 #include <opendaq/reader_config_ptr.h>
 #include <opendaq/reader_exceptions.h>
 #include <opendaq/reader_factory.h>
@@ -5459,4 +5460,305 @@ TEST_F(MultiReaderTest, StatusStateIncompatibleRecoverable)
     ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
     ASSERT_EQ(status.getState(), MultiReaderState::WaitingForData);
     ASSERT_TRUE(status.getValid());
+}
+
+// --- Phase 4: main-input selection, synchronization distance, data-loss monitoring ---
+
+TEST_F(MultiReaderTest, MainInputAccessors)
+{
+    readSignals.reserve(2);
+    addSignal(0, 10, createDomainSignal());
+    addSignal(0, 10, createDomainSignal());
+
+    auto multi =
+        MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
+
+    // Empty string means automatic selection (error contract 3.3)
+    ASSERT_EQ(multi.getMainInput().getLength(), 0u);
+    ASSERT_THROW(multi.setMainInput("no-such-input"), NotFoundException);
+
+    const auto mainId = readSignals[1].signal.getGlobalId();
+    multi.setMainInput(mainId);
+    ASSERT_EQ(multi.getMainInput(), mainId);
+
+    // An empty id reverts to the default (first used input)
+    multi.setMainInput("");
+    ASSERT_EQ(multi.getMainInput().getLength(), 0u);
+
+    // Selecting an unused input is rejected (error contract 3.3)
+    multi.setInputUsed(mainId, false);
+    ASSERT_THROW(multi.setMainInput(mainId), InvalidParameterException);
+}
+
+TEST_F(MultiReaderTest, MainInputSelectionGrid)
+{
+    // SY-14: the main input defines the grid phase, and alignment only tolerates other
+    // inputs starting a small FORWARD offset after it. Input 1's grid trails input 0's by
+    // nine of ten ticks - unacceptable with input 0 as main (nine-tick offsets are
+    // ambiguous), but with input 1 as main input 0 leads by just one tick and the pair
+    // synchronizes on input 1's grid.
+    readSignals.reserve(2);
+    auto& sig0 = addSignal(500, 30, createDomainSignal("2022-09-27T00:02:03+00:00", Ratio(1, 1000), LinearDataRule(10, 0)));
+    auto& sig1 = addSignal(509, 30, createDomainSignal("2022-09-27T00:02:03+00:00", Ratio(1, 1000), LinearDataRule(10, 0)));
+
+    auto multi =
+        MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
+
+    SizeT count{0};
+    auto status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+
+    sig0.createAndSendPacket(0);
+    sig1.createAndSendPacket(0);
+
+    ASSERT_EQ(multi.getAvailableCount(), 0u);
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getState(), MultiReaderState::SynchronizationFailed);
+
+    multi.setMainInput(readSignals[1].signal.getGlobalId());
+    ASSERT_GT(multi.getAvailableCount(), 0u);
+    ASSERT_TRUE(multi.getIsSynchronized());
+}
+
+TEST_F(MultiReaderTest, MainInputDisconnectedWaits)
+{
+    // SY-15: a disconnected selected main input is never silently replaced - the reader
+    // waits for its connection instead of re-anchoring on the remaining inputs
+    readSignals.reserve(2);
+    auto& sig0 = addSignal(0, 10, createDomainSignal());
+    auto& sig1 = addSignal(0, 10, createDomainSignal());
+
+    auto ports = portsList();
+    auto multi =
+        MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addInputPorts(ports).build();
+    ports[0].connect(sig0.signal);
+    ports[1].connect(sig1.signal);
+
+    multi.setMainInput(ports[0].getGlobalId());
+
+    SizeT count{0};
+    auto status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+
+    sendPackets(0);
+    ASSERT_GT(multi.getAvailableCount(), 0u);
+
+    ports[0].disconnect();
+
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getState(), MultiReaderState::WaitingForConnections);
+    ASSERT_EQ(multi.getAvailableCount(), 0u);
+    ASSERT_EQ(multi.getMainInput(), ports[0].getGlobalId());
+}
+
+TEST_F(MultiReaderTest, MaxSyncDistanceFailsWithDiagnostics)
+{
+    // SY-11: inputs starting 10 s apart with a 5 s threshold fail the synchronization with
+    // the early input named; the reader stays active (spec 8.5)
+    readSignals.reserve(2);
+    addSignal(0, 12000, createDomainSignal());
+    addSignal(10000, 2000, createDomainSignal());
+
+    auto multi = MultiReaderBuilder()
+                     .setInputPortNotificationMethod(PacketReadyNotification::SameThread)
+                     .addSignals(signalsToList())
+                     .setMaxSynchronizationDistance(Ratio(5, 1))
+                     .build();
+
+    SizeT count{0};
+    auto status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+
+    sendPackets(0);
+
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getState(), MultiReaderState::SynchronizationFailed);
+    ASSERT_FALSE(status.getValid());
+    ASSERT_EQ(status.getAffectedInputCount(), 1u);
+    ASSERT_EQ(status.getAffectedInputIndex(0), 0u);
+    ASSERT_NE(status.getStateMessage().toStdString().find("maximum synchronization distance"), std::string::npos);
+    ASSERT_TRUE(multi.getActive());
+}
+
+TEST_F(MultiReaderTest, MaxSyncDistanceZeroDisables)
+{
+    // SY-12: with the default (zero) threshold the same 10 s stagger synchronizes
+    readSignals.reserve(2);
+    addSignal(0, 12000, createDomainSignal());
+    addSignal(10000, 2000, createDomainSignal());
+
+    auto multi =
+        MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
+
+    SizeT count{0};
+    auto status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+
+    sendPackets(0);
+
+    ASSERT_EQ(multi.getAvailableCount(), 2000u);
+    ASSERT_TRUE(multi.getIsSynchronized());
+}
+
+TEST_F(MultiReaderTest, Phase4BuilderAccessors)
+{
+    auto builder = MultiReaderBuilder();
+
+    ASSERT_FALSE(builder.getMainInput().assigned());
+    // Zero means disabled (the default)
+    ASSERT_EQ(builder.getMaxSynchronizationDistance(), Ratio(0, 1));
+    ASSERT_EQ(builder.getDataLossTimeout(), Ratio(0, 1));
+
+    ASSERT_THROW(builder.setMaxSynchronizationDistance(Ratio(-1, 1)), InvalidParameterException);
+    ASSERT_THROW(builder.setDataLossTimeout(Ratio(-1, 1)), InvalidParameterException);
+    ASSERT_THROW(builder.setMaxSynchronizationDistance(nullptr), ArgumentNullException);
+    ASSERT_THROW(builder.setDataLossTimeout(nullptr), ArgumentNullException);
+
+    builder.setMaxSynchronizationDistance(Ratio(5, 1));
+    builder.setDataLossTimeout(Ratio(1, 2));
+    ASSERT_EQ(builder.getMaxSynchronizationDistance(), Ratio(5, 1));
+    ASSERT_EQ(builder.getDataLossTimeout(), Ratio(1, 2));
+
+    // The built reader reflects the builder configuration
+    readSignals.reserve(2);
+    addSignal(0, 10, createDomainSignal());
+    addSignal(0, 10, createDomainSignal());
+    const auto mainId = readSignals[1].signal.getGlobalId();
+
+    auto multi = builder.setInputPortNotificationMethod(PacketReadyNotification::SameThread)
+                     .addSignals(signalsToList())
+                     .setMainInput(mainId)
+                     .build();
+
+    ASSERT_EQ(multi.getMainInput(), mainId);
+    ASSERT_EQ(multi.getMaxSynchronizationDistance(), Ratio(5, 1));
+    ASSERT_EQ(multi.getDataLossTimeout(), Ratio(1, 2));
+
+    ASSERT_THROW(multi.setMaxSynchronizationDistance(Ratio(-1, 1)), InvalidParameterException);
+    ASSERT_THROW(multi.setDataLossTimeout(Ratio(-1, 1)), InvalidParameterException);
+}
+
+TEST_F(MultiReaderTest, DataLossVirtualClock)
+{
+    // DL-1/DL-2/DL-3 through the public API on virtual time (test scaffolding 2.7)
+    readSignals.reserve(2);
+    auto& sig0 = addSignal(0, 10, createDomainSignal());
+    auto& sig1 = addSignal(0, 10, createDomainSignal());
+
+    auto multi =
+        MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
+
+    auto* impl = dynamic_cast<MultiReaderImpl*>(multi.asPtr<IReaderConfig>().getObject());
+    ASSERT_NE(impl, nullptr);
+    auto virtualNow = std::chrono::steady_clock::now();
+    impl->setDataLossClockForTest([&virtualNow] { return virtualNow; });
+
+    multi.setDataLossTimeout(Ratio(10, 1));  // ten virtual seconds
+
+    SizeT count{0};
+    auto status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+
+    sendPackets(0);
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getState(), MultiReaderState::Synchronized);
+
+    // Input 1 goes stale while input 0 keeps delivering (DL-2)
+    virtualNow += std::chrono::seconds(6);
+    sig0.createAndSendPacket(1);
+    virtualNow += std::chrono::seconds(6);
+
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getState(), MultiReaderState::DataLost);
+    ASSERT_FALSE(status.getValid());
+    ASSERT_EQ(status.getAffectedInputCount(), 1u);
+    ASSERT_EQ(status.getAffectedInputIndex(0), 1u);
+
+    // The stale input recovers on its next packet (DL-3)
+    sig1.createAndSendPacket(1);
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_NE(status.getState(), MultiReaderState::DataLost);
+    ASSERT_TRUE(status.getValid());
+}
+
+TEST_F(MultiReaderTest, DataLossInactiveAndUnusedNotMonitored)
+{
+    // DL-5: inactive readers and unused inputs never trip the deadline
+    readSignals.reserve(2);
+    addSignal(0, 10, createDomainSignal());
+    addSignal(0, 10, createDomainSignal());
+
+    auto multi =
+        MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
+
+    auto* impl = dynamic_cast<MultiReaderImpl*>(multi.asPtr<IReaderConfig>().getObject());
+    ASSERT_NE(impl, nullptr);
+    auto virtualNow = std::chrono::steady_clock::now();
+    impl->setDataLossClockForTest([&virtualNow] { return virtualNow; });
+
+    multi.setDataLossTimeout(Ratio(10, 1));
+
+    SizeT count{0};
+    auto status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+    sendPackets(0);
+
+    // An unused input is not monitored even when stale
+    multi.setInputUsed(readSignals[1].signal.getGlobalId(), false);
+    virtualNow += std::chrono::seconds(60);
+    readSignals[0].createAndSendPacket(1);  // input 0 stays fresh
+
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_NE(status.getState(), MultiReaderState::DataLost);
+
+    // An inactive reader is not monitored at all
+    multi.setInputUsed(readSignals[1].signal.getGlobalId(), true);
+    multi.setActive(false);
+    virtualNow += std::chrono::seconds(60);
+
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getState(), MultiReaderState::Inactive);
+}
+
+TEST_F(MultiReaderTest, DataLossDeadlineFiresWithoutReads)
+{
+    // DL-1 smoke test on real time: the deadline transitions the reader out of the
+    // synchronized state autonomously - getIsSynchronized only inspects the state and
+    // never re-evaluates, so observing the flip proves the waiter-driven path
+    readSignals.reserve(2);
+    addSignal(0, 10, createDomainSignal());
+    addSignal(0, 10, createDomainSignal());
+
+    auto multi =
+        MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
+
+    multi.setDataLossTimeout(Ratio(1, 20));  // 50 ms
+
+    SizeT count{0};
+    auto status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+    sendPackets(0);
+
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getState(), MultiReaderState::Synchronized);
+    ASSERT_TRUE(multi.getIsSynchronized());
+
+    const auto start = std::chrono::steady_clock::now();
+    while (multi.getIsSynchronized() && std::chrono::steady_clock::now() - start < std::chrono::seconds(5))
+        std::this_thread::yield();
+
+    ASSERT_FALSE(multi.getIsSynchronized());
+
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getState(), MultiReaderState::DataLost);
 }

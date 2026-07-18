@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "code-review-graph": {
+      "command": "C:\\Users\\jaka.mohorko\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
+      "args": [
+        "-m",
+        "code_review_graph",
+        "serve"
+      ],
+      "cwd": "C:\\Users\\jaka.mohorko\\Documents\\openDAQ\\opendaq-fork",
+      "type": "stdio"
+    }
+  }
+}

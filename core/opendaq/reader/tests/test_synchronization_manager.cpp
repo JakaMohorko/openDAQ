@@ -435,6 +435,25 @@ TEST_F(SyncManagerTest, SyncHalfSamplePeriodOffsetWithinHalfBlockAccepted)
     ASSERT_EQ(firstTick(*b.reader), 505);
 }
 
+TEST_F(SyncManagerTest, MainInputDefinesGridPhase)
+{
+    // SY-14: the main input supplies the output grid phase. Its samples sit at 502 + 4k -
+    // two ticks off the absolute block grid - yet candidates follow ITS grid, so it reaches
+    // the start exactly instead of diverging into NoCommonTick.
+    auto& a = addInput("a", domainDescriptor(Ratio(1, 1000), 4));  // 250 Hz main
+    auto& b = addInput("b", domainDescriptor(Ratio(1, 1000), 2));  // 500 Hz
+    send(a, 30, 502);  // ticks 502, 506, ...
+    send(b, 60, 500);  // ticks 500, 502, ...
+
+    ASSERT_TRUE(manager->buildCommonModel(readers(), slots(), 0).ok());
+    const auto result = manager->synchronize(readers(), slots());
+
+    ASSERT_EQ(result.outcome, SyncOutcome::Synchronized) << result.message;
+    ASSERT_EQ(commonTick(manager->getCommonStart()), 502);
+    ASSERT_EQ(firstTick(*a.reader), 502);
+    ASSERT_EQ(firstTick(*b.reader), 502);
+}
+
 TEST_F(SyncManagerTest, SyncStartOnFullUnitOfDomain)
 {
     manager->setStartOnFullUnitOfDomain(true);
