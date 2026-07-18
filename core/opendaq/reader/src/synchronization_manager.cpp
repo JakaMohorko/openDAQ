@@ -310,7 +310,7 @@ SyncResult SynchronizationManager::synchronize(const std::vector<QueueReader*>& 
             auto first = inputs[i]->getFirstSampleDomainValue();
             if (!first)
                 return {SyncOutcome::NeedMoreData, SyncFailureReason::None, {slotIndices[i]}, "Input has no unread samples"};
-            firstsCommon[i] = first->toCommonDomain(model.commonDomain);
+            firstsCommon[i] = first->toDomain(model.commonDomain);
         }
 
         // Step 3: synchronization distance
@@ -455,12 +455,12 @@ SyncResult SynchronizationManager::synchronize(const std::vector<QueueReader*>& 
 
         for (SizeT i = 0; i < count; ++i)
         {
-            const auto target = candidate->fromCommonDomain(inputs[i]->getDomainInfo());
+            const auto target = candidate->fromDomain(inputs[i]->getDomainInfo());
             auto outcome = inputs[i]->advanceToDomainValue(target.get());
             switch (outcome.result)
             {
                 case AdvanceResult::Success:
-                    reached[i] = outcome.reachedValue->toCommonDomain(model.commonDomain);
+                    reached[i] = outcome.reachedValue->toDomain(model.commonDomain);
                     break;
                 case AdvanceResult::NeedMoreData:
                     needMoreInputs.push_back(slotIndices[i]);

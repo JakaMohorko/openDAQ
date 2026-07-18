@@ -93,7 +93,7 @@ enum class QueueReaderIssue : uint32_t
     UnsupportedDomainRule           = 1 << 2,
     OriginParsingFailed             = 1 << 3,
     DomainUnitInvalid               = 1 << 4,
-    UnsupportedDimensions           = 1 << 5 // COMMENT: There should be no unsupported dimensions 
+    DomainNotScalar           = 1 << 5  // domain descriptor has dimensions - a vector timestamp has no meaning
 };
 
 class QueueReader
@@ -107,21 +107,28 @@ public:
                  bool globalIdFromSignal);
 
 public:
-    DomainInfo getDomainInfo();
-    std::unique_ptr<DomainValue> getFirstSampleDomainValue();
+    /**
+     * @brief Adopt everything currently queued on the connection into the local packet
+     * deque, applying leading events. The owner calls this at its evaluation points; every
+     * other accessor is a pure query over the already-adopted state (#10).
+     */
+    void drain();
+
+    DomainInfo getDomainInfo() const;
+    std::unique_ptr<DomainValue> getFirstSampleDomainValue() const;
 
     /**
      * @brief System-clock time of the first unread sample, for synchronization-distance diagnostics.
      * Empty when no data packet is at the front of the queue.
      */
-    std::optional<std::chrono::system_clock::time_point> getFirstSampleAbsoluteTime();
+    std::optional<std::chrono::system_clock::time_point> getFirstSampleAbsoluteTime() const;
 
     /**
      * @brief Advance the cursor to the first sample at or after domainValue (signal-domain target).
      * Pending events block advancing (returns Error); the owner must pop them first.
      */
     AdvanceOutcome advanceToDomainValue(const DomainValue* domainValue);
-    Int getSampleRate();
+    Int getSampleRate() const;
 
     void dropOutdatedPacketSegments();
 
@@ -136,18 +143,18 @@ public:
      * 
      * @return SizeT Available samples multiplied by the sample rate divider.
      */
-    SizeT getAvailableSamples();
+    SizeT getAvailableSamples() const;
 
     /**
      * @brief Available samples (common rate equivalent) from the cursor up to the next event packet
      * or queue end. Makes the until-event contract of the availability count explicit.
      */
-    SizeT getAvailableSamplesUntilEvent();
+    SizeT getAvailableSamplesUntilEvent() const;
 
-    bool hasPendingEvents();
+    bool hasPendingEvents() const;
     EventPacketPtr popFrontEvent();
     
-    bool isValid();
+    bool isValid() const;
 
     /// Active (cached) descriptors - null until the first descriptor event has been consumed.
     const DataDescriptorPtr& getValueDescriptor() const;
@@ -218,7 +225,7 @@ private:
     void adoptPackets();
     void consumeLeadingEventPackets();
     
-    SizeT getAvailableSamplesNative();
+    SizeT getAvailableSamplesNative() const;
     AdvanceResult readNative(void* valueBuffer, void* domainBuffer, SizeT* count);
 
     void checkConnection() const;

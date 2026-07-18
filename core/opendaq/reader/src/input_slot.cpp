@@ -111,7 +111,12 @@ void InputSlot::rebindConnection()
 bool InputSlot::syncConnection()
 {
     connectedState = port.getConnection().assigned();
-    return queueReader.refreshConnection();
+    const bool rebound = queueReader.refreshConnection();
+    // The owner's evaluation points are the only places queues are refreshed (#10) -
+    // adopt whatever the producers enqueued since the last evaluation
+    if (!rebound && connectedState)
+        queueReader.drain();
+    return rebound;
 }
 
 bool InputSlot::isUsed() const

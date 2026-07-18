@@ -602,16 +602,18 @@ void MultiReaderImpl::evaluateStateLocked()
                 handshakeInFlight = true;
             }
         }
-        if (!eventInputs.empty())
+        // While a connect handshake is in flight the reader is not yet event-ready: the
+        // in-flight input's initial descriptor event arrives momentarily and re-triggers
+        // evaluation, so both the dataAvailable callback and blocked reads see every
+        // input's initial event at once. The evaluation falls through to step 6, which
+        // truthfully reports the handshaking input as WaitingForDescriptors.
+        if (handshakeInFlight)
         {
-            // Reads may still return the events already pending, but the dataAvailable
-            // callback waits for the in-flight handshake - its event arrives momentarily and
-            // re-triggers evaluation, so the callback sees every input's initial event at once
-            if (handshakeInFlight)
-            {
-                for (const auto index : slotIndices)
-                    notificationCoordinator->setEvent(index, false);
-            }
+            for (const auto index : slotIndices)
+                notificationCoordinator->setEvent(index, false);
+        }
+        else if (!eventInputs.empty())
+        {
             // Descriptors apply when leading events are consumed, so the cross-input model
             // can be built opportunistically - accessors like getCommonSampleRate and
             // getTickResolution work right after construction, like they always have
@@ -1224,6 +1226,14 @@ ErrCode MultiReaderImpl::getEmpty(Bool* empty)
     {
         if (!slot->isUsed())
             continue;
+
+        // Queues refresh only at explicit points (#10)
+        slot->syncConnection();
+        if (!slot->isConnected())
+        {
+            allHaveData = false;
+            continue;
+        }
 
         auto& reader = slot->getQueueReader();
         if (reader.hasPendingEvents())

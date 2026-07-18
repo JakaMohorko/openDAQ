@@ -31,7 +31,8 @@ struct ReadLayout
 class TypedReadingUtils
 {
 public:
-    // COMMENT: Is this unused?
+    /// The one place a ReadLayout is derived from a descriptor (used by QueueReader's
+    /// descriptor parsing and by tests).
     static ReadLayout createReadLayout(const DataDescriptorPtr& descriptor);
 
     static bool isSampleTypeConvertible(SampleType in, SampleType out, bool isDomain);

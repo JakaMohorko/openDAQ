@@ -51,6 +51,7 @@ protected:
         input.port.connect(input.signal);
         input.reader = std::make_unique<QueueReader>(
             input.port, SampleType::Float64, SampleType::Int64, ReadMode::Scaled, loggerComponent, false);
+        input.reader->drain();
         if (input.reader->hasPendingEvents())
             input.reader->popFrontEvent();
         return input;
@@ -65,6 +66,8 @@ protected:
             values[i] = firstValue + static_cast<double>(i);
         input.domainSignal.sendPacket(domainPacket);
         input.signal.sendPacket(valuePacket);
+        // Queues refresh only at explicit drain points (#10)
+        input.reader->drain();
     }
 
     std::vector<QueueReader*> readers() const
@@ -222,6 +225,7 @@ TEST_F(ReadCoordinatorTest, DiscardLeftoverSegmentsIsSilent)
                                      .setRule(LinearDataRule(2, 0))
                                      .setUnit(Unit("s", -1, "second", "time"))
                                      .build());
+    b.reader->drain();
 
     CommonModel blockTen;
     blockTen.blockLcm = 10;

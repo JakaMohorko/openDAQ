@@ -349,9 +349,12 @@ std::unique_ptr<DomainValue> readDomainValue(const ReadLayout& readLayout,
                                              SizeT index,
                                              const DomainInfo& domainInfo)
 {
-    if constexpr (std::is_same_v<void*, OutputT>)
+    // The gate keeps DomainValueImpl from being instantiated for sample types that make no
+    // sense as domain values (#15) - the runtime dispatch still covers every SampleType,
+    // but unsupported ones fail here instead of in throwing template specializations
+    if constexpr (std::is_same_v<void*, OutputT> || !isDomainValueType<OutputT>)
     {
-        DAQ_THROW_EXCEPTION(NotSupportedException, "ReadDomainValueLinear not supported for the void output type.");
+        DAQ_THROW_EXCEPTION(NotSupportedException, "The selected output type cannot represent a domain value.");
         return {};
     }
     else
@@ -466,7 +469,8 @@ SizeT findDomainValue(const ReadLayout& readLayout,
     if (!inputBuffer)
         DAQ_THROW_EXCEPTION(ArgumentNullException, "Packet with null data buffer");
 
-    if constexpr (std::is_convertible_v<InputT, OutputT> && !std::is_same_v<void*, OutputT> && !std::is_same_v<void*, InputT>)
+    if constexpr (std::is_convertible_v<InputT, OutputT> && !std::is_same_v<void*, OutputT> && !std::is_same_v<void*, InputT> &&
+                  isDomainValueType<OutputT>)
     {
         InputT* domainBuffer = static_cast<InputT*>(inputBuffer);
 
