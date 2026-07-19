@@ -1,11 +1,33 @@
 # Multi Reader Rework — Review Comments: Evaluation and Action Plan
 
-**Status: DRAFT — covers the comment sets (commits `343fe1ae` and `a6f14914`), the accompanying
-notes, and the design discussion of 2026-07-19 (Q1–Q5 resolved — §4; the `stateDirty` draft
-superseded by per-slot `HasData`/`HasEvent` — §2.1; data loss made in-band — §2.6). More comments
-are expected; no code changes are made until the full set is in.** Architecture background and the
-verified facts referenced here live in `08_internal_architecture.md` (§6 "Known hot spots" in
-particular).
+**Status: IMPLEMENTED (2026-07-19).** Batch A = `aa927ddd`, Batch B = `45f8bcbf`, Batch C =
+`2d998ec3` (status surface) + `6a060e0d` (state machine). Covers the comment sets (commits
+`343fe1ae` and `a6f14914`), the accompanying notes, and the design discussion of 2026-07-19
+(Q1–Q5 resolved — §4). Architecture background lives in `08_internal_architecture.md`.
+
+Implementation deltas vs the plan text below (§5 records them in detail):
+
+1. The sum FB **keeps** `setExternalListener` — connect/disconnect notifications reach the FB
+   only through the reader's forwarding (the slots own the ports' listener seats), and
+   packet-paced probe/staleness checks still need it. Only the parked-port recovery hook moved
+   to the status surface (`probeEventfulParkedLocked` on `InputState::Event`).
+2. In-band data loss (§2.6) is implemented **without a queue marker**: the deadline no longer
+   invalidates while the lost input still has buffered data; the loss becomes the reader state
+   at the first evaluation after that input's queue drains. The draining read itself reports
+   its pre-drain state; the next call reports `InputsFailed`.
+3. The 13-step evaluation survives as the **transition handler** (run by mutators, events,
+   deadlines and establishment states); the data plane runs `refreshDataPlaneLocked`, which
+   drains only packet-pending slots and escalates on events/deadlines only. N6's observable
+   goal ("no checks after sync until an event") holds; the further decomposition into
+   per-component handlers remains open as a refactoring, not a behavior change.
+4. New mechanism discovered during implementation: `exposeBuriedEventsLocked` — a failed input
+   with a corrective descriptor change buried behind unreadable stale data drops that data
+   (dropForInactive semantics) so the fix can surface. Without it, an actively producing
+   failing input could never recover (only the parked path recovered before).
+5. `QueueReader::hasQueuedEventPackets()` — sticky adoption-time marker letting the fast path
+   detect buried events at O(1) in the no-event steady state.
+6. Kept as-is: `getStateMessage` name; event-packet dict keys stay port global ids (unifying
+   them with input ids would break existing key consumers and is deferred).
 
 Numbering: C1–C12 are the inline `// COMMENT:` markers from `343fe1ae`; C13–C15 are the markers
 from `a6f14914`; N1–N7 are the notes from the accompanying message; S1 is the slot-reconstruction

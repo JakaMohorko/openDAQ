@@ -1,10 +1,34 @@
 # Multi Reader Rework — Internal Architecture and Command Flows
 
 **Companion to:** `01_specification.md` (behavioral contract), `02_implementation_plan.md` (phases),
-`05_error_contract.md` (public error semantics), `09_review_comments_plan.md` (pending review actions).
-**Code:** everything under `core/opendaq/reader/` unless noted. This document describes the
-implementation as it exists on the branch today, including its known weak points; the review-comment
-plan proposes what changes.
+`05_error_contract.md` (public error semantics), `09_review_comments_plan.md` (review actions).
+**Code:** everything under `core/opendaq/reader/` unless noted.
+
+> **Addendum (2026-07-19, review batches A–C implemented — commits `aa927ddd`, `45f8bcbf`,
+> `2d998ec3`, `6a060e0d`).** This document described the pre-review implementation; the flows
+> below remain correct in structure, with these deltas:
+>
+> - **Public status surface (C5/C6/C7):** `MultiReaderState`/`getState` and the ordered/affected
+>   event APIs are gone. `getReadStatus` returns the extended `ReadStatus` (`+ Preparing,
+>   Inactive, InputsFailed`), per-input conditions come from `getInputStates` (input id →
+>   `InputState`), statuses are built through `MultiReaderStatusBuilder`, and `getValid()` is
+>   false only for `Fail`. Internally the granular states survive as the private `ReaderState`.
+> - **Data plane (C11/N6):** `readInternal`, the wait predicates, `getAvailableCount` and the
+>   coalesced task now run `refreshDataPlaneLocked` — while synchronized, only packet-pending
+>   slots are drained and only events (leading or buried: `hasQueuedEventPackets`) and expired
+>   deadlines escalate to the full `evaluateStateLocked`. The 13-step evaluation remains the
+>   transition handler for mutators and establishment states.
+> - **Data loss is in-band (§2.6):** the deadline no longer invalidates while the lost input has
+>   buffered data; `DataLost` surfaces at the first evaluation after its queue drains.
+> - **Unused inputs (C12/Q5):** their events are drained (`drainUnusedSlotsLocked`), reported as
+>   `InputState::Event`, and fire the callback — the gate is `anyEvent() || allUsedReady()`.
+> - **Recovery of failing producers:** `exposeBuriedEventsLocked` drops a failed input's stale
+>   pre-fix data so a buried corrective descriptor change can surface.
+> - **Stable slots (S1):** `removeInput` erases one slot's coordinator/monitor state
+>   (`erase(index)`); the remaining inputs keep readiness bits and armed deadlines.
+> - **Naming (C13):** the internals live in `daq::multi_reader` under
+>   `include/opendaq/multi_reader/`; `InputSlot` is `multi_reader::Input`.
+> - **Config (C1/C2):** sync distance and data-loss timeout are builder-only.
 
 ---
 
@@ -451,7 +475,10 @@ builder-only (C1/C2), turning runtime changes into a rebuild.
 
 ## 6. Known hot spots and structural debts (inputs to the review plan)
 
-Facts, verified on the current branch — the *decisions* about them live in
+**All nine items below are resolved by the review batches (see the addendum at the top and
+`09_review_comments_plan.md` §5); kept as the record of what the review was measured against.**
+
+Facts, verified on the pre-review branch — the *decisions* about them live in
 `09_review_comments_plan.md`:
 
 1. **Full re-derivation per data-plane call.** 19 `evaluateStateLocked` call sites; an idle
