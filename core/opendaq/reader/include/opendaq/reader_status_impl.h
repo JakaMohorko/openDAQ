@@ -75,20 +75,18 @@ class MultiReaderStatusImpl final : public GenericReaderStatusImpl<IMultiReaderS
 public:
     using Super = GenericReaderStatusImpl<IMultiReaderStatus>;
 
-    /// Compatibility constructor: the state is derived from the events and the valid flag.
+    /// Compatibility constructor: the read status is derived from the events and the valid flag.
     explicit MultiReaderStatusImpl(const EventPacketPtr& mainDescriptor, const DictPtr<IString, IEventPacket>& eventPackets, Bool valid, const NumberPtr& offset);
 
-    /// Full constructor carrying the reader state, diagnostics and the ordered event list
-    /// (eventInputIndices and orderedEventPackets are parallel). The validity is derived
-    /// from the state: Incompatible, SynchronizationFailed and Error report invalid.
+    /// Full constructor (creation goes through MultiReaderStatusBuilder). The validity is
+    /// derived from the read status: false only for ReadStatus::Fail - every other condition
+    /// is recoverable in the same reader instance.
     explicit MultiReaderStatusImpl(const EventPacketPtr& mainDescriptor,
                                    const DictPtr<IString, IEventPacket>& eventPackets,
                                    const NumberPtr& offset,
-                                   MultiReaderState state,
+                                   ReadStatus readStatus,
                                    const StringPtr& stateMessage,
-                                   const ListPtr<IInteger>& affectedInputIndices,
-                                   const ListPtr<IInteger>& eventInputIndices,
-                                   const ListPtr<IEventPacket>& orderedEventPackets);
+                                   const DictPtr<IString, IInteger>& inputStates);
 
     ErrCode INTERFACE_FUNC getReadStatus(ReadStatus* status) override;
 
@@ -98,25 +96,15 @@ public:
 
     ErrCode INTERFACE_FUNC getMainDescriptor(IEventPacket** descriptor) override;
 
-    ErrCode INTERFACE_FUNC getState(MultiReaderState* state) override;
+    ErrCode INTERFACE_FUNC getInputStates(IDict** inputStates) override;
 
     ErrCode INTERFACE_FUNC getStateMessage(IString** message) override;
 
-    ErrCode INTERFACE_FUNC getAffectedInputCount(SizeT* count) override;
-
-    ErrCode INTERFACE_FUNC getAffectedInputIndex(SizeT statusIndex, SizeT* inputIndex) override;
-
-    ErrCode INTERFACE_FUNC getEventCount(SizeT* count) override;
-
-    ErrCode INTERFACE_FUNC getEvent(SizeT eventIndex, SizeT* inputIndex, IEventPacket** packet) override;
-
 private:
     DictPtr<IString, IEventPacket> eventPackets;
-    MultiReaderState state;
+    ReadStatus readStatus;
     StringPtr stateMessage;
-    ListPtr<IInteger> affectedInputIndices;
-    ListPtr<IInteger> eventInputIndices;
-    ListPtr<IEventPacket> orderedEventPackets;
+    DictPtr<IString, IInteger> inputStates;
 };
 
 END_NAMESPACE_OPENDAQ

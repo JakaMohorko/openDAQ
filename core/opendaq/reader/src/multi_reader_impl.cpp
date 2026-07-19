@@ -93,7 +93,7 @@ MultiReaderImpl::MultiReaderImpl(MultiReaderImpl* old, SampleType valueReadType,
         std::scoped_lock lock(old->mutex);
         old->invalid = true;
         // Keep the invariant invalid <=> Error: statuses derive their validity from the state
-        old->setStateLocked(MultiReaderState::Error, "Reader was invalidated by MultiReaderFromExisting");
+        old->setStateLocked(ReaderState::Error, "Reader was invalidated by MultiReaderFromExisting");
 
         loggerComponent = old->loggerComponent;
         readMode = old->readMode;
@@ -387,14 +387,14 @@ void MultiReaderImpl::applyDataLossTimeoutLocked()
 
 // --- State machine ----------------------------------------------------------------------------
 
-void MultiReaderImpl::setStateLocked(MultiReaderState newState, std::string message, std::vector<SizeT> affected)
+void MultiReaderImpl::setStateLocked(ReaderState newState, std::string message, std::vector<SizeT> affected)
 {
     state = newState;
     stateMessage = std::move(message);
     stateAffectedInputs = std::move(affected);
 }
 
-void MultiReaderImpl::setStateWithAffectedLocked(MultiReaderState newState,
+void MultiReaderImpl::setStateWithAffectedLocked(ReaderState newState,
                                                  const char* messagePrefix,
                                                  const char* messageSuffix,
                                                  std::vector<SizeT> affected)
@@ -483,7 +483,7 @@ void MultiReaderImpl::evaluateStateLocked()
     // 1. Error is terminal; inactivity gates everything else
     if (invalid)
     {
-        setStateLocked(MultiReaderState::Error, stateMessage.empty() ? "Reader is invalid" : stateMessage);
+        setStateLocked(ReaderState::Error, stateMessage.empty() ? "Reader is invalid" : stateMessage);
         return;
     }
     if (!isActive)
@@ -521,11 +521,11 @@ void MultiReaderImpl::evaluateStateLocked()
         if (!inactiveEventInputs.empty())
         {
             invalidateSynchronizationLocked();
-            setStateWithAffectedLocked(MultiReaderState::EventPending, "Events pending on inputs", "", std::move(inactiveEventInputs));
+            setStateWithAffectedLocked(ReaderState::EventPending, "Events pending on inputs", "", std::move(inactiveEventInputs));
         }
         else
         {
-            setStateLocked(MultiReaderState::Inactive);
+            setStateLocked(ReaderState::Inactive);
         }
         return;
     }
@@ -537,7 +537,7 @@ void MultiReaderImpl::evaluateStateLocked()
     if (usedReaders.empty())
     {
         invalidateSynchronizationLocked();
-        setStateLocked(MultiReaderState::WaitingForConnections, "No used inputs");
+        setStateLocked(ReaderState::WaitingForConnections, "No used inputs");
         return;
     }
 
@@ -549,7 +549,7 @@ void MultiReaderImpl::evaluateStateLocked()
         if (mainSlot == notFound || position == slotIndices.end())
         {
             invalidateModelLocked();
-            setStateLocked(MultiReaderState::WaitingForConnections,
+            setStateLocked(ReaderState::WaitingForConnections,
                            "The selected main input is not among the used inputs",
                            mainSlot == notFound ? std::vector<SizeT>{} : std::vector<SizeT>{mainSlot});
             return;
@@ -577,7 +577,7 @@ void MultiReaderImpl::evaluateStateLocked()
                 notificationCoordinator->setEvent(index, false);
 
             invalidateModelLocked();
-            setStateWithAffectedLocked(MultiReaderState::WaitingForConnections, "Inputs", " have no signal connected", std::move(unconnected));
+            setStateWithAffectedLocked(ReaderState::WaitingForConnections, "Inputs", " have no signal connected", std::move(unconnected));
             return;
         }
     }
@@ -644,7 +644,7 @@ void MultiReaderImpl::evaluateStateLocked()
             }
 
             invalidateSynchronizationLocked();
-            setStateWithAffectedLocked(MultiReaderState::EventPending, "Events pending on inputs", "", std::move(eventInputs));
+            setStateWithAffectedLocked(ReaderState::EventPending, "Events pending on inputs", "", std::move(eventInputs));
             return;
         }
     }
@@ -659,7 +659,7 @@ void MultiReaderImpl::evaluateStateLocked()
         }
         if (!missing.empty())
         {
-            setStateWithAffectedLocked(MultiReaderState::WaitingForDescriptors, "Inputs", " have no descriptors yet", std::move(missing));
+            setStateWithAffectedLocked(ReaderState::WaitingForDescriptors, "Inputs", " have no descriptors yet", std::move(missing));
             return;
         }
     }
@@ -678,7 +678,7 @@ void MultiReaderImpl::evaluateStateLocked()
         {
             invalidateModelLocked();
             setStateWithAffectedLocked(
-                MultiReaderState::Incompatible, "Inputs", " are not readable with the current descriptors", std::move(invalidInputs));
+                ReaderState::Incompatible, "Inputs", " are not readable with the current descriptors", std::move(invalidInputs));
             return;
         }
     }
@@ -691,7 +691,7 @@ void MultiReaderImpl::evaluateStateLocked()
         if (!lost.empty())
         {
             invalidateSynchronizationLocked();
-            setStateWithAffectedLocked(MultiReaderState::DataLost, "Inputs", " missed their packet deadline", std::move(lost));
+            setStateWithAffectedLocked(ReaderState::DataLost, "Inputs", " missed their packet deadline", std::move(lost));
             return;
         }
     }
@@ -699,7 +699,7 @@ void MultiReaderImpl::evaluateStateLocked()
     // Already synchronized: nothing further to establish
     if (syncManager->getCommonStart() != nullptr)
     {
-        setStateLocked(MultiReaderState::Synchronized);
+        setStateLocked(ReaderState::Synchronized);
     }
     else
     {
@@ -708,7 +708,7 @@ void MultiReaderImpl::evaluateStateLocked()
         if (!setup.ok())
         {
             readCoordinator->invalidate();
-            setStateLocked(MultiReaderState::Incompatible, std::move(setup.message), std::move(setup.affectedInputs));
+            setStateLocked(ReaderState::Incompatible, std::move(setup.message), std::move(setup.affectedInputs));
             return;
         }
 
@@ -724,7 +724,7 @@ void MultiReaderImpl::evaluateStateLocked()
             }
             if (!empty.empty())
             {
-                setStateWithAffectedLocked(MultiReaderState::WaitingForData, "Waiting for data on inputs", "", std::move(empty));
+                setStateWithAffectedLocked(ReaderState::WaitingForData, "Waiting for data on inputs", "", std::move(empty));
                 return;
             }
         }
@@ -737,20 +737,20 @@ void MultiReaderImpl::evaluateStateLocked()
                 // 12. Configure the read pipelines
                 readCoordinator->configure(usedReaders, syncManager->getModel());
                 nextReadTick = currentReadOffsetLocked();
-                setStateLocked(MultiReaderState::Synchronized);
+                setStateLocked(ReaderState::Synchronized);
                 break;
             case SyncOutcome::NeedMoreData:
-                setStateLocked(MultiReaderState::Synchronizing, std::move(result.message), std::move(result.affectedInputs));
+                setStateLocked(ReaderState::Synchronizing, std::move(result.message), std::move(result.affectedInputs));
                 break;
             case SyncOutcome::EventPending:
                 invalidateSynchronizationLocked();
-                setStateLocked(MultiReaderState::EventPending, std::move(result.message), std::move(result.affectedInputs));
+                setStateLocked(ReaderState::EventPending, std::move(result.message), std::move(result.affectedInputs));
                 for (const auto index : result.affectedInputs)
                     notificationCoordinator->setEvent(index, true);
                 break;
             case SyncOutcome::Failed:
                 // Synchronization failure no longer deactivates the reader (spec section 8.5)
-                setStateLocked(MultiReaderState::SynchronizationFailed, std::move(result.message), std::move(result.affectedInputs));
+                setStateLocked(ReaderState::SynchronizationFailed, std::move(result.message), std::move(result.affectedInputs));
                 break;
         }
     }
@@ -760,7 +760,7 @@ void MultiReaderImpl::evaluateStateLocked()
     for (SizeT position = 0; position < usedReaders.size(); ++position)
     {
         bool ready = false;
-        if (state == MultiReaderState::Synchronized && syncManager->hasModel())
+        if (state == ReaderState::Synchronized && syncManager->hasModel())
             ready = usedReaders[position]->getAvailableSamplesUntilEvent() >= syncManager->getModel().blockLcm;
         else
             ready = usedReaders[position]->getAvailableSamples() > 0;
@@ -893,16 +893,104 @@ EventPacketPtr MultiReaderImpl::mainDescriptorPacketLocked()
                                             descriptorToEventPacketParam(domainDescriptor));
 }
 
-MultiReaderStatusPtr MultiReaderImpl::createStatusLocked(const DictPtr<IString, IEventPacket>& eventPackets,
-                                                         const NumberPtr& offset,
-                                                         const ListPtr<IInteger>& eventInputIndices,
-                                                         const ListPtr<IEventPacket>& orderedEventPackets)
+namespace
 {
-    // The status derives its validity from the state (error contract section 3.3):
-    // Incompatible/SynchronizationFailed/Error report an invalid stream while the reader
-    // itself stays recoverable in all but Error. The invalid flag maps to Error here as a
-    // safety net - every path setting it is also expected to set the state.
-    const auto effectiveState = invalid && state != MultiReaderState::Error ? MultiReaderState::Error : state;
+
+// C5/Q1: the public surface is the extended ReadStatus; the internal states map onto it.
+// A status carrying events always reports Event - the events are the thing to react to.
+ReadStatus toReadStatus(ReaderState state, bool hasEvents)
+{
+    if (hasEvents)
+        return ReadStatus::Event;
+
+    switch (state)
+    {
+        case ReaderState::Synchronized:
+            return ReadStatus::Ok;
+        case ReaderState::Inactive:
+            return ReadStatus::Inactive;
+        case ReaderState::EventPending:
+            // Events are pending but none were returned in this status (e.g. a wait timed
+            // out before they could be popped): "read again" is exactly the reaction
+            return ReadStatus::Event;
+        case ReaderState::Incompatible:
+        case ReaderState::SynchronizationFailed:
+        case ReaderState::DataLost:
+            return ReadStatus::InputsFailed;
+        case ReaderState::Error:
+            return ReadStatus::Fail;
+        case ReaderState::WaitingForConnections:
+        case ReaderState::WaitingForDescriptors:
+        case ReaderState::WaitingForData:
+        case ReaderState::Synchronizing:
+        default:
+            return ReadStatus::Preparing;
+    }
+}
+
+}  // namespace
+
+DictPtr<IString, IInteger> MultiReaderImpl::inputStatesLocked(std::vector<std::pair<std::string, int>>* fingerprint) const
+{
+    // Failure states name their affected inputs; everything else is derived per slot
+    InputState failureState = InputState::Ok;
+    switch (state)
+    {
+        case ReaderState::Incompatible:
+            failureState = InputState::Incompatible;
+            break;
+        case ReaderState::SynchronizationFailed:
+            failureState = InputState::SynchronizationFailed;
+            break;
+        case ReaderState::DataLost:
+            failureState = InputState::DataLost;
+            break;
+        default:
+            break;
+    }
+
+    auto result = Dict<IString, IInteger>();
+    for (auto* slot : slots)
+    {
+        InputState inputState;
+        if (!slot->isUsed())
+        {
+            // C12/Q2: an unused input with unconsumed events reports Event - that is the
+            // recovery signal consumers react to with setInputUsed(id, true)
+            inputState = slot->isConnected() && slot->getQueueReader().hasPendingEvents() ? InputState::Event : InputState::Unused;
+        }
+        else if (failureState != InputState::Ok &&
+                 std::find(stateAffectedInputs.begin(), stateAffectedInputs.end(), slot->getIndex()) != stateAffectedInputs.end())
+        {
+            inputState = failureState;
+        }
+        else if (slot->isConnected() && slot->getQueueReader().hasPendingEvents())
+        {
+            inputState = InputState::Event;
+        }
+        else if (state == ReaderState::Synchronized)
+        {
+            inputState = InputState::Ok;
+        }
+        else
+        {
+            inputState = InputState::Pending;
+        }
+
+        const auto id = slot->getInputId();
+        result.set(id, static_cast<Int>(inputState));
+        if (fingerprint != nullptr)
+            fingerprint->emplace_back(id.toStdString(), static_cast<int>(inputState));
+    }
+    return result;
+}
+
+MultiReaderStatusPtr MultiReaderImpl::createStatusLocked(const DictPtr<IString, IEventPacket>& eventPackets,
+                                                         const NumberPtr& offset)
+{
+    // The invalid flag maps to Error here as a safety net - every path setting it is also
+    // expected to set the state
+    const auto effectiveState = invalid && state != ReaderState::Error ? ReaderState::Error : state;
 
     const bool hasEvents = eventPackets.assigned() && eventPackets.getCount() > 0;
 
@@ -912,6 +1000,7 @@ MultiReaderStatusPtr MultiReaderImpl::createStatusLocked(const DictPtr<IString, 
     fingerprint.state = effectiveState;
     fingerprint.message = stateMessage;
     fingerprint.affectedInputs = stateAffectedInputs;
+    const auto inputStates = inputStatesLocked(&fingerprint.inputStates);
     fingerprint.offset = offset.assigned() ? static_cast<std::int64_t>(offset.getIntValue()) : 0;
     fingerprint.mainValue = mainValueDescriptor.getObject();
     fingerprint.mainDomain = mainDomainDescriptor.getObject();
@@ -919,14 +1008,14 @@ MultiReaderStatusPtr MultiReaderImpl::createStatusLocked(const DictPtr<IString, 
     if (!hasEvents && cachedStatus.assigned() && fingerprint == cachedStatusFingerprint)
         return cachedStatus;
 
-    auto status = MultiReaderStatusEx(mainDescriptorPacketLocked(),
-                                      eventPackets,
-                                      offset,
-                                      effectiveState,
-                                      String(stateMessage),
-                                      ListPtr<IInteger>::FromVector(stateAffectedInputs),
-                                      eventInputIndices,
-                                      orderedEventPackets);
+    auto status = MultiReaderStatusBuilder()
+                      .setReadStatus(toReadStatus(effectiveState, hasEvents))
+                      .setMainDescriptor(mainDescriptorPacketLocked())
+                      .setEventPackets(eventPackets)
+                      .setOffset(offset)
+                      .setStateMessage(String(stateMessage))
+                      .setInputStates(inputStates)
+                      .build();
     if (!hasEvents)
     {
         cachedStatus = status;
@@ -968,8 +1057,6 @@ std::optional<std::int64_t> MultiReaderImpl::currentReadOffsetLocked() const
 MultiReaderStatusPtr MultiReaderImpl::readEventsLocked()
 {
     auto events = Dict<IString, EventPacketPtr>();
-    auto eventInputIndices = List<IInteger>();
-    auto orderedEventPackets = List<IEventPacket>();
     for (auto* slot : slots)
     {
         if (!slot->isUsed())
@@ -982,11 +1069,7 @@ MultiReaderStatusPtr MultiReaderImpl::readEventsLocked()
         // One event per input per call (spec section 7.2); the pop applies descriptor changes
         auto packet = reader.popFrontEvent();
         if (packet.assigned())
-        {
             events.set(slot->getPort().getGlobalId(), packet);
-            eventInputIndices.pushBack(static_cast<Int>(slot->getIndex()));
-            orderedEventPackets.pushBack(packet);
-        }
 
         notificationCoordinator->setEvent(slot->getIndex(), reader.hasPendingEvents());
     }
@@ -998,7 +1081,7 @@ MultiReaderStatusPtr MultiReaderImpl::readEventsLocked()
     refreshMainInputDescriptorsLocked();
     evaluateStateLocked();
 
-    return createStatusLocked(events, nullptr, eventInputIndices, orderedEventPackets);
+    return createStatusLocked(events);
 }
 
 // --- Read path --------------------------------------------------------------------------------
@@ -1026,7 +1109,7 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
     // With a timeout the call waits for events to arrive instead of returning immediately.
     if (*count == 0)
     {
-        if (timeoutMs > 0 && state != MultiReaderState::EventPending)
+        if (timeoutMs > 0 && state != ReaderState::EventPending)
         {
             notifyCondition.wait_for(lock,
                                      milliseconds(timeoutMs),
@@ -1035,11 +1118,11 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
                                          if (invalid)
                                              return true;
                                          evaluateStateLocked();
-                                         return state == MultiReaderState::EventPending;
+                                         return state == ReaderState::EventPending;
                                      });
         }
         MultiReaderStatusPtr statusPtr =
-            state == MultiReaderState::EventPending ? readEventsLocked() : createStatusLocked();
+            state == ReaderState::EventPending ? readEventsLocked() : createStatusLocked();
         if (status)
             *status = statusPtr.detach();
         return OPENDAQ_SUCCESS;
@@ -1057,9 +1140,9 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
                                      if (invalid)
                                          return true;
                                      evaluateStateLocked();
-                                     if (state == MultiReaderState::EventPending)
+                                     if (state == ReaderState::EventPending)
                                          return true;
-                                     if (state != MultiReaderState::Synchronized)
+                                     if (state != ReaderState::Synchronized)
                                          return false;
 
                                      std::vector<SizeT> slotIndices;
@@ -1080,7 +1163,7 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
         evaluateStateLocked();
     }
 
-    if (state == MultiReaderState::EventPending)
+    if (state == ReaderState::EventPending)
     {
         auto statusPtr = readEventsLocked();
         if (status)
@@ -1089,7 +1172,7 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
         return OPENDAQ_SUCCESS;
     }
 
-    if (state != MultiReaderState::Synchronized)
+    if (state != ReaderState::Synchronized)
     {
         if (status)
             *status = createStatusLocked().detach();
@@ -1127,7 +1210,7 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
     if (commitResult != CommitResult::Ok)
     {
         invalid = true;
-        setStateLocked(MultiReaderState::Error, std::move(commitError));
+        setStateLocked(ReaderState::Error, std::move(commitError));
         if (status)
             *status = createStatusLocked().detach();
         *count = 0;
@@ -1207,7 +1290,7 @@ ErrCode MultiReaderImpl::getAvailableCount(SizeT* count)
         return OPENDAQ_SUCCESS;
 
     evaluateStateLocked();
-    if (state == MultiReaderState::Synchronized)
+    if (state == ReaderState::Synchronized)
     {
         std::vector<SizeT> slotIndices;
         const auto used = collectUsedReaders(slotIndices);
@@ -1371,7 +1454,7 @@ ErrCode MultiReaderImpl::getIsSynchronized(Bool* isSynchronized)
     OPENDAQ_PARAM_NOT_NULL(isSynchronized);
 
     std::lock_guard lock(mutex);
-    *isSynchronized = state == MultiReaderState::Synchronized ? True : False;
+    *isSynchronized = state == ReaderState::Synchronized ? True : False;
     return OPENDAQ_SUCCESS;
 }
 
@@ -1664,7 +1747,7 @@ ErrCode MultiReaderImpl::markAsInvalid()
 {
     std::lock_guard lock(mutex);
     invalid = true;
-    setStateLocked(MultiReaderState::Error, "Reader was marked as invalid");
+    setStateLocked(ReaderState::Error, "Reader was marked as invalid");
     return OPENDAQ_SUCCESS;
 }
 
@@ -1695,7 +1778,7 @@ void MultiReaderImpl::internalDispose(bool)
     cachedStatus = nullptr;
     cachedCommonDomainDescriptor = nullptr;
     invalid = true;
-    setStateLocked(MultiReaderState::Error, "Reader was disposed");
+    setStateLocked(ReaderState::Error, "Reader was disposed");
     isActive = false;
 }
 

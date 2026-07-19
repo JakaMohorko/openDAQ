@@ -103,6 +103,7 @@ set(SRC_PublicHeaders
     boolean_factory.h
 
     integer.h
+    integer_ptr.h
     integer_factory.h
 
     float.h

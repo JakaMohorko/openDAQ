@@ -1445,7 +1445,9 @@ TEST_F(MultiReaderTest, Signal2Invalidated)
     ASSERT_EQ(count, SIG2_PACKET_SIZE);
 
     auto status = multi.readWithDomain(valuesPerSignal, domainPerSignal, &count);
-    ASSERT_FALSE(status.getValid());
+    // The read runs into the descriptor-change event; validity stays true - only
+    // ReadStatus::Fail is unrecoverable (C5/Q1)
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
 
     printData(SAMPLES, time, values);
     roundData<std::chrono::microseconds>(SAMPLES, time);
@@ -2419,16 +2421,17 @@ TEST_F(MultiReaderTest, ReadWhenOnePortIsNotConnected)
     std::array<double[SAMPLES], NUM_SIGNALS> values{};
     void* valuesPerSignal[NUM_SIGNALS]{values[0], values[1], values[2]};
 
-    // check that we read 0 samples as one of the ports is not connected
+    // check that we read 0 samples as one of the ports is not connected (Preparing: nothing
+    // is wrong, but no data can be expected until the port connects)
     SizeT count{SAMPLES};
     MultiReaderStatusPtr status = multi.read(valuesPerSignal, &count);
-    ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Preparing);
     ASSERT_EQ(count, 0u);
 
     // check reading with timeout
     count = SAMPLES;
     status = multi.read(valuesPerSignal, &count, 100u);
-    ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Preparing);
     ASSERT_EQ(count, 0u);
 
     // connect signal to the port
@@ -2661,12 +2664,12 @@ TEST_F(MultiReaderTest, MultiReaderActive)
 
     multiReader.setActive(false);
 
-    // send packets to inactive reader
+    // send packets to inactive reader: the deliberate deactivation is reported as Inactive
     sendPackets(packetIndex++);  // 1
     count = NUM_SAMPLES;
     status = multiReader.readWithDomain(valuesPerSignal, domainValuesPerSignal, &count);
 
-    ASSERT_EQ(status.getReadStatus(), daq::ReadStatus::Ok);
+    ASSERT_EQ(status.getReadStatus(), daq::ReadStatus::Inactive);
     ASSERT_EQ(count, 0u);
 
     // send packets to inactive reader
@@ -2674,7 +2677,7 @@ TEST_F(MultiReaderTest, MultiReaderActive)
     count = NUM_SAMPLES;
     status = multiReader.readWithDomain(valuesPerSignal, domainValuesPerSignal, &count);
 
-    ASSERT_EQ(status.getReadStatus(), daq::ReadStatus::Ok);
+    ASSERT_EQ(status.getReadStatus(), daq::ReadStatus::Inactive);
     ASSERT_EQ(count, 0u);
 
     // send event packet
@@ -2793,10 +2796,10 @@ TEST_F(MultiReaderTest, MultiReaderActiveGapPacket)
 
     ASSERT_EQ(multiReader.getAvailableCount(), 0u);
 
-    // read nothing, gap packet was dropped
+    // read nothing, gap packet was dropped; the deactivated reader reports Inactive
     count = NUM_SAMPLES;
     status = multiReader.readWithDomain(valuesPerSignal, domainValuesPerSignal, &count);
-    ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Inactive);
     ASSERT_EQ(count, 0u);
 
     // change descriptor
@@ -3105,7 +3108,10 @@ TEST_F(MultiReaderTest, ExpectSR)
 
     count = 0;
     status = reader.read(nullptr, &count, 0);
-    ASSERT_EQ(status.getReadStatus(), ReadStatus::Fail);
+    // A required-rate mismatch is a recoverable per-input failure, not a reader failure
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::InputsFailed);
+    ASSERT_EQ(static_cast<InputState>(static_cast<Int>(status.getInputStates().get(valueSignal.getGlobalId()))),
+              InputState::Incompatible);
 }
 
 TEST_F(MultiReaderTest, TestReaderWithConnectedPortConnectionEmpty)
@@ -3331,7 +3337,8 @@ TEST_P(MinReadCountTest, MinReadCount)
 
     count = 0;
     status = multi.read(nullptr, &count, timeoutMs);
-    ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
+    // The event consumed the buffered data with it - the reader is waiting for fresh data
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Preparing);
     ASSERT_EQ(count, 0u);
 }
 
@@ -3881,6 +3888,8 @@ TEST_F(MultiReaderTest, CheckSpecificCase)
 
         SizeT count{0};
         auto status = multiReader.read(data, &count);
+        // Data past the event keeps the reader synchronized (a full block just is not
+        // available yet), so this reports Ok rather than Preparing
         ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
     }
 }
@@ -3904,17 +3913,19 @@ TEST_F(MultiReaderTest, StatusStateWaitingForConnections)
 
     SizeT count{0};
     MultiReaderStatusPtr status = multi.read(nullptr, &count);
-    ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
-    ASSERT_EQ(status.getState(), MultiReaderState::WaitingForConnections);
-    ASSERT_EQ(status.getAffectedInputCount(), 1u);
-    ASSERT_EQ(status.getAffectedInputIndex(0), 1u);
+    // Waiting for a connection is not an error - nothing is wrong, no data is expected yet
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Preparing);
+    auto states = status.getInputStates();
+    ASSERT_EQ(states.getCount(), 3u);
+    ASSERT_EQ(static_cast<InputState>(static_cast<Int>(states.get(ports[1].getGlobalId()))), InputState::Pending);
     ASSERT_EQ(status.getStateMessage().toStdString(), "Inputs [1] have no signal connected");
 }
 
-TEST_F(MultiReaderTest, StatusOrderedEventListAndCompatAccessors)
+TEST_F(MultiReaderTest, StatusEventDictAndInputStates)
 {
-    // ST-1/ST-6/ST-8: ordered (inputIndex, packet) pairs, the compat dict and the compat
-    // first-event accessor all expose the same events
+    // ST-1/ST-6/ST-8: the event dict carries one event per input per read, the compat
+    // first-event accessor returns one of them, and the per-input states reflect the
+    // post-consumption condition
     readSignals.reserve(2);
     addSignal(0, 10, createDomainSignal());
     addSignal(0, 10, createDomainSignal());
@@ -3925,28 +3936,23 @@ TEST_F(MultiReaderTest, StatusOrderedEventListAndCompatAccessors)
     SizeT count{0};
     MultiReaderStatusPtr status = multi.read(nullptr, &count);
     ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
-    ASSERT_EQ(status.getEventCount(), 2u);
 
-    SizeT inputIndex = static_cast<SizeT>(-1);
-    auto packet0 = status.getEvent(0, inputIndex);
-    ASSERT_EQ(inputIndex, 0u);
-    ASSERT_TRUE(packet0.assigned());
-    ASSERT_EQ(packet0.getEventId(), event_packet_id::DATA_DESCRIPTOR_CHANGED);
-
-    auto packet1 = status.getEvent(1, inputIndex);
-    ASSERT_EQ(inputIndex, 1u);
-    ASSERT_TRUE(packet1.assigned());
-
-    // The compat dict carries the same packets keyed by port global id (ST-1)
+    // The dict carries the events keyed by port global id (ST-1)
     auto dict = status.getEventPackets();
     ASSERT_EQ(dict.getCount(), 2u);
 
-    // IReaderStatus::getEventPacket returns the first event of the ordered list (ST-8)
+    // IReaderStatus::getEventPacket returns one of the returned events (ST-8)
     auto firstEvent = status.asPtr<IReaderStatus>().getEventPacket();
-    ASSERT_EQ(firstEvent.getObject(), packet0.getObject());
+    ASSERT_TRUE(firstEvent.assigned());
+    ASSERT_EQ(firstEvent.getEventId(), event_packet_id::DATA_DESCRIPTOR_CHANGED);
 
-    // After all initial events are consumed the reader waits for data
-    ASSERT_EQ(status.getState(), MultiReaderState::WaitingForData);
+    // The initial events were consumed by this read - every input is now waiting for data
+    auto states = status.getInputStates();
+    ASSERT_EQ(states.getCount(), 2u);
+    for (const auto& signal : readSignals)
+    {
+        ASSERT_EQ(static_cast<InputState>(static_cast<Int>(states.get(signal.signal.getGlobalId()))), InputState::Pending);
+    }
 }
 
 TEST_F(MultiReaderTest, StatusMainDescriptorCommonDomain)
@@ -4006,14 +4012,14 @@ TEST_F(MultiReaderTest, StatusCachedWhileUnchangedNewOnChange)
     count = 0;
     MultiReaderStatusPtr second = multi.read(nullptr, &count);
 
-    ASSERT_EQ(first.getState(), MultiReaderState::WaitingForData);
+    ASSERT_EQ(first.getReadStatus(), ReadStatus::Preparing);
     ASSERT_EQ(first.getObject(), second.getObject());
 
     sendPackets(0);
 
     count = 0;
     MultiReaderStatusPtr third = multi.read(nullptr, &count);
-    ASSERT_EQ(third.getState(), MultiReaderState::Synchronized);
+    ASSERT_EQ(third.getReadStatus(), ReadStatus::Ok);
     ASSERT_NE(third.getObject(), second.getObject());
 }
 
@@ -4038,10 +4044,16 @@ TEST_F(MultiReaderTest, StatusStateIncompatibleRecoverable)
     count = 0;
     status = multi.read(nullptr, &count);
     ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
-    ASSERT_EQ(status.getState(), MultiReaderState::Incompatible);
-    ASSERT_FALSE(status.getValid());
-    ASSERT_EQ(status.getAffectedInputCount(), 1u);
-    ASSERT_EQ(status.getAffectedInputIndex(0), 0u);
+    ASSERT_EQ(static_cast<InputState>(static_cast<Int>(status.getInputStates().get(readSignals[0].signal.getGlobalId()))),
+              InputState::Incompatible);
+    // Recoverable - only ReadStatus::Fail reads as invalid (C5/Q1)
+    ASSERT_TRUE(status.getValid());
+
+    // A follow-up read with no events left reports the persistent condition
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::InputsFailed);
+    ASSERT_TRUE(status.getValid());
 
     // The reader itself stays valid - the condition is recoverable (spec 6.1/8.5)
     ASSERT_TRUE(multi.asPtr<IReaderConfig>().getIsValid());
@@ -4051,8 +4063,11 @@ TEST_F(MultiReaderTest, StatusStateIncompatibleRecoverable)
     count = 0;
     status = multi.read(nullptr, &count);
     ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
-    ASSERT_EQ(status.getState(), MultiReaderState::WaitingForData);
     ASSERT_TRUE(status.getValid());
+
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Preparing);
 }
 
 // --- Phase 4: main-input selection, synchronization distance, data-loss monitoring ---
@@ -4107,7 +4122,7 @@ TEST_F(MultiReaderTest, MainInputSelectionGrid)
     ASSERT_EQ(multi.getAvailableCount(), 0u);
     count = 0;
     status = multi.read(nullptr, &count);
-    ASSERT_EQ(status.getState(), MultiReaderState::SynchronizationFailed);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::InputsFailed);
 
     multi.setMainInput(readSignals[1].signal.getGlobalId());
     ASSERT_GT(multi.getAvailableCount(), 0u);
@@ -4141,7 +4156,7 @@ TEST_F(MultiReaderTest, MainInputDisconnectedWaits)
 
     count = 0;
     status = multi.read(nullptr, &count);
-    ASSERT_EQ(status.getState(), MultiReaderState::WaitingForConnections);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Preparing);
     ASSERT_EQ(multi.getAvailableCount(), 0u);
     ASSERT_EQ(multi.getMainInput(), ports[0].getGlobalId());
 }
@@ -4168,10 +4183,11 @@ TEST_F(MultiReaderTest, MaxSyncDistanceFailsWithDiagnostics)
 
     count = 0;
     status = multi.read(nullptr, &count);
-    ASSERT_EQ(status.getState(), MultiReaderState::SynchronizationFailed);
-    ASSERT_FALSE(status.getValid());
-    ASSERT_EQ(status.getAffectedInputCount(), 1u);
-    ASSERT_EQ(status.getAffectedInputIndex(0), 0u);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::InputsFailed);
+    // Recoverable - only ReadStatus::Fail reads as invalid (C5/Q1)
+    ASSERT_TRUE(status.getValid());
+    ASSERT_EQ(static_cast<InputState>(static_cast<Int>(status.getInputStates().get(readSignals[0].signal.getGlobalId()))),
+              InputState::SynchronizationFailed);
     ASSERT_NE(status.getStateMessage().toStdString().find("maximum synchronization distance"), std::string::npos);
     ASSERT_TRUE(multi.getActive());
 }
@@ -4256,7 +4272,7 @@ TEST_F(MultiReaderTest, DataLossVirtualClock)
     sendPackets(0);
     count = 0;
     status = multi.read(nullptr, &count);
-    ASSERT_EQ(status.getState(), MultiReaderState::Synchronized);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
 
     // Input 1 goes stale while input 0 keeps delivering (DL-2)
     virtualNow += std::chrono::seconds(6);
@@ -4265,16 +4281,17 @@ TEST_F(MultiReaderTest, DataLossVirtualClock)
 
     count = 0;
     status = multi.read(nullptr, &count);
-    ASSERT_EQ(status.getState(), MultiReaderState::DataLost);
-    ASSERT_FALSE(status.getValid());
-    ASSERT_EQ(status.getAffectedInputCount(), 1u);
-    ASSERT_EQ(status.getAffectedInputIndex(0), 1u);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::InputsFailed);
+    // Recoverable - only ReadStatus::Fail reads as invalid (C5/Q1)
+    ASSERT_TRUE(status.getValid());
+    ASSERT_EQ(static_cast<InputState>(static_cast<Int>(status.getInputStates().get(sig1.signal.getGlobalId()))),
+              InputState::DataLost);
 
     // The stale input recovers on its next packet (DL-3)
     sig1.createAndSendPacket(1);
     count = 0;
     status = multi.read(nullptr, &count);
-    ASSERT_NE(status.getState(), MultiReaderState::DataLost);
+    ASSERT_NE(status.getReadStatus(), ReadStatus::InputsFailed);
     ASSERT_TRUE(status.getValid());
 }
 
@@ -4308,7 +4325,7 @@ TEST_F(MultiReaderTest, DataLossInactiveAndUnusedNotMonitored)
 
     count = 0;
     status = multi.read(nullptr, &count);
-    ASSERT_NE(status.getState(), MultiReaderState::DataLost);
+    ASSERT_NE(status.getReadStatus(), ReadStatus::InputsFailed);
 
     // An inactive reader is not monitored at all
     multi.setInputUsed(readSignals[1].signal.getGlobalId(), true);
@@ -4317,7 +4334,7 @@ TEST_F(MultiReaderTest, DataLossInactiveAndUnusedNotMonitored)
 
     count = 0;
     status = multi.read(nullptr, &count);
-    ASSERT_EQ(status.getState(), MultiReaderState::Inactive);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Inactive);
 }
 
 TEST_F(MultiReaderTest, DataLossDeadlineFiresWithoutReads)
@@ -4342,7 +4359,7 @@ TEST_F(MultiReaderTest, DataLossDeadlineFiresWithoutReads)
 
     count = 0;
     status = multi.read(nullptr, &count);
-    ASSERT_EQ(status.getState(), MultiReaderState::Synchronized);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
     ASSERT_TRUE(multi.getIsSynchronized());
 
     const auto start = std::chrono::steady_clock::now();
@@ -4353,5 +4370,5 @@ TEST_F(MultiReaderTest, DataLossDeadlineFiresWithoutReads)
 
     count = 0;
     status = multi.read(nullptr, &count);
-    ASSERT_EQ(status.getState(), MultiReaderState::DataLost);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::InputsFailed);
 }
