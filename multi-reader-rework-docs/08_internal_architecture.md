@@ -57,12 +57,17 @@ half-destroyed facade.
 | File | Contents |
 |---|---|
 | `include/opendaq/multi_reader_impl.h`, `src/multi_reader_impl.cpp` | facade, state machine, read path, input management, status creation |
-| `include/opendaq/input_slot.h`, `src/input_slot.cpp` | `InputSlot`, `IInputSlotListener` |
-| `include/opendaq/queue_reader.h`, `src/queue_reader.cpp` | per-input engine; `QueueReaderIssue` validity model |
-| `include/opendaq/synchronization_manager.h`, `src/synchronization_manager.cpp` | `CommonModel`, `SyncSetupIssue`, `SyncOutcome`, alignment |
-| `include/opendaq/read_coordinator.h`, `src/read_coordinator.cpp` | `ReadPlan`, `CommitResult`, block math |
-| `include/opendaq/notification_coordinator.h`, `src/notification_coordinator.cpp` | task coalescing, masks, gate |
-| `include/opendaq/data_loss_monitor.h`, `src/data_loss_monitor.cpp` | deadlines, waiter thread |
+| `include/opendaq/multi_reader/input.h`, `src/multi_reader/input.cpp` | `multi_reader::Input`, `multi_reader::IInputListener` |
+| `include/opendaq/multi_reader/queue_reader.h`, `src/multi_reader/queue_reader.cpp` | per-input engine; `QueueReaderIssue` validity model |
+| `include/opendaq/multi_reader/synchronization_manager.h`, `src/multi_reader/synchronization_manager.cpp` | `CommonModel`, `SyncSetupIssue`, `SyncOutcome`, alignment |
+| `include/opendaq/multi_reader/read_coordinator.h`, `src/multi_reader/read_coordinator.cpp` | `ReadPlan`, `CommitResult`, block math |
+| `include/opendaq/multi_reader/notification_coordinator.h`, `src/multi_reader/notification_coordinator.cpp` | task coalescing, masks, gate |
+| `include/opendaq/multi_reader/data_loss_monitor.h`, `src/multi_reader/data_loss_monitor.cpp` | deadlines, waiter thread |
+
+All six internals live in the nested `daq::multi_reader` namespace (C13): the former `InputSlot`
+is now `multi_reader::Input` (`IInputSlotListener` → `multi_reader::IInputListener`), and the
+headers moved under `include/opendaq/multi_reader/` so neither the class names nor the include
+paths can clash with future public API.
 | `include/opendaq/domain_value.h` | `DomainValue` (typed domain arithmetic: `toDomain`/`fromDomain`, `shiftTicks`, `roundUpOnDomainInterval`), `domain_conversion` helpers |
 | `include/opendaq/multi_reader_status.h`, `reader_status_impl.h/.cpp` | `MultiReaderState`, `IMultiReaderStatus`, `MultiReaderStatusEx` factory |
 

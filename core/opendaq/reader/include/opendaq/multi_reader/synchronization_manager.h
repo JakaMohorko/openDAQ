@@ -16,7 +16,7 @@
 #pragma once
 #include <opendaq/domain_value.h>
 #include <opendaq/logger_component_ptr.h>
-#include <opendaq/queue_reader.h>
+#include <opendaq/multi_reader/queue_reader.h>
 
 #include <chrono>
 #include <cstdint>
@@ -26,6 +26,9 @@
 #include <vector>
 
 BEGIN_NAMESPACE_OPENDAQ
+
+namespace multi_reader
+{
 
 /**
  * @brief Everything derived from more than one input (spec sections 3.3 and 4):
@@ -62,7 +65,6 @@ enum class SyncSetupIssue
     InvalidSampleRate,
     RatesNotEqual,
     RequiredRateNotDivisible,
-    ReferenceDomainIncompatible,
     ArithmeticOverflow
 };
 
@@ -184,7 +186,43 @@ public:
     const DomainValue* getCommonStart() const;
 
 private:
-    SyncSetupResult checkReferenceDomains(const std::vector<QueueReader*>& inputs, const std::vector<SizeT>& slotIndices) const;
+    struct CandidatePick
+    {
+        std::unique_ptr<DomainValue> value;  // chosen start (common domain); null on failure
+        std::optional<SyncResult> failure;   // set instead when no start tick exists
+    };
+
+    struct AdvanceOutcomes
+    {
+        std::vector<std::unique_ptr<DomainValue>> reached;  // per input (common domain); only filled on Success
+        std::vector<SizeT> pendingEventInputs;              // slot indices blocked by an unconsumed event
+        std::vector<SizeT> needMoreDataInputs;              // slot indices that ran out of data
+        bool overshoot = false;                             // a cursor moved past the candidate
+    };
+
+    /// synchronize() step 1: every input's first unread sample converted to the common domain
+    /// (exact by construction). Returns a NeedMoreData result when an input has nothing unread.
+    std::optional<SyncResult> collectFirstSamples(const std::vector<QueueReader*>& inputs,
+                                                  const std::vector<SizeT>& slotIndices,
+                                                  std::vector<std::unique_ptr<DomainValue>>& firstSamples) const;
+
+    /// synchronize() step 2: no input's start may lag the latest start by more than the
+    /// configured maximum synchronization distance (zero disables the check).
+    std::optional<SyncResult> checkSynchronizationDistance(const std::vector<std::unique_ptr<DomainValue>>& firstSamples,
+                                                           const std::vector<SizeT>& slotIndices) const;
+
+    /// synchronize() step 3: choose the tick every input should start on. The candidate is
+    /// moved out of @p firstSamples; the search itself is documented at the definition.
+    CandidatePick pickStartCandidate(std::vector<std::unique_ptr<DomainValue>>& firstSamples,
+                                     const std::vector<SizeT>& slotIndices) const;
+
+    /// synchronize() step 4: advance every input's cursor to the candidate and classify the
+    /// outcomes. The candidate is non-const only because DomainValue::fromDomain is non-const;
+    /// its value is not changed.
+    AdvanceOutcomes advanceAllInputs(const std::vector<QueueReader*>& inputs,
+                                     const std::vector<SizeT>& slotIndices,
+                                     DomainValue& candidate) const;
+
     RatioPtr startInterval() const;
 
     /// Aligned block interval in common-domain ticks (blockLcm * ticks per common-rate sample).
@@ -202,5 +240,7 @@ private:
 
     LoggerComponentPtr loggerComponent;
 };
+
+}  // namespace multi_reader
 
 END_NAMESPACE_OPENDAQ

@@ -15,13 +15,16 @@
  */
 #pragma once
 #include <opendaq/logger_component_ptr.h>
-#include <opendaq/queue_reader.h>
-#include <opendaq/synchronization_manager.h>
+#include <opendaq/multi_reader/queue_reader.h>
+#include <opendaq/multi_reader/synchronization_manager.h>
 
 #include <string>
 #include <vector>
 
 BEGIN_NAMESPACE_OPENDAQ
+
+namespace multi_reader
+{
 
 /**
  * @brief One multi-input read or skip, planned before anything commits (spec section 3.4).
@@ -107,5 +110,7 @@ private:
     bool configured = false;
     LoggerComponentPtr loggerComponent;
 };
+
+}  // namespace multi_reader
 
 END_NAMESPACE_OPENDAQ

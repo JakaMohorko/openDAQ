@@ -1,14 +1,16 @@
 #include <gtest/gtest.h>
 
 #include <opendaq/input_port_factory.h>
-#include <opendaq/input_slot.h>
+#include <opendaq/multi_reader/input.h>
 #include <opendaq/packet_factory.h>
 #include "reader_common.h"
 
+using namespace daq::multi_reader;
+
 #include <atomic>
 
-// Records the semantic notifications an InputSlot forwards to its owner
-struct RecordingSlotListener final : daq::IInputSlotListener
+// Records the semantic notifications an Input forwards to its owner
+struct RecordingSlotListener final : daq::multi_reader::IInputListener
 {
     std::atomic<int> acceptsCount{0};
     std::atomic<int> connectedCount{0};
@@ -43,7 +45,7 @@ struct RecordingSlotListener final : daq::IInputSlotListener
     }
 };
 
-class InputSlotTest : public ReaderTest<>
+class MultiReaderInputTest : public ReaderTest<>
 {
 public:
     using Super = ReaderTest<>;
@@ -74,11 +76,11 @@ protected:
         return port;
     }
 
-    void createSlot(SizeT index, const InputPortConfigPtr& port, IInputSlotListener* listener, bool globalIdFromSignal = false)
+    void createSlot(SizeT index, const InputPortConfigPtr& port, IInputListener* listener, bool globalIdFromSignal = false)
     {
-        slotObj = createWithImplementation<IInputPortNotifications, InputSlot>(
+        slotObj = createWithImplementation<IInputPortNotifications, Input>(
             index, port, SampleType::Float64, SampleType::Int64, ReadMode::Scaled, loggerComponent, listener, globalIdFromSignal);
-        slot = static_cast<InputSlot*>(slotObj.getObject());
+        slot = static_cast<Input*>(slotObj.getObject());
         port.setListener(slotObj);
     }
 
@@ -96,10 +98,10 @@ protected:
 protected:
     SignalConfigPtr domainSignal;
     ObjectPtr<IInputPortNotifications> slotObj;
-    InputSlot* slot{};
+    Input* slot{};
 };
 
-TEST_F(InputSlotTest, InitialConnectedStateFromPort)
+TEST_F(MultiReaderInputTest, InitialConnectedStateFromPort)
 {
     RecordingSlotListener listener;
 
@@ -113,7 +115,7 @@ TEST_F(InputSlotTest, InitialConnectedStateFromPort)
     ASSERT_TRUE(slot->isConnected());
 }
 
-TEST_F(InputSlotTest, ConnectedNotificationUpdatesStateAndForwards)
+TEST_F(MultiReaderInputTest, ConnectedNotificationUpdatesStateAndForwards)
 {
     RecordingSlotListener listener;
     auto port = createPort();
@@ -126,7 +128,7 @@ TEST_F(InputSlotTest, ConnectedNotificationUpdatesStateAndForwards)
     ASSERT_TRUE(slot->isConnected());
 }
 
-TEST_F(InputSlotTest, DisconnectNotificationForwards)
+TEST_F(MultiReaderInputTest, DisconnectNotificationForwards)
 {
     RecordingSlotListener listener;
     auto port = createPort();
@@ -139,7 +141,7 @@ TEST_F(InputSlotTest, DisconnectNotificationForwards)
     ASSERT_FALSE(slot->isConnected());
 }
 
-TEST_F(InputSlotTest, PacketNotificationPerPacketAndPendingBit)
+TEST_F(MultiReaderInputTest, PacketNotificationPerPacketAndPendingBit)
 {
     RecordingSlotListener listener;
     auto port = createPort();
@@ -168,22 +170,22 @@ TEST_F(InputSlotTest, PacketNotificationPerPacketAndPendingBit)
     ASSERT_FALSE(slot->clearPacketPending());
 }
 
-TEST_F(InputSlotTest, LastPacketArrivalUpdates)
+TEST_F(MultiReaderInputTest, LastPacketArrivalUpdates)
 {
     RecordingSlotListener listener;
     auto port = createPort();
     createSlot(0, port, &listener);
 
-    ASSERT_EQ(slot->getLastPacketArrival(), InputSlot::SteadyClock::time_point{});
+    ASSERT_EQ(slot->getLastPacketArrival(), Input::SteadyClock::time_point{});
 
-    const auto beforeSend = InputSlot::SteadyClock::now();
+    const auto beforeSend = Input::SteadyClock::now();
     port.connect(signal);
     sendDataPacket(5, 100);
 
     ASSERT_GE(slot->getLastPacketArrival(), beforeSend);
 }
 
-TEST_F(InputSlotTest, AcceptsSignalForwardedAndDefaultAccept)
+TEST_F(MultiReaderInputTest, AcceptsSignalForwardedAndDefaultAccept)
 {
     RecordingSlotListener listener;
     auto port = createPort();
@@ -203,7 +205,7 @@ TEST_F(InputSlotTest, AcceptsSignalForwardedAndDefaultAccept)
     ASSERT_EQ(listener.acceptsCount, 2);
 }
 
-TEST_F(InputSlotTest, InputIdFromSignalOrPort)
+TEST_F(MultiReaderInputTest, InputIdFromSignalOrPort)
 {
     RecordingSlotListener listener;
 
@@ -221,7 +223,7 @@ TEST_F(InputSlotTest, InputIdFromSignalOrPort)
     ASSERT_EQ(slot->getInputId(), signal.getGlobalId());
 }
 
-TEST_F(InputSlotTest, DetachListenerStopsNotifications)
+TEST_F(MultiReaderInputTest, DetachListenerStopsNotifications)
 {
     RecordingSlotListener listener;
     auto port = createPort();
@@ -239,7 +241,7 @@ TEST_F(InputSlotTest, DetachListenerStopsNotifications)
     ASSERT_TRUE(slot->isPacketPending());
 }
 
-TEST_F(InputSlotTest, RebindConnectionDrainsQueue)
+TEST_F(MultiReaderInputTest, RebindConnectionDrainsQueue)
 {
     RecordingSlotListener listener;
     auto port = createPort();
@@ -258,7 +260,7 @@ TEST_F(InputSlotTest, RebindConnectionDrainsQueue)
     ASSERT_EQ(queueReader.getAvailableSamples(), 5u);
 }
 
-TEST_F(InputSlotTest, UsedFlagAndPortActive)
+TEST_F(MultiReaderInputTest, UsedFlagAndPortActive)
 {
     RecordingSlotListener listener;
     auto port = createPort();

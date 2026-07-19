@@ -12,10 +12,12 @@
 #include <opendaq/event_packet_utils.h>
 #include <opendaq/input_port_factory.h>
 #include <opendaq/packet_factory.h>
-#include <opendaq/queue_reader.h>
+#include <opendaq/multi_reader/queue_reader.h>
 #include <opendaq/reader_utils.h>
 #include <opendaq/typed_reading_utils.h>
 #include "reader_common.h"
+
+using namespace daq::multi_reader;
 
 #include <chrono>
 #include <thread>

@@ -27,6 +27,9 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+namespace multi_reader
+{
+
 /**
  * @brief Readiness tracking and callback coalescing for the multi reader (spec section 3.5).
  *
@@ -107,5 +110,7 @@ private:
     std::vector<bool> readyMask;
     std::vector<bool> eventMask;
 };
+
+}  // namespace multi_reader
 
 END_NAMESPACE_OPENDAQ

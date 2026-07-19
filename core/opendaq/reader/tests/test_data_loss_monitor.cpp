@@ -1,12 +1,13 @@
 #include <gtest/gtest.h>
 
-#include <opendaq/data_loss_monitor.h>
+#include <opendaq/multi_reader/data_loss_monitor.h>
 
 #include <atomic>
 #include <chrono>
 #include <thread>
 
 using namespace daq;
+using namespace daq::multi_reader;
 using namespace std::chrono;
 using namespace std::chrono_literals;
 

@@ -1,6 +1,9 @@
-#include <opendaq/notification_coordinator.h>
+#include <opendaq/multi_reader/notification_coordinator.h>
 
 BEGIN_NAMESPACE_OPENDAQ
+
+namespace multi_reader
+{
 
 NotificationCoordinator::NotificationCoordinator(const SchedulerPtr& scheduler, const LoggerComponentPtr& logger)
     : taskState(std::make_shared<TaskState>())
@@ -128,5 +131,7 @@ bool NotificationCoordinator::shouldInvokeCallback() const
 {
     return anyUsedEvent() || allUsedReady();
 }
+
+}  // namespace multi_reader
 
 END_NAMESPACE_OPENDAQ

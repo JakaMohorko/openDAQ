@@ -3,8 +3,10 @@
 #include <opendaq/input_port_factory.h>
 #include <opendaq/packet_factory.h>
 #include <opendaq/reference_domain_info_factory.h>
-#include <opendaq/synchronization_manager.h>
+#include <opendaq/multi_reader/synchronization_manager.h>
 #include "reader_common.h"
+
+using namespace daq::multi_reader;
 
 #include <memory>
 #include <vector>
@@ -264,26 +266,6 @@ TEST_F(SyncManagerTest, ModelMissingDomainDescriptor)
     const auto result = manager->buildCommonModel(readers(), slots(), 0);
     ASSERT_EQ(result.issue, SyncSetupIssue::MissingDomainDescriptor);
     ASSERT_EQ(result.affectedInputs, (std::vector<SizeT>{1}));
-}
-
-TEST_F(SyncManagerTest, ModelReferenceDomainIncompatible)
-{
-    // Distinct assigned reference domain ids with no known time source cannot be related
-    addInput("a", domainDescriptor(Ratio(1, 1000), 1, "1970-01-01T00:00:00+00:00",
-                                   ReferenceDomainInfoBuilder().setReferenceDomainId("A").build()));
-    addInput("b", domainDescriptor(Ratio(1, 1000), 1, "1970-01-01T00:00:00+00:00",
-                                   ReferenceDomainInfoBuilder().setReferenceDomainId("B").build()));
-
-    const auto result = manager->buildCommonModel(readers(), slots(), 0);
-    ASSERT_EQ(result.issue, SyncSetupIssue::ReferenceDomainIncompatible);
-
-    // Same id is fine
-    inputs.clear();
-    addInput("c", domainDescriptor(Ratio(1, 1000), 1, "1970-01-01T00:00:00+00:00",
-                                   ReferenceDomainInfoBuilder().setReferenceDomainId("A").build()));
-    addInput("d", domainDescriptor(Ratio(1, 1000), 1, "1970-01-01T00:00:00+00:00",
-                                   ReferenceDomainInfoBuilder().setReferenceDomainId("A").build()));
-    ASSERT_TRUE(manager->buildCommonModel(readers(), slots(), 0).ok());
 }
 
 // --- Alignment (spec section 5) ---

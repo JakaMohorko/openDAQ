@@ -30,6 +30,9 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+namespace multi_reader
+{
+
 enum class SignalEventType
 {
     NoChange = 0,
@@ -280,5 +283,7 @@ private:
 
     SizeT sampleRateDivider = 1;
 };
+
+}  // namespace multi_reader
 
 END_NAMESPACE_OPENDAQ
