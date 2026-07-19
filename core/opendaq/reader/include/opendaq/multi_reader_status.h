@@ -64,8 +64,10 @@ DECLARE_OPENDAQ_INTERFACE(IMultiReaderStatus, IReaderStatus)
 {
     // [elementType(eventPackets, IString, IEventPacket)]
     /*!
-     * @brief Retrieves the dictionary of event packets from the reading process, ordered by signals.
-     * @param[out] eventPackets The dictionary with the input id and the corresponding event packet.
+     * @brief Retrieves the dictionary of event packets returned by this read, keyed by input id
+     * (the same id getInputStates, setInputUsed and removeInput use), so a returned event can be
+     * correlated with its input's state and acted on. One entry per input that had an event.
+     * @param[out] eventPackets The dictionary of input id to the corresponding event packet.
      */
     virtual ErrCode INTERFACE_FUNC getEventPackets(IDict** eventPackets) = 0;
 

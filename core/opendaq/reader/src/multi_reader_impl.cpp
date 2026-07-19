@@ -570,7 +570,11 @@ void MultiReaderImpl::refreshDataPlaneLocked()
             continue;
         }
 
-        if (packetsArrived && syncManager->hasModel())
+        // Readiness is recomputed every cycle, not only when a packet arrived: a read that
+        // drained this slot below a block must lower its ready bit even though no new packet
+        // came in, or the callback gate (allUsedReady) would fire spuriously forever off a
+        // stale-true bit. This is a cheap O(1) query; the expensive drain above stays gated.
+        if (syncManager->hasModel())
         {
             notificationCoordinator->setReady(slot->getIndex(),
                                               reader.getAvailableSamplesUntilEvent() >= syncManager->getModel().blockLcm);
@@ -805,16 +809,23 @@ void MultiReaderImpl::evaluateStateLocked()
 
     // 9. Data-loss deadlines (spec section 3.6). In-band per review section 2.6: an input's
     // buffered pre-loss data stays readable (the producer went silent AFTER producing it),
-    // so the loss only becomes the reader state once the affected input's queue is drained.
-    // Recovery is per input on its next packet, after which synchronization is re-established.
+    // so the loss only becomes the reader state once the affected input can no longer
+    // contribute. Recovery is per input on its next packet, after which synchronization is
+    // re-established.
     {
         const auto lost = dataLossMonitor->lostSlots();
         if (!lost.empty())
         {
+            // "Can no longer contribute" is < one aligned block, not empty: block-aligned
+            // reads floor to whole blocks, so a residual sub-block (possible whenever an
+            // input's divider != blockLcm) is unreadable and, with the producer dead, no
+            // event will ever end its segment to let it drain. Gating on == 0 would stall
+            // the reader in Synchronized forever, never surfacing the loss.
+            const SizeT block = syncManager->hasModel() ? syncManager->getModel().blockLcm : 1;
             std::vector<SizeT> drainedLost;
             for (const auto index : lost)
             {
-                if (slots[index]->getQueueReader().getAvailableSamples() == 0)
+                if (slots[index]->getQueueReader().getAvailableSamples() < block)
                     drainedLost.push_back(index);
             }
             if (!drainedLost.empty())
@@ -823,7 +834,8 @@ void MultiReaderImpl::evaluateStateLocked()
                 setStateWithAffectedLocked(ReaderState::DataLost, "Inputs", " missed their packet deadline", std::move(drainedLost));
                 return;
             }
-            // Lost but still buffered: keep reading - the loss surfaces when the buffer runs dry
+            // Lost but a full block still buffered: keep reading - the loss surfaces once the
+            // input can no longer fill a block
         }
     }
 
@@ -887,15 +899,13 @@ void MultiReaderImpl::evaluateStateLocked()
                     notificationCoordinator->setEvent(index, true);
                 break;
             case SyncOutcome::Failed:
-                // Synchronization failure no longer deactivates the reader (spec section 8.5)
-                if (exposeBuriedEventsLocked(result.affectedInputs))
-                {
-                    invalidateSynchronizationLocked();
-                    for (const auto index : result.affectedInputs)
-                        notificationCoordinator->setEvent(index, slots[index]->getQueueReader().hasPendingEvents());
-                    setStateWithAffectedLocked(ReaderState::EventPending, "Events pending on inputs", "", std::move(result.affectedInputs));
-                    break;
-                }
+                // Synchronization failure no longer deactivates the reader (spec section 8.5).
+                // Unlike the Incompatible paths, we do NOT drop buffered data to surface a
+                // buried event here: on a sync failure each input's data is individually valid
+                // and readable (only the cross-input alignment failed), so the consumer's
+                // remedy is to exclude an input or pick a main input - not to lose that input's
+                // samples. A queued corrective descriptor surfaces the normal way once the
+                // offending input is excluded and re-enabled (dropForInactive on re-enable).
                 setStateLocked(ReaderState::SynchronizationFailed, std::move(result.message), std::move(result.affectedInputs));
                 break;
         }
@@ -1215,10 +1225,14 @@ MultiReaderStatusPtr MultiReaderImpl::readEventsLocked()
         if (!reader.hasPendingEvents())
             continue;
 
-        // One event per input per call (spec section 7.2); the pop applies descriptor changes
+        // One event per input per call (spec section 7.2); the pop applies descriptor changes.
+        // Keyed by getInputId (the same id getInputStates, setInputUsed and removeInput use) so
+        // a consumer can correlate a returned event with its per-input state and act on it -
+        // for a signal-built reader that id is the signal's global id, not the synthetic port's
+        // (review finding: the two dicts were previously keyed differently and uncorrelatable).
         auto packet = reader.popFrontEvent();
         if (packet.assigned())
-            events.set(slot->getPort().getGlobalId(), packet);
+            events.set(slot->getInputId(), packet);
 
         notificationCoordinator->setEvent(slot->getIndex(), reader.hasPendingEvents());
     }
