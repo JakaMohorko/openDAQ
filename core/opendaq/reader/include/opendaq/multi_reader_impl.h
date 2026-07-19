@@ -290,6 +290,10 @@ private:
     /// Common-output-domain descriptor for getMainDescriptor, built lazily per model build
     DataDescriptorPtr cachedCommonDomainDescriptor;
 
+    /// The status main-descriptor event packet, built lazily and reused across reads; cleared
+    /// on model/main-descriptor change (invalidateModelLocked, refreshMainInputDescriptorsLocked)
+    EventPacketPtr cachedMainDescriptorPacket;
+
     PropertyObjectPtr portBinder;
     ProcedurePtr readCallback;
     WeakRefPtr<IInputPortNotifications> externalListener;
