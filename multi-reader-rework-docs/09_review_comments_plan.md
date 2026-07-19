@@ -1,9 +1,10 @@
 # Multi Reader Rework — Review Comments: Evaluation and Action Plan
 
-**Status: DRAFT — covers the initial comment set (commit `343fe1ae`) plus the accompanying notes.
-More comments are expected; no code changes are made until the full set is in and this plan is
-agreed.** Architecture background and the verified facts referenced here live in
-`08_internal_architecture.md` (§6 "Known hot spots" in particular).
+**Status: DRAFT — covers the initial comment set (commit `343fe1ae`), the accompanying notes, and
+the design discussion of 2026-07-19 (Q1–Q5 resolved — §4; the `stateDirty` draft superseded by
+per-slot `HasData`/`HasEvent` — §2.1; data loss made in-band — §2.6). More comments are expected;
+no code changes are made until the full set is in.** Architecture background and the verified
+facts referenced here live in `08_internal_architecture.md` (§6 "Known hot spots" in particular).
 
 Numbering: C1–C12 are the inline `// COMMENT:` markers in commit order; N1–N7 are the notes from
 the accompanying message; S1 is the slot-reconstruction note.
@@ -24,8 +25,7 @@ Impact, verified: 13 call sites in `test_multi_reader.cpp`/`test_synchronization
 to builder configuration; the sum FB's `applyReaderConfigLocked` forwarding is replaced by a reader
 rebuild on property write; spec §8.2 and `05_error_contract.md` §3.3 updated; checked-in bindings
 lose the methods at the next regeneration.
-Open question (Q3): keep read-only getters on the reader for introspection, or none at all? Plan
-assumes none (comment says "only in the builder").
+Resolved (Q3): no getters on the reader — the builder is the only configuration surface.
 
 ### C3 — `IInputPortNotifications` implemented on both the reader and the slots
 
@@ -53,27 +53,49 @@ channel. Action: a short rationale comment block at the interface declaration (t
 
 ### C5 — too many public states; compact to app/FB-actionable ones
 
-**Agree.** The consumer-action space is: do nothing / read again / `setInputUsed(id,false)` /
-`setActive` / recreate. Eleven states force every consumer into a switch over distinctions it
-cannot act on (the sum FB's `handleStateLocked` is the live proof). Humans get detail from
-`getStateMessage`; FBs should never need to parse it.
+**Agree — and resolved (Q1): no separate reader-state enum at all; `ReadStatus` is extended
+instead.** The consumer-action space is: do nothing / wait / read again / `setInputUsed(id,false)`
+/ `setActive` / recreate. Eleven states force every consumer into a switch over distinctions it
+cannot act on (the sum FB's `handleStateLocked` is the live proof). And state is only ever
+consumed through the universal read pattern — 1. read the data returned, 2. react to the status —
+so it belongs on the status, not behind a separate reader-level getter (consistent with Q4).
 
-Proposed compaction (Q1 for sign-off):
+`ReadStatus` (`reader_status.h`, today `{Ok = 0, Event, Fail, Unknown = 0xFFFF}`) gains three
+appended values — existing numeric values are untouched, and single readers simply never return
+the new ones:
 
-| Public state | Replaces | Consumer action |
+| Status | Meaning | Consumer action |
 |---|---|---|
-| `Ok` | WaitingForConnections, WaitingForDescriptors, WaitingForData, Synchronizing, Synchronized | none — reading works or will work by itself; progress detail goes to the message + per-input states |
-| `Inactive` | Inactive | `setActive(true)` when reading should resume |
-| `InputsFailed` | Incompatible, SynchronizationFailed, DataLost | consult per-input states (C6); `setInputUsed(failing,false)` or fix/reconnect upstream |
-| `Error` | Error | recreate the reader |
+| `Ok` | synchronized, data delivered | none |
+| `Event` | this read hit an in-band event; data *before* it was returned in the same call | consult per-input states (C6), react, read again |
+| `Preparing` *(new)* | nothing is wrong, but no data should be expected yet — waiting for connections / descriptors / first data / sync | none — wait |
+| `Inactive` *(new)* | deliberately deactivated | `setActive(true)` when reading should resume |
+| `InputsFailed` *(new)* | one or more used inputs failed — persistent until acted on | consult per-input states; `setInputUsed`/fix upstream |
+| `Fail` | unrecoverable | recreate the reader |
 
-`EventPending` disappears as a *state*: `ReadStatus::Event` on the read status already carries
-exactly that information at exactly the moment it is actionable ("read again"), and zero-count
-reads keep returning events. The fine-grained distinctions do not vanish — they move down one
-level, onto the inputs (C6), where they are actionable, and into the message, where humans read
-them. Internal bookkeeping may keep richer granularity, but per N5 the internal machine is being
-simplified too — the internal set only stays larger than the public one where a real transition
-needs it.
+- `Event` is transient (what *this read* encountered); the rest are persistent snapshots. After an
+  `Event` read is handled, the next read reports the resulting persistent state: `Ok` after an
+  applied descriptor change, `InputsFailed` after a data loss, `Preparing` during a triggered
+  resync.
+- `MultiReaderState`, `getState`, and `EventPending` leave the public API. `getValid()` (base
+  `IReaderStatus`) becomes false **only** for `Fail` on the multi reader status — the sum FB work
+  already proved that "invalid on recoverable states" misleads consumers into rebuilds.
+- The fine-grained distinctions do not vanish — they move onto the inputs (C6), where they are
+  actionable, and into the message, where humans read them.
+
+Why `Preparing` earns its place (Q1 asked for a concrete example): the sum FB's
+`handleStateLocked` cannot distinguish "sync in progress — be patient" from "sync failed — park
+someone" without inspecting fine-grained states, and a wrong guess is exactly the probe-flapping
+failure mode the `ProbeDoesNotFlap` test guards against. With `Preparing` the FB's do-nothing
+branch is trivial: `Preparing → return` — never park, never probe, never warn while the reader is
+still settling (reader rebuilds on mode switches and probe-triggered resyncs pass through this
+window every time). Application-side: a recorder UI arming a measurement across several devices
+shows "waiting for signals to align…" on `Preparing` instead of a spurious warning, and can attach
+a startup timeout ("still `Preparing` after 10 s → report which input is `Pending`") without ever
+misclassifying a real failure — `InputsFailed` stays unambiguous.
+
+Naming: `Preparing` preferred over `Pending` here to avoid collision with the per-input `Pending`
+(C6); final call at implementation time.
 
 ### C6 — drop the ordered event list; add per-input statuses; FB "ignore faulty inputs" property
 
@@ -86,18 +108,23 @@ needs it.
   keyed by port global id instead of by slot index. Indices were a design mistake: they are exactly
   what `removeInput` shifts (see S1), so any retained index is stale after a topology change.
 
-  Proposed shape (Q2): on `IMultiReaderStatus`,
+  Resolved shape (Q2): on `IMultiReaderStatus`,
   `getInputStates(IDict** statesByPortId)` → `port globalId → InputState`, with
 
   ```
-  enum class InputState { Ok, Pending, Incompatible, SynchronizationFailed,
-                          DataLost, Unused, UnusedWithEvents }
+  enum class InputState { Ok, Pending, Event, Incompatible, SynchronizationFailed,
+                          DataLost, Unused }
   ```
 
   `Pending` = connected but not yet contributing (awaiting connect/descriptors/data/alignment) —
-  no action possible; `Unused`/`UnusedWithEvents` make unused-input events visible (C12/N6).
-  Reader-level `InputsFailed` ⇔ at least one input in `{Incompatible, SynchronizationFailed,
-  DataLost}`. Per-input human-readable detail stays in the single `getStateMessage`.
+  no action possible. `Event` (replaces the draft's `UnusedWithEvents`, per Q2) = unconsumed
+  event(s) on this input, used and unused alike: on a used input it accompanies
+  `ReadStatus::Event`; on an unused input it is the recovery signal (§2.3). Deliberate trade-off:
+  while an unused input has pending events its dict entry reads `Event`, not `Unused` — acceptable
+  because the used/unused set is consumer-controlled knowledge (the consumer parked it; the dict
+  tells it something happened there). Reader-level `InputsFailed` ⇔ at least one **used** input in
+  `{Incompatible, SynchronizationFailed, DataLost}`. Per-input human-readable detail stays in the
+  single `getStateMessage`.
 - Sum FB: add a bool property (working name `IgnoreFaultyInputs`, default true = today's parking
   behavior) — when false, a failing input keeps the whole FB in Warning without being excluded.
   The FB already reports the failing set through its ComponentStatus message; it switches from
@@ -106,14 +133,13 @@ needs it.
 
 ### C7 — status factory too large → builder object; reconsider fields
 
-**Agree, with the expectation that compaction mostly solves it.** After C5/C6 the Ex factory's
-fields become: `eventPackets`, `mainDescriptor`, `offset`, `state`, `stateMessage`, `inputStates` —
-six pairs, within the 8-pair RTGen macro limit but at the edge of readability. Action: introduce
-`MultiReaderStatusBuilder` for construction (internal creation goes through it; the old 4-field
-compat factory stays for the deprecated path until Phase 6). Also reconsider `mainDescriptor`
-(Q4): moving the common-output-domain descriptor to a reader accessor (e.g.
-`getCommonDomainDescriptor`) would slim the status further, at the cost of an API addition — the
-plan keeps it on the status unless decided otherwise, since the FB consumes it per event batch.
+**Agree, with the expectation that compaction mostly solves it.** After C5/C6 the explicit fields
+become: `eventPackets`, `mainDescriptor`, `offset`, `stateMessage`, `inputStates` (plus the
+inherited `readStatus`/`valid`) — five pairs, comfortably inside the 8-pair RTGen macro limit.
+Action: introduce `MultiReaderStatusBuilder` for construction (internal creation goes through it;
+the old 4-field compat factory stays for the deprecated path until Phase 6). Resolved (Q4):
+`mainDescriptor` stays on the status and gets **no** reader accessor — users never query in-band
+reader state through the reader; the status is the single reporting surface.
 
 ### C8 — remove the list constructor; everything delegates to the builder constructor
 
@@ -159,8 +185,8 @@ only when something actually happened.
   surface while inactive — correct behavior, under-documented. Gets the rationale comment.
 - Unused-input events: today they are invisible except as raw external-listener packet
   notifications (verified — the active-reader ladder never touches unused slots; their events sit
-  in the connection queue until re-enable). Addressed structurally via `UnusedWithEvents` in the
-  per-input states (C6) — see §2.3.
+  in the connection queue until re-enable). Addressed structurally via the per-input `Event`
+  state (C6) plus the widened `onDataAvailable` gate (Q5) — see §2.3.
 - Terminology: *active/inactive* = reader/port level (`setActive`), *used/unused* = input
   participation (`setInputUsed`). The implementation reuses port deactivation as the unused
   mechanism (that is what stops data while preserving events — worth keeping), but comments and
@@ -183,71 +209,103 @@ only when something actually happened.
 
 ## 2. Target design
 
-### 2.1 Event-driven state maintenance (C11, N5)
+### 2.1 Event-driven state maintenance (C11, N5) — per-slot `HasData`/`HasEvent`
 
-Replace derive-on-read with maintain-on-change:
+*(Supersedes the earlier `stateDirty` draft — discussion of 2026-07-19. `stateDirty` was still
+lazy re-derivation, only rarer; the agreed model is fully eager: every trigger updates state at
+the point of change, and reads never re-derive anything. There is no facade dirty flag.)*
 
-- A single facade flag `stateDirty` (plus the existing per-slot `packetPending` bits). Every path
-  that can change the answer sets it: `slotConnected`/`slotDisconnected`, event packet drained,
-  data-loss deadline callback, `setActive`, `setInputUsed`, `addInput`/`removeInput`,
-  `setMainInput`, event consumption by a read. These are exactly today's invalidation points — the
-  knowledge already exists, it is just currently discarded in favor of re-derivation.
-- The ladder (steps 1–13, unchanged in content) becomes `revalidateLocked()`, invoked only when
-  `stateDirty`. Data-plane calls (`getAvailableCount`, `readInternal`, wait predicates) run:
+Two per-slot flags, maintained by the slot's own components:
 
-  ```
-  if (stateDirty) revalidateLocked();
-  ```
+- **`HasData`** — the slot has ≥ 1 readable sample *before its next in-band event*. Owned by
+  `QueueReader`, which already clamps availability at the frontier event — that clamping is the
+  invariant that makes `HasData == true, HasEvent == false` safe while an event sits behind
+  buffered data. `HasData` is the cheap gate ("is a read worth attempting", checked across all
+  used slots); the readable *amount* still comes from the coordinator's min-across-slots
+  divider/blockLcm computation, run only behind that gate.
+- **`HasEvent`** — the slot's readable frontier is an event, or an out-of-band condition was
+  raised on it. Means: reads must return promptly (with whatever data precedes the frontier —
+  §2.2), the per-input state shows the cause, and the consumer must be notified.
 
-- Packet arrival on a used input while `Synchronized` must not set `stateDirty` (that would
-  re-introduce per-packet ladders). Data packets only ever *add* availability; only **events** and
-  **deadlines** can invalidate. Whether a drained packet contained an event is known at drain time
-  (`QueueReader` reports it), so draining stays cheap and precise.
-- Queue adoption stays at evaluation points (drain contract #10) but becomes gated by
-  `packetPending`: only slots that actually received packets since the last drain are drained;
-  clean slots are skipped. A drain that surfaces an event sets `stateDirty` and the ladder runs.
-- Step-13 readiness/callback-gate maintenance moves fully to the coalesced task (its natural home —
-  it exists for the callback gate); API-thread reads stop writing coordinator masks.
-- The monitor stops being polled (`lostSlots()` per evaluation); the deadline callback already
-  fires `requestEvaluation` — it now also sets `stateDirty`, and step 9 runs only inside
-  `revalidateLocked`.
+Two trigger classes with different timing:
 
-Net effect, synchronized steady state: `read` = dirty-flag check + drain of packet-pending slots +
-availability + plan/commit. No per-slot validity re-checks, no model checks, no monitor query, no
-mask writes, no `collectUsedReaders` re-allocation (used set becomes a maintained vector, rebuilt
-on used-set changes only). This is N6's "no checks after sync" in implementable form.
+- **In-band** (have a queue position; data before them stays readable; `HasEvent` becomes true
+  only when they reach the readable frontier): descriptor change, gap, and **data loss** (§2.6 —
+  the deadline inserts a marker *behind* everything already buffered).
+- **Out-of-band** (no queue position; take effect immediately in their own call/callback under
+  the mutex): `slotConnected`/`slotDisconnected`, `setInputUsed`, `setActive`,
+  `addInput`/`removeInput`, `setMainInput`. Runtime config changes disappear as a trigger class
+  once C1/C2 make configuration builder-only.
+
+The 13-step ladder decomposes into per-trigger handlers owned by the components — N5's "parts of
+the multi reader should handle their own state":
+
+| Trigger | Handled by | Effect |
+|---|---|---|
+| data packet drained (used slot, synchronized) | `QueueReader` | `HasData` update only — reader state is never touched |
+| in-band event reaches the frontier | `QueueReader` → facade handler | `HasEvent`, per-input `Event`; descriptor parse; sync invalidation where applicable |
+| connect / disconnect | `InputSlot` handler | per-input state, sync invalidation |
+| used/unused, active/inactive | the respective setter | used-set vector, port activation, per-input state |
+| data-loss deadline | monitor callback | in-band loss marker (§2.6) |
+| all-used-`HasData` while unsynchronized (descriptors parseable) | coalesced task, or the read that observes it | attempt sync — the one residual "conditions became right" check; it runs only in non-synchronized states, so N6's post-sync rule holds |
+
+`MultiReaderImpl` itself shrinks to the N5 target: hold the mutex, forward API requests, map
+component state to `ReadStatus` + the per-input dict, and let `NotificationCoordinator` fire
+`onDataAvailable` on the gate `allUsed(HasData) || any(HasEvent)` — unused slots included (Q5).
+
+The producer path stays bounded: `slotPacketReceived` still only sets `packetPending` and wakes;
+whether a pending packet is data or an event is discovered at drain time (next read or coalesced
+task) — the same visibility as today. Queue adoption stays gated by `packetPending`: only slots
+that actually received packets since the last drain are drained; clean slots are skipped.
+
+Net effect, synchronized steady state: `read` = drain of packet-pending slots + availability +
+plan/commit. No per-slot validity re-checks, no model checks, no monitor query, no mask writes, no
+`collectUsedReaders` re-allocation (the used set becomes a maintained vector, rebuilt on used-set
+changes only). This is N6's "no checks after sync" in implementable form.
 
 ### 2.2 Read-path shape after the change
 
 ```
 readInternal:
-  if invalid → status
-  if stateDirty → revalidateLocked()
-  [zero-count / timeout / event / not-synchronized branches as today]
-  plan → commit → status        // no other checks
+  drain packet-pending slots                    // HasData/HasEvent maintenance, nothing else
+  switch (maintained state):
+    Fail | Inactive | Preparing | InputsFailed → status, no data (timeout wait only where it
+                                                 makes sense today)
+    synchronized:
+      plan → commit over min(available-before-frontier)
+      frontier event reached → handle it, status Event   // the data before it was just returned
+      otherwise → status Ok
 getAvailableCount:
-  if stateDirty → revalidateLocked()
-  synchronized ? coordinator availability : 0
+  drain packet-pending slots
+  synchronized ? coordinator availability (clamped at frontiers) : 0
 ```
 
-The two wait predicates re-check `stateDirty` instead of re-deriving; wakes without state changes
-(pure data arrivals) evaluate availability only.
+This encodes the universal reader pattern — 1. read the data returned, 2. react to the status —
+and the read-as-far-as-possible rule: a read that runs into an in-band event returns all data up
+to it **and** the `Event` status in the same call. The wait predicates wake on
+`HasData`/`HasEvent` changes and re-check the flags only; wakes from pure data arrivals evaluate
+availability only.
 
-### 2.3 Unused inputs that stay observable (C12, N6)
+### 2.3 Unused inputs that stay observable (C12, N6, Q5)
 
 - Unused slots keep their port deactivated (data dropped at the connection — no unbounded growth)
   and events keep enqueueing, as today.
-- New: the coalesced task drains **event packets** of packet-pending *unused* slots too (data
-  cannot appear — the port is inactive), records them as pending on the slot, and reflects them as
-  `UnusedWithEvents` in the per-input states. Consumers see it on every status; a consumer that
-  cares calls `setInputUsed(id, true)` (existing re-enable semantics: stale data dropped,
-  descriptor changes applied, resync) or ignores it.
-- The dataAvailable callback gate is *not* widened by default — data flow stays gated on used
-  inputs only (Q5 if notification-on-unused-events is wanted as an explicit callback trigger).
-- Read `getEventPackets` continues to carry only used inputs' events; unused inputs' descriptor
-  events are consumed internally on re-enable (they exist to keep type state coherent, not as a
-  data-flow signal). If the forthcoming comments prefer unused events in the dict as well, the
-  drain point above is the single place to change.
+- The coalesced task drains **event packets** of packet-pending *unused* slots too (data cannot
+  appear — the port is inactive) and sets their per-input state to `Event`.
+- Resolved (Q5): unused-input events **do trigger `onDataAvailable`** — the gate is
+  `allUsed(HasData) || any(HasEvent)` with unused slots included. This is the recovery API: the
+  consumer gets the callback, reads (possibly zero samples), sees `ReadStatus::Event` with the
+  unused port's dict entry at `Event`, and either calls `setInputUsed(id, true)` (existing
+  re-enable semantics: stale data dropped, descriptor changes applied, resync) or ignores it.
+- `getEventPackets` continues to carry only used inputs' events; unused inputs' descriptor events
+  are consumed internally on re-enable. The per-input `Event` state is the API (minor open point
+  in §4 if packet exposure turns out to be wanted).
+- The **sum FB is the reference example** (Q5): parked-port recovery moves onto this path, and
+  the FB drops `setExternalListener` entirely — a descriptor fix on a parked port produces
+  `onDataAvailable` → `deferredCheck` → dict shows `Event` on the parked port → immediate probe.
+  One recovery path stays timer/traffic-paced: silent data resume after data loss (data packets
+  on an inactive port are dropped at the connection and produce no event), which is what the
+  periodic probe remains for.
 
 ### 2.4 Stable slots (S1)
 
@@ -265,18 +323,42 @@ The two wait predicates re-check `stateDirty` instead of re-deriving; wakes with
 | Surface | Before | After |
 |---|---|---|
 | `IMultiReader` | + `setMaxSynchronizationDistance`/get, `setDataLossTimeout`/get | removed (builder-only) |
-| `IMultiReaderStatus::getState` | 11-value enum | 4-value enum (`Ok`, `Inactive`, `InputsFailed`, `Error`) |
+| `IMultiReaderStatus::getState` | 11-value `MultiReaderState` | removed — `getReadStatus` returns extended `ReadStatus` (`+ Preparing, Inactive, InputsFailed`) |
+| `IReaderStatus::getValid` (multi) | false for every failure state | false only for `Fail` (unrecoverable) |
 | `getStateMessage` | machine + human mixed | human-only diagnostic; never needed for a correct reaction |
 | `getAffectedInputCount`/`getAffectedInputIndex` | slot indices | removed → `getInputStates` dict (globalId → `InputState`) |
 | `getEventCount`/`getEvent` | ordered duplicate of the dict | removed |
-| `MultiReaderStatusEx` factory | 8 fields | `MultiReaderStatusBuilder`, 6 fields |
+| `MultiReaderStatusEx` factory | 8 fields | `MultiReaderStatusBuilder`, 5 explicit fields |
 | `MultiReaderImpl` interfaces | implements `IInputPortNotifications` | dropped (slots are the only port listeners) |
+| `onDataAvailable` gate | `anyUsedEvent() \|\| allUsedReady()` (used inputs only) | `allUsed(HasData) \|\| any(HasEvent)`, unused inputs included (Q5) |
+| data loss | instant invalidation; buffered pre-loss data discarded | in-band marker; buffered data readable first, then `Event`/`DataLost` (§2.6) |
+
+### 2.6 In-band data loss (resolved 2026-07-19)
+
+Data loss stops being an instant invalidation and becomes an **in-band event**, obeying the same
+read pattern as every other event:
+
+- The `DataLossMonitor` deadline callback no longer flips reader state. It inserts a **loss
+  marker** into the slot's queue *behind everything already buffered* — implementation choice: a
+  synthesized gap-style event in `QueueReader`, so the frontier machinery handles it uniformly.
+- Buffered pre-loss data stays readable: the producer went silent *after* producing it, so it is
+  valid; `HasData` remains true and aligned reads keep returning it.
+- The read that drains to the marker returns the remaining data **and** `ReadStatus::Event`, with
+  that input's dict entry at `DataLost` — "return all the data and have the status of the read be
+  the data loss".
+- Subsequent reads report `InputsFailed` (persistent) until recovery. If data resumed after the
+  marker, recovery is a resync from post-marker data — identical to gap handling. A
+  `setInputUsed(false → true)` recovery cycle now drops only post-marker stale content, not the
+  valid pre-loss buffer (today the immediate invalidation makes that buffer unreadable and
+  recovery discards it — `08_internal_architecture.md` §5.10).
 
 ---
 
 ## 3. Batching and sequencing
 
-All batches wait for the remaining comments; A and B are design-complete now, C depends on Q1/Q2.
+All batches wait for the remaining comments; A, B, and C are all design-complete (Q1–Q5 resolved
+2026-07-19). Note that C now also touches the shared `ReadStatus` enum (appended values only —
+existing numeric values unchanged), which shows up in every reader's docs and in the bindings.
 
 | Batch | Contents | Risk / notes |
 |---|---|---|
@@ -289,19 +371,27 @@ subsumes most call sites A touches and needs the Q1/Q2 decisions). Each batch: b
 `test_reader` + `SumTest` green, commit, push. Bindings regeneration once after C rather than per
 batch.
 
-## 4. Open questions before implementation
+## 4. Design decisions (Q1–Q5 — resolved 2026-07-19)
 
-1. **Q1 — public state set.** Is `{Ok, Inactive, InputsFailed, Error}` the agreed compaction? In
-   particular: is folding all waiting/synchronizing conditions into `Ok` acceptable, with
-   `ReadStatus::Event` covering the "read again" signal instead of a public `EventPending` state?
-2. **Q2 — per-input state surface.** Dict on the status (`getInputStates`, globalId →
-   `InputState`) vs a getter on the reader itself; and the exact `InputState` value set
-   (`Ok, Pending, Incompatible, SynchronizationFailed, DataLost, Unused, UnusedWithEvents`).
-3. **Q3 — config introspection.** After C1/C2, should the *reader* keep read-only getters for
-   `maxSynchronizationDistance`/`dataLossTimeout`, or is the builder the only place (plan assumes
-   builder-only)?
-4. **Q4 — `getMainDescriptor`.** Keep on the status (plan) or replace with a reader accessor for
-   the common output domain descriptor?
-5. **Q5 — unused-input event notification.** Per-input `UnusedWithEvents` on every status (plan) —
-   should unused-input events additionally trigger the dataAvailable callback and/or appear in
-   `getEventPackets`?
+1. **Q1 — public state set.** No new reader-state enum: **extend `ReadStatus`** with appended
+   `Preparing`, `Inactive`, `InputsFailed` (C5). `MultiReaderState` and `getState` leave the
+   public API; `EventPending` is covered by `ReadStatus::Event`.
+2. **Q2 — per-input surface.** Dict on the status (`getInputStates`, globalId → `InputState`);
+   **`Event` replaces `UnusedWithEvents`** and applies to used and unused inputs alike (C6).
+3. **Q3 — config introspection.** None on the reader; the builder is the only configuration
+   surface (C1/C2).
+4. **Q4 — main descriptor.** Stays on the status; no reader accessor. Users never query in-band
+   reader state through the reader — the status is the single reporting surface.
+5. **Q5 — unused-input events.** They trigger `onDataAvailable` (the recovery API); the sum FB is
+   the reference example (§2.3).
+
+Remaining minor points (implementation-time, none blocking):
+
+- Naming: `Preparing` vs `Pending` for the reader-level status (`Preparing` preferred here to
+  avoid collision with the per-input `Pending`).
+- Whether unused inputs' event packets should also appear in `getEventPackets` (plan: no — the
+  per-input `Event` state is the API).
+- With `getState` gone, `getStateMessage` could rename to plain `getMessage` (it is the human
+  diagnostic, no longer tied to a state enum).
+- `getValid()` narrowing to `Fail`-only is scoped to the multi reader status; single-reader
+  statuses keep their current semantics.
