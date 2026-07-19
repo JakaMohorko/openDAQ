@@ -42,6 +42,7 @@ ErrCode Input::connected(IInputPort* /*inputPort*/)
     return daqTry([&]
     {
         connectedState = true;
+        cachedInputId = nullptr;  // the connected signal (hence the input id) changed
         if (auto* const target = getListener())
             target->slotConnected(index);
         return OPENDAQ_SUCCESS;
@@ -53,6 +54,7 @@ ErrCode Input::disconnected(IInputPort* /*inputPort*/)
     return daqTry([&]
     {
         connectedState = false;
+        cachedInputId = nullptr;
         if (auto* const target = getListener())
             target->slotDisconnected(index);
         return OPENDAQ_SUCCESS;
@@ -83,12 +85,23 @@ void Input::setIndex(SizeT newIndex)
 
 StringPtr Input::getInputId() const
 {
+    // Cached: getGlobalId walks the component's parent chain and builds a path string, and the
+    // status path calls this per slot per read. The id is stable per connection, so it is only
+    // recomputed after a connect/disconnect (which clears the cache). A connected signal being
+    // renamed/reparented in place is out of contract and not reflected until reconnect.
+    if (cachedInputId.assigned())
+        return cachedInputId;
+
     if (globalIdFromSignal)
     {
         if (auto signal = port.getSignal(); signal.assigned())
-            return signal.getGlobalId();
+        {
+            cachedInputId = signal.getGlobalId();
+            return cachedInputId;
+        }
     }
-    return port.getGlobalId();
+    cachedInputId = port.getGlobalId();
+    return cachedInputId;
 }
 
 const InputPortConfigPtr& Input::getPort() const

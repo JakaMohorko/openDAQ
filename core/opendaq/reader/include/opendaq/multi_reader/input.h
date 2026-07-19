@@ -145,6 +145,9 @@ private:
     QueueReader queueReader;
     // Phase 5 (resampling) adds: ResamplerPtr resampler; // null on the direct path
 
+    /// Cached getInputId() result; cleared on connect/disconnect (see getInputId).
+    mutable StringPtr cachedInputId;
+
     std::atomic<IInputListener*> listener;
     std::atomic_bool used{true};
     std::atomic_bool connectedState{false};
