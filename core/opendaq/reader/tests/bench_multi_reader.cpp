@@ -308,6 +308,43 @@ void scenarioConvert()
     }
 }
 
+// Differential attribution of the per-call cost while synchronized with data buffered:
+//   avail   - getAvailableCount()           => state evaluation + availability calc
+//   status0 - read(nullptr, &zero)          => avail + status construction (no data copy)
+//   read1   - read(buf, &1 block)           => status0 + plan/commit + one block copy
+// (status0 - avail) isolates status construction; (read1 - status0) isolates commit+copy.
+void scenarioMicro()
+{
+    for (SizeT n : {1u, 4u, 16u})
+    {
+        Bench b;
+        b.build(n, SampleType::Float64, {1});
+        // Buffer a large, non-consumed backlog so avail/status0 loops never drain it dry
+        for (int i = 0; i < 400; ++i)
+            b.sendAll(1024);
+        b.reader.getAvailableCount();  // adopt + synchronize once
+
+        const SizeT K = 200000;
+        auto t0 = Clock::now();
+        volatile SizeT sink = 0;
+        for (SizeT i = 0; i < K; ++i)
+            sink += b.reader.getAvailableCount();
+        double avail = std::chrono::duration<double, std::nano>(Clock::now() - t0).count() / K;
+        emit("micro_avail", std::to_string(n), "ns_per_call", avail);
+
+        t0 = Clock::now();
+        for (SizeT i = 0; i < K; ++i)
+        {
+            SizeT zero = 0;
+            b.reader.read(nullptr, &zero);
+        }
+        double status0 = std::chrono::duration<double, std::nano>(Clock::now() - t0).count() / K;
+        emit("micro_status0", std::to_string(n), "ns_per_call", status0);
+        emit("micro_statusbuild", std::to_string(n), "ns_per_call", status0 - avail);
+        (void) sink;
+    }
+}
+
 }  // namespace
 
 int main(int argc, char** argv)
@@ -321,6 +358,7 @@ int main(int argc, char** argv)
     if (only.empty() || only == "events")  scenarioEvents();
     if (only.empty() || only == "resync")  scenarioResync();
     if (only.empty() || only == "convert") scenarioConvert();
+    if (only.empty() || only == "micro")   scenarioMicro();
 
     return 0;
 }

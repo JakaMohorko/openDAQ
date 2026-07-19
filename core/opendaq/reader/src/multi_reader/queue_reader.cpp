@@ -4,6 +4,7 @@
 #include <opendaq/event_packet_utils.h>
 
 #include <algorithm>
+#include <cassert>
 #include <limits>
 
 BEGIN_NAMESPACE_OPENDAQ
@@ -133,6 +134,7 @@ QueueReader::QueueReader(const InputPortConfigPtr& port,  // Consider using Conn
 
 void QueueReader::adoptPackets()
 {
+    invalidateAvailable();
     // Take ownership of all packets
     PacketPtr packet = connection.dequeue();
     while (packet.assigned())
@@ -186,6 +188,7 @@ std::unique_ptr<DomainValue> QueueReader::getFirstSampleDomainValue() const
 
 AdvanceOutcome QueueReader::advanceToDomainValue(const DomainValue* domainValue)
 {
+    invalidateAvailable();
     // Pending events must be popped before advancing - the owner would otherwise
     // step over a reportable event boundary without handling it.
     if (!events.empty())
@@ -278,6 +281,7 @@ Int QueueReader::getSampleRate() const
 
 void QueueReader::consumeLeadingEventPackets()
 {
+    invalidateAvailable();
     size_t end = 0;
     for (const auto& packet : packets)
     {
@@ -303,6 +307,7 @@ void QueueReader::checkConnection() const
 
 void QueueReader::dropForInactive()
 {
+    invalidateAvailable();
     if (connection.assigned())
         drainConnection();
 
@@ -342,6 +347,20 @@ void QueueReader::dropOutdatedPacketSegments()
 }
 
 SizeT QueueReader::getAvailableSamplesNative() const
+{
+    if (availableNativeValid)
+    {
+        // Debug cross-check: any queue mutation that forgot to invalidateAvailable() would
+        // leave a stale cache here, which the test suite then catches immediately.
+        assert(availableNativeCache == recomputeAvailableNative() && "stale available-count cache");
+        return availableNativeCache;
+    }
+    availableNativeCache = recomputeAvailableNative();
+    availableNativeValid = true;
+    return availableNativeCache;
+}
+
+SizeT QueueReader::recomputeAvailableNative() const
 {
     SizeT count = 0;
     SizeT packetReadingPosition = readingPosition;
@@ -502,6 +521,7 @@ AdvanceResult QueueReader::read(void* valueBuffer, void* domainBuffer, SizeT* co
 
 AdvanceResult QueueReader::readNative(void* valueBuffer, void* domainBuffer, SizeT* count)
 {
+    invalidateAvailable();
     if (count == nullptr)
         return AdvanceResult::Error;
 
@@ -888,6 +908,7 @@ size_t QueueReader::getNumberOfEventPacketsInQueue()
 
 bool QueueReader::dropUntilEvent()
 {
+    invalidateAvailable();
     // Queue: d1 d2 E d3 -> E d3
     bool foundEvent = false;
     size_t end = 0;
