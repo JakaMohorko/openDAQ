@@ -420,6 +420,8 @@ void MultiReaderImpl::invalidateModelLocked()
     // (epoch/resolution/rate) - any input's descriptor change can move it
     cachedStatus = nullptr;
     cachedStatusFingerprint = {};
+    cachedInputSnapshot = nullptr;
+    cachedStatusMessage = nullptr;
     cachedCommonDomainDescriptor = nullptr;
     cachedMainDescriptorPacket = nullptr;
 }
@@ -1185,29 +1187,48 @@ MultiReaderStatusPtr MultiReaderImpl::createStatusLocked(const DictPtr<IString, 
     fingerprint.state = effectiveState;
     fingerprint.message = stateMessage;
     fingerprint.affectedInputs = stateAffectedInputs;
-    buildInputStateSnapshotLocked(fingerprint.inputStates);
-    fingerprint.offset = offset.assigned() ? static_cast<std::int64_t>(offset.getIntValue()) : 0;
     fingerprint.mainValue = mainValueDescriptor.getObject();
     fingerprint.mainDomain = mainDomainDescriptor.getObject();
 
-    if (!hasEvents && cachedStatus.assigned() && fingerprint == cachedStatusFingerprint)
-        return cachedStatus;
+    // The offset advances on every data read; the rest of the content stays constant while
+    // synchronized. Build the current snapshot and compare the offset-independent content to the
+    // cache separately from the offset (see StatusFingerprint above).
+    buildInputStateSnapshotLocked(statusSnapshotScratch);
+    const std::int64_t offsetInt = offset.assigned() ? static_cast<std::int64_t>(offset.getIntValue()) : 0;
 
-    // Construct directly (not via MultiReaderStatusBuilder): the read path hands the status a
-    // self-contained snapshot copy that it boxes into the IDict only if getInputStates() is
-    // called, so a steady read never builds the dict. The builder's eager-dict path stays for
-    // external callers.
+    if (!hasEvents && cachedStatus.assigned() && fingerprint == cachedStatusFingerprint && cachedInputSnapshot &&
+        statusSnapshotScratch == *cachedInputSnapshot)
+    {
+        // Content unchanged. Re-issue the same instance when the offset also matches; otherwise
+        // share the cached content (snapshot, message, descriptor packet - all refbumps) into a
+        // new status stamped with the advanced offset, rebuilding none of it.
+        if (offsetInt == cachedStatusOffset)
+            return cachedStatus;
+
+        MultiReaderStatusPtr restamped = createWithImplementation<IMultiReaderStatus, MultiReaderStatusImpl>(
+            mainDescriptorPacketLocked(), nullptr, offset, cachedReadStatus, cachedStatusMessage, cachedInputSnapshot);
+        cachedStatus = restamped;
+        cachedStatusOffset = offsetInt;
+        return restamped;
+    }
+
+    // Content changed (or the first status, or an event): rebuild. Construct directly (not via
+    // MultiReaderStatusBuilder): the read path hands the status a shared snapshot that it boxes
+    // into the IDict only if getInputStates() is called, so a steady read never builds the dict.
+    // The builder's eager-dict path stays for external callers.
+    auto snapshot = std::make_shared<const std::vector<std::pair<StringPtr, Int>>>(std::move(statusSnapshotScratch));
+    const auto readStatus = toReadStatus(effectiveState, hasEvents);
+    const auto messageStr = String(stateMessage);
     MultiReaderStatusPtr status = createWithImplementation<IMultiReaderStatus, MultiReaderStatusImpl>(
-        mainDescriptorPacketLocked(),
-        eventPackets,
-        offset,
-        toReadStatus(effectiveState, hasEvents),
-        String(stateMessage),
-        fingerprint.inputStates);
+        mainDescriptorPacketLocked(), eventPackets, offset, readStatus, messageStr, snapshot);
     if (!hasEvents)
     {
         cachedStatus = status;
         cachedStatusFingerprint = std::move(fingerprint);
+        cachedInputSnapshot = snapshot;
+        cachedStatusMessage = messageStr;
+        cachedReadStatus = readStatus;
+        cachedStatusOffset = offsetInt;
     }
     return status;
 }
@@ -1976,6 +1997,8 @@ void MultiReaderImpl::internalDispose(bool)
     externalListener = nullptr;
     readCallback = nullptr;
     cachedStatus = nullptr;
+    cachedInputSnapshot = nullptr;
+    cachedStatusMessage = nullptr;
     cachedCommonDomainDescriptor = nullptr;
     invalid = true;
     setStateLocked(ReaderState::Error, "Reader was disposed");

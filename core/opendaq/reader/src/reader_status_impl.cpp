@@ -106,12 +106,13 @@ ReadStatus deriveCompatReadStatus(const DictPtr<IString, IEventPacket>& eventPac
 }  // namespace
 
 MultiReaderStatusImpl::MultiReaderStatusImpl(const EventPacketPtr& mainDescriptor, const DictPtr<IString, IEventPacket>& eventPackets, Bool valid, const NumberPtr& offset)
+    // Explicit dict type disambiguates the delegated constructor from the snapshot overload
     : MultiReaderStatusImpl(mainDescriptor,
                             eventPackets,
                             offset,
                             deriveCompatReadStatus(eventPackets, valid),
                             String(""),
-                            nullptr)
+                            DictPtr<IString, IInteger>())
 {
 }
 
@@ -135,13 +136,13 @@ MultiReaderStatusImpl::MultiReaderStatusImpl(const EventPacketPtr& mainDescripto
                                              const NumberPtr& offset,
                                              ReadStatus readStatus,
                                              const StringPtr& stateMessage,
-                                             std::vector<std::pair<StringPtr, Int>> inputStateSnapshot)
+                                             InputStateSnapshotPtr inputStateSnapshot)
     // Only Fail is unrecoverable, so only Fail reads as invalid (review decision C5/Q1)
     : Super(mainDescriptor, readStatus != ReadStatus::Fail, offset)
     , eventPackets(eventPackets.assigned() ? eventPackets : Dict<IString, IEventPacket>())
     , readStatus(readStatus)
     , stateMessage(stateMessage.assigned() ? stateMessage : String(""))
-    // inputStates left null - boxed lazily from the snapshot on the first getInputStates()
+    // inputStates left null - boxed lazily from the shared snapshot on the first getInputStates()
     , inputStateSnapshot(std::move(inputStateSnapshot))
 {
 }
@@ -181,13 +182,14 @@ ErrCode MultiReaderStatusImpl::getEventPackets(IDict** events)
 ErrCode MultiReaderStatusImpl::getInputStates(IDict** inputStates)
 {
     OPENDAQ_PARAM_NOT_NULL(inputStates);
-    // Lazy path: box the captured snapshot into the dict on first access and reuse it. The dict
+    // Lazy path: box the shared snapshot into the dict on first access and reuse it. The dict
     // constructor assigns this->inputStates eagerly, so this only ever runs for the read path.
     if (!this->inputStates.assigned())
     {
         auto states = Dict<IString, IInteger>();
-        for (const auto& [id, inputState] : inputStateSnapshot)
-            states.set(id, inputState);
+        if (inputStateSnapshot)
+            for (const auto& [id, inputState] : *inputStateSnapshot)
+                states.set(id, inputState);
         this->inputStates = states;
     }
     *inputStates = this->inputStates.addRefAndReturn();

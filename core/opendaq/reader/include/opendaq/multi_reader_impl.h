@@ -24,6 +24,7 @@
 #include <opendaq/multi_reader/read_coordinator.h>
 #include <opendaq/reader_config_ptr.h>
 #include <opendaq/reader_factory.h>
+#include <opendaq/reader_status_impl.h>
 #include <opendaq/multi_reader/synchronization_manager.h>
 
 #include <condition_variable>
@@ -261,20 +262,19 @@ private:
 
     /// Status caching (spec section 8.2): the last event-less status is re-issued while its
     /// visible content is unchanged; any content change (or any event) creates a new object.
-    /// The cache and the fingerprint are cleared whenever the cross-input model is
-    /// invalidated - the cached getMainDescriptor packet embeds the common output domain,
-    /// which any input's descriptor change can move.
+    /// The offset is deliberately NOT part of the fingerprint - it advances on every data read,
+    /// while the rest of the status content stays constant in steady synchronized state. When the
+    /// content matches, the cached status is either re-issued as-is (offset unchanged) or its
+    /// offset-independent content is shared into a new status stamped with the advanced offset;
+    /// only a genuine content change rebuilds it. The cache is cleared whenever the cross-input
+    /// model is invalidated - the cached getMainDescriptor packet embeds the common output
+    /// domain, which any input's descriptor change can move.
     MultiReaderStatusPtr cachedStatus;
     struct StatusFingerprint
     {
         ReaderState state{};
         std::string message;
         std::vector<SizeT> affectedInputs;
-        /// Snapshot of the per-input states (input id, InputState as int) in slot order -
-        /// they can move without a state change (e.g. an unused input gaining events). The id is
-        /// held as a StringPtr (a refbump of the slot's cached id, no per-read allocation).
-        std::vector<std::pair<StringPtr, Int>> inputStates;
-        std::int64_t offset{};
         // Identity only; safe because the cache is dropped on every model invalidation,
         // which every descriptor change triggers before a new descriptor can be adopted
         IDataDescriptor* mainValue{};
@@ -283,11 +283,20 @@ private:
         bool operator==(const StatusFingerprint& other) const
         {
             return state == other.state && message == other.message && affectedInputs == other.affectedInputs &&
-                   inputStates == other.inputStates && offset == other.offset && mainValue == other.mainValue &&
-                   mainDomain == other.mainDomain;
+                   mainValue == other.mainValue && mainDomain == other.mainDomain;
         }
     };
     StatusFingerprint cachedStatusFingerprint;
+    /// Offset-independent content shared with (and by) the cached status, so an offset-only
+    /// change restamps a new status without rebuilding any of it. Compared against a freshly
+    /// built snapshot each read (the snapshot can move without a fingerprint change, e.g. an
+    /// unused input gaining events). Valid only while cachedStatus is assigned.
+    InputStateSnapshotPtr cachedInputSnapshot;
+    StringPtr cachedStatusMessage;
+    ReadStatus cachedReadStatus{};
+    std::int64_t cachedStatusOffset{};
+    /// Reused across reads to build the current input-state snapshot for the cache comparison.
+    std::vector<std::pair<StringPtr, Int>> statusSnapshotScratch;
 
     /// Common-output-domain descriptor for getMainDescriptor, built lazily per model build
     DataDescriptorPtr cachedCommonDomainDescriptor;
