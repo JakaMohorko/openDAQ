@@ -92,24 +92,15 @@ ErrCode TailReaderStatusImpl::getSufficientHistory(Bool* status)
 namespace
 {
 
-// The compatibility factory carries no explicit state - derive the closest one from what it
-// does carry. The caller's valid flag takes precedence so getValid() keeps reporting exactly
-// what the compat factory was given (events with valid=false stay invalid).
-MultiReaderState deriveCompatState(const DictPtr<IString, IEventPacket>& eventPackets, Bool valid)
+// The compatibility factory carries no explicit read status - derive the closest one from
+// what it does carry, so getValid() keeps reporting exactly what the factory was given.
+ReadStatus deriveCompatReadStatus(const DictPtr<IString, IEventPacket>& eventPackets, Bool valid)
 {
     if (!valid)
-        return MultiReaderState::Error;
+        return ReadStatus::Fail;
     if (eventPackets.assigned() && eventPackets.getCount() > 0)
-        return MultiReaderState::EventPending;
-    return MultiReaderState::Synchronized;
-}
-
-// The stream is invalid exactly in the failure states (error contract section 3.3,
-// spec section 6.1: Incompatible, SynchronizationFailed, DataLost and Error read as Fail)
-Bool deriveValidity(MultiReaderState state)
-{
-    return state != MultiReaderState::Incompatible && state != MultiReaderState::SynchronizationFailed &&
-           state != MultiReaderState::DataLost && state != MultiReaderState::Error;
+        return ReadStatus::Event;
+    return ReadStatus::Ok;
 }
 
 }  // namespace
@@ -118,10 +109,8 @@ MultiReaderStatusImpl::MultiReaderStatusImpl(const EventPacketPtr& mainDescripto
     : MultiReaderStatusImpl(mainDescriptor,
                             eventPackets,
                             offset,
-                            deriveCompatState(eventPackets, valid),
+                            deriveCompatReadStatus(eventPackets, valid),
                             String(""),
-                            nullptr,
-                            nullptr,
                             nullptr)
 {
 }
@@ -129,34 +118,22 @@ MultiReaderStatusImpl::MultiReaderStatusImpl(const EventPacketPtr& mainDescripto
 MultiReaderStatusImpl::MultiReaderStatusImpl(const EventPacketPtr& mainDescriptor,
                                              const DictPtr<IString, IEventPacket>& eventPackets,
                                              const NumberPtr& offset,
-                                             MultiReaderState state,
+                                             ReadStatus readStatus,
                                              const StringPtr& stateMessage,
-                                             const ListPtr<IInteger>& affectedInputIndices,
-                                             const ListPtr<IInteger>& eventInputIndices,
-                                             const ListPtr<IEventPacket>& orderedEventPackets)
-    : Super(mainDescriptor, deriveValidity(state), offset)
+                                             const DictPtr<IString, IInteger>& inputStates)
+    // Only Fail is unrecoverable, so only Fail reads as invalid (review decision C5/Q1)
+    : Super(mainDescriptor, readStatus != ReadStatus::Fail, offset)
     , eventPackets(eventPackets.assigned() ? eventPackets : Dict<IString, IEventPacket>())
-    , state(state)
+    , readStatus(readStatus)
     , stateMessage(stateMessage.assigned() ? stateMessage : String(""))
-    , affectedInputIndices(affectedInputIndices.assigned() ? affectedInputIndices : List<IInteger>())
-    , eventInputIndices(eventInputIndices.assigned() ? eventInputIndices : List<IInteger>())
-    , orderedEventPackets(orderedEventPackets.assigned() ? orderedEventPackets : List<IEventPacket>())
+    , inputStates(inputStates.assigned() ? inputStates : Dict<IString, IInteger>())
 {
 }
 
 ErrCode MultiReaderStatusImpl::getReadStatus(ReadStatus* status)
 {
     OPENDAQ_PARAM_NOT_NULL(status);
-    Bool valid;
-    Super::getValid(&valid);
-
-    if (valid && (eventPackets.getCount() == 0))
-        *status = ReadStatus::Ok;
-    else if (eventPackets.getCount())
-        *status = ReadStatus::Event;
-    else
-        *status = ReadStatus::Fail;
-
+    *status = readStatus;
     return OPENDAQ_SUCCESS;
 }
 
@@ -164,12 +141,9 @@ ErrCode MultiReaderStatusImpl::getEventPacket(IEventPacket** packet)
 {
     OPENDAQ_PARAM_NOT_NULL(packet);
 
-    // Compatibility accessor: the first event of the ordered list. Statuses built through
-    // the compatibility factory carry no ordered list - fall back to the first dict entry
-    // so the accessor still reports an event whenever getReadStatus() does.
-    if (orderedEventPackets.getCount() > 0)
-        *packet = orderedEventPackets[0].addRefAndReturn();
-    else if (eventPackets.getCount() > 0)
+    // Compatibility accessor: the first entry of the event dictionary, so the accessor
+    // still reports an event whenever getReadStatus() does
+    if (eventPackets.getCount() > 0)
         *packet = eventPackets.getValueList()[0].asPtr<IEventPacket>().addRefAndReturn();
     else
         *packet = nullptr;
@@ -188,10 +162,10 @@ ErrCode MultiReaderStatusImpl::getEventPackets(IDict** events)
     return OPENDAQ_SUCCESS;
 }
 
-ErrCode MultiReaderStatusImpl::getState(MultiReaderState* state)
+ErrCode MultiReaderStatusImpl::getInputStates(IDict** inputStates)
 {
-    OPENDAQ_PARAM_NOT_NULL(state);
-    *state = this->state;
+    OPENDAQ_PARAM_NOT_NULL(inputStates);
+    *inputStates = this->inputStates.addRefAndReturn();
     return OPENDAQ_SUCCESS;
 }
 
@@ -199,45 +173,6 @@ ErrCode MultiReaderStatusImpl::getStateMessage(IString** message)
 {
     OPENDAQ_PARAM_NOT_NULL(message);
     *message = stateMessage.addRefAndReturn();
-    return OPENDAQ_SUCCESS;
-}
-
-ErrCode MultiReaderStatusImpl::getAffectedInputCount(SizeT* count)
-{
-    OPENDAQ_PARAM_NOT_NULL(count);
-    *count = affectedInputIndices.getCount();
-    return OPENDAQ_SUCCESS;
-}
-
-ErrCode MultiReaderStatusImpl::getAffectedInputIndex(SizeT statusIndex, SizeT* inputIndex)
-{
-    OPENDAQ_PARAM_NOT_NULL(inputIndex);
-    if (statusIndex >= affectedInputIndices.getCount())
-        return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_OUTOFRANGE, "Affected-input index out of range");
-
-    *inputIndex = static_cast<SizeT>(static_cast<Int>(affectedInputIndices[statusIndex]));
-    return OPENDAQ_SUCCESS;
-}
-
-ErrCode MultiReaderStatusImpl::getEventCount(SizeT* count)
-{
-    OPENDAQ_PARAM_NOT_NULL(count);
-    // Parallel-list contract: only pairs with both a packet and an input index count
-    *count = std::min(orderedEventPackets.getCount(), eventInputIndices.getCount());
-    return OPENDAQ_SUCCESS;
-}
-
-ErrCode MultiReaderStatusImpl::getEvent(SizeT eventIndex, SizeT* inputIndex, IEventPacket** packet)
-{
-    OPENDAQ_PARAM_NOT_NULL(inputIndex);
-    OPENDAQ_PARAM_NOT_NULL(packet);
-    // The two lists are parallel by contract, but the public factory cannot enforce equal
-    // lengths - bound the index by both so a mismatch reports an error instead of throwing
-    if (eventIndex >= orderedEventPackets.getCount() || eventIndex >= eventInputIndices.getCount())
-        return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_OUTOFRANGE, "Event index out of range");
-
-    *inputIndex = static_cast<SizeT>(static_cast<Int>(eventInputIndices[eventIndex]));
-    *packet = orderedEventPackets[eventIndex].addRefAndReturn();
     return OPENDAQ_SUCCESS;
 }
 
@@ -270,18 +205,6 @@ OPENDAQ_DEFINE_CLASS_FACTORY (
     IDict*, eventPackets,
     Bool, valid,
     INumber*, offset
-)
-
-OPENDAQ_DEFINE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC_OBJ (
-    LIBRARY_FACTORY, MultiReaderStatusImpl, IMultiReaderStatus, createMultiReaderStatusEx,
-    IEventPacket*, mainDescriptor,
-    IDict*, eventPackets,
-    INumber*, offset,
-    MultiReaderState, state,
-    IString*, stateMessage,
-    IList*, affectedInputIndices,
-    IList*, eventInputIndices,
-    IList*, orderedEventPackets
 )
 
 END_NAMESPACE_OPENDAQ

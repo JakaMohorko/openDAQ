@@ -529,11 +529,9 @@ void SumReaderFbImpl::handleEventsLocked(const MultiReaderStatusPtr& status)
 
 bool SumReaderFbImpl::handleStateLocked(const MultiReaderStatusPtr& status)
 {
-    const auto state = status.getState();
+    const auto readStatus = status.getReadStatus();
 
-    // Only the Error state is unrecoverable; getValid() is also false for the recoverable
-    // invalid-stream states (Incompatible, SynchronizationFailed), which are parked below
-    if (state == MultiReaderState::Error)
+    if (readStatus == ReadStatus::Fail)
     {
         // Unrecoverable: report and stop issuing reads. No silent reader re-creation - an
         // internal invariant broke, and surfacing it is the handling. A mode change or
@@ -546,47 +544,48 @@ bool SumReaderFbImpl::handleStateLocked(const MultiReaderStatusPtr& status)
         return false;
     }
 
-    switch (state)
+    switch (readStatus)
     {
-        case MultiReaderState::Incompatible:
-        case MultiReaderState::SynchronizationFailed:
-        case MultiReaderState::DataLost:
+        case ReadStatus::InputsFailed:
         {
-            std::string reason;
-            switch (state)
-            {
-                case MultiReaderState::Incompatible:
-                {
-                    const StringPtr message = status.getStateMessage();
-                    reason = fmt::format("incompatible: {}", message.assigned() ? message.toStdString() : "");
-                    break;
-                }
-                case MultiReaderState::SynchronizationFailed:
-                    reason = "cannot synchronize";
-                    break;
-                default:
-                    reason = "no data";
-                    break;
-            }
-
+            // The per-input states name the failing inputs directly (the FB constructs the
+            // reader from ports, so the input ids are the ports' global ids)
             bool acted = false;
             std::unordered_set<std::string> affected;
-            const SizeT affectedCount = status.getAffectedInputCount();
-            for (SizeT i = 0; i < affectedCount; ++i)
+            for (const auto& [inputId, stateValue] : status.getInputStates())
             {
-                const SizeT slotIndex = status.getAffectedInputIndex(i);
-                if (slotIndex >= readerPorts.size())
+                const auto inputState = static_cast<InputState>(static_cast<Int>(stateValue));
+                std::string reason;
+                switch (inputState)
+                {
+                    case InputState::Incompatible:
+                    {
+                        const StringPtr message = status.getStateMessage();
+                        reason = fmt::format("incompatible: {}", message.assigned() ? message.toStdString() : "");
+                        break;
+                    }
+                    case InputState::SynchronizationFailed:
+                        reason = "cannot synchronize";
+                        break;
+                    case InputState::DataLost:
+                        reason = "no data";
+                        break;
+                    default:
+                        continue;
+                }
+
+                const auto portId = StringPtr(inputId).toStdString();
+                const auto port = std::find_if(connectedPorts.begin(),
+                                               connectedPorts.end(),
+                                               [&portId](const InputPortPtr& candidate)
+                                               { return candidate.getGlobalId().toStdString() == portId; });
+                if (port == connectedPorts.end() || !port->getConnection().assigned())
                     continue;
 
-                const auto& port = readerPorts[slotIndex];
-                if (!port.getConnection().assigned())
-                    continue;
-
-                const auto portId = port.getGlobalId().toStdString();
                 affected.insert(portId);
                 if (parkedPorts.find(portId) == parkedPorts.end() || portId == probingPortId)
                 {
-                    parkPortLocked(port, reason);
+                    parkPortLocked(*port, reason);
                     acted = true;
                 }
             }
@@ -602,7 +601,8 @@ bool SumReaderFbImpl::handleStateLocked(const MultiReaderStatusPtr& status)
                 configureValueDescriptorLocked();
             return acted;
         }
-        case MultiReaderState::Synchronized:
+        case ReadStatus::Ok:
+            // Synchronized: a probe that made it into a synchronized read has proven itself
             if (!probingPortId.empty())
             {
                 unparkLocked(probingPortId);
@@ -611,6 +611,8 @@ bool SumReaderFbImpl::handleStateLocked(const MultiReaderStatusPtr& status)
             }
             return false;
         default:
+            // Preparing/Inactive/Event: nothing to decide here - be patient (Preparing is
+            // never a reason to park or probe), and events are handled by handleEventsLocked
             return false;
     }
 }

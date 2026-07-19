@@ -36,6 +36,26 @@
 BEGIN_NAMESPACE_OPENDAQ
 
 /**
+ * @brief Internal runtime states of the multi reader. The public surface is the extended
+ * ReadStatus plus the per-input InputState dictionary (review decision C5/Q1); this enum
+ * only drives the internal state machine and the diagnostic message.
+ */
+enum class ReaderState
+{
+    Inactive = 0,           ///< Disabled via setActive(false)
+    WaitingForConnections,  ///< A used input has no signal connected
+    WaitingForDescriptors,  ///< A used input has not received its descriptors yet
+    Incompatible,           ///< Local or cross-input validation failed (recoverable)
+    WaitingForData,         ///< Valid, but some input has no samples
+    Synchronizing,          ///< Alignment in progress, waiting for data to reach the aligned start
+    Synchronized,           ///< Aligned blocks readable
+    EventPending,           ///< Event(s) must be returned before data
+    SynchronizationFailed,  ///< Span, representability or common-tick failure
+    DataLost,               ///< A used input missed its packet deadline
+    Error                   ///< Internal invariant violated or reader disposed; not recoverable
+};
+
+/**
  * @brief Public facade of the multi reader: configuration, input order, the runtime state
  * machine and status creation (spec section 3). All cross-input math lives in the
  * SynchronizationManager, all queue work in the per-slot QueueReaders, read planning in
@@ -153,11 +173,11 @@ private:
     void evaluateStateLocked();
     void invalidateSynchronizationLocked();
     void invalidateModelLocked();
-    void setStateLocked(MultiReaderState newState, std::string message = {}, std::vector<SizeT> affected = {});
+    void setStateLocked(ReaderState newState, std::string message = {}, std::vector<SizeT> affected = {});
     /// Formats "<messagePrefix> [i, j, ...]<messageSuffix>" from the affected indices before
     /// moving them into the state - never both format and move in one argument list (the
     /// evaluation order of function arguments is unspecified).
-    void setStateWithAffectedLocked(MultiReaderState newState,
+    void setStateWithAffectedLocked(ReaderState newState,
                                     const char* messagePrefix,
                                     const char* messageSuffix,
                                     std::vector<SizeT> affected);
@@ -172,9 +192,11 @@ private:
     ErrCode readInternal(void** valueBuffers, void** domainBuffers, SizeT* count, SizeT timeoutMs, IMultiReaderStatus** status, bool skip);
     MultiReaderStatusPtr readEventsLocked();
     MultiReaderStatusPtr createStatusLocked(const DictPtr<IString, IEventPacket>& eventPackets = nullptr,
-                                            const NumberPtr& offset = nullptr,
-                                            const ListPtr<IInteger>& eventInputIndices = nullptr,
-                                            const ListPtr<IEventPacket>& orderedEventPackets = nullptr);
+                                            const NumberPtr& offset = nullptr);
+    /// Per-input states for the status (C6): keyed by input id, derived from the used/connected
+    /// flags, pending events and the current failure state's affected set. Optionally also fills
+    /// the fingerprint snapshot (same content, comparable cheaply).
+    DictPtr<IString, IInteger> inputStatesLocked(std::vector<std::pair<std::string, int>>* fingerprint = nullptr) const;
     /// Descriptor-changed packet for the status: main value descriptor + common output domain
     /// descriptor (the domain of the status offset, spec section 8.2)
     EventPacketPtr mainDescriptorPacketLocked();
@@ -197,7 +219,7 @@ private:
     std::condition_variable notifyCondition;
 
     bool invalid{false};  // only the Error state and disposal (spec section 6.1)
-    MultiReaderState state{MultiReaderState::WaitingForConnections};
+    ReaderState state{ReaderState::WaitingForConnections};
     std::string stateMessage;
     std::vector<SizeT> stateAffectedInputs;
 
@@ -221,9 +243,12 @@ private:
     MultiReaderStatusPtr cachedStatus;
     struct StatusFingerprint
     {
-        MultiReaderState state{};
+        ReaderState state{};
         std::string message;
         std::vector<SizeT> affectedInputs;
+        /// Snapshot of the per-input states (input id, InputState as int) in slot order -
+        /// they can move without a state change (e.g. an unused input gaining events)
+        std::vector<std::pair<std::string, int>> inputStates;
         std::int64_t offset{};
         // Identity only; safe because the cache is dropped on every model invalidation,
         // which every descriptor change triggers before a new descriptor can be adopted
@@ -233,7 +258,8 @@ private:
         bool operator==(const StatusFingerprint& other) const
         {
             return state == other.state && message == other.message && affectedInputs == other.affectedInputs &&
-                   offset == other.offset && mainValue == other.mainValue && mainDomain == other.mainDomain;
+                   inputStates == other.inputStates && offset == other.offset && mainValue == other.mainValue &&
+                   mainDomain == other.mainDomain;
         }
     };
     StatusFingerprint cachedStatusFingerprint;

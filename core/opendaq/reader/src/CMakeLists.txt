@@ -17,6 +17,7 @@ function(rtgen_component_${BASE_NAME})
     rtgen(SRC_MultiReader multi_reader.h)
     rtgen(SRC_TailReaderStatus tail_reader_status.h)
     rtgen(SRC_MultiReaderStatus multi_reader_status.h)
+    rtgen(SRC_MultiReaderStatusBuilder multi_reader_status_builder.h INTERNAL)
     
     set(SRC_PublicHeaders_Component_Generated
         ${SRC_ReaderStatus_PublicHeaders}
@@ -35,6 +36,7 @@ function(rtgen_component_${BASE_NAME})
         ${SRC_MultiReaderBuilder_PublicHeaders}
         ${SRC_TailReaderStatus_PublicHeaders}
         ${SRC_MultiReaderStatus_PublicHeaders}
+        ${SRC_MultiReaderStatusBuilder_PublicHeaders}
         PARENT_SCOPE
     )
     
@@ -53,6 +55,7 @@ function(rtgen_component_${BASE_NAME})
         ${SRC_PacketReader_PrivateHeaders}
         ${SRC_MultiReader_PrivateHeaders}
         ${SRC_MultiReaderBuilder_PrivateHeaders}
+        ${SRC_MultiReaderStatusBuilder_PrivateHeaders}
         PARENT_SCOPE
     )
     
@@ -141,8 +144,11 @@ function(create_component_source_groups_${BASE_NAME})
         ${SDK_HEADERS_DIR}/multi_reader/read_coordinator.h
         ${SDK_HEADERS_DIR}/multi_reader_impl.h
 		${SDK_HEADERS_DIR}/multi_reader_status.h
+        ${SDK_HEADERS_DIR}/multi_reader_status_builder.h
+        ${SDK_HEADERS_DIR}/multi_reader_status_builder_impl.h
         ${SDK_SRC_DIR}/multi_reader_impl.cpp
         ${SDK_SRC_DIR}/multi_reader_builder_impl.cpp
+        ${SDK_SRC_DIR}/multi_reader_status_builder_impl.cpp
         ${SDK_SRC_DIR}/multi_reader/queue_reader.cpp
         ${SDK_SRC_DIR}/multi_reader/data_loss_monitor.cpp
         ${SDK_SRC_DIR}/multi_reader/input.cpp
@@ -175,6 +181,7 @@ set(SRC_PrivateHeaders_Component
     packet_reader_impl.h
     multi_reader_impl.h
     multi_reader_builder_impl.h
+    multi_reader_status_builder_impl.h
     multi_reader/queue_reader.h
     multi_reader/data_loss_monitor.h
     multi_reader/input.h
@@ -201,6 +208,7 @@ set(SRC_Cpp_Component
     typed_reading_utils.cpp
     multi_reader_impl.cpp
     multi_reader_builder_impl.cpp
+    multi_reader_status_builder_impl.cpp
     multi_reader/queue_reader.cpp
     multi_reader/data_loss_monitor.cpp
     multi_reader/input.cpp

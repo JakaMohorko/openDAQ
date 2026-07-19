@@ -28,6 +28,7 @@
 #include <opendaq/multi_reader_ptr.h>
 #include <opendaq/multi_reader_builder_ptr.h>
 #include <opendaq/multi_reader_status_ptr.h>
+#include <opendaq/multi_reader_status_builder_ptr.h>
 
 #include <opendaq/stream_reader_ptr.h>
 #include <opendaq/stream_reader_builder_ptr.h>
@@ -74,22 +75,12 @@ inline MultiReaderStatusPtr MultiReaderStatus(const EventPacketPtr& mainDescript
 }
 
 /*!
- * @brief Creates a multi reader status carrying the reader state, its diagnostic message, the
- * affected input indices and the ordered event list (eventInputIndices parallel to
- * orderedEventPackets), in addition to the compatibility fields. The status validity is
- * derived from the state (Incompatible, SynchronizationFailed and Error report invalid).
+ * @brief Creates a builder for multi reader statuses. The reader creates every status through
+ * it; the status validity is derived from the read status (false only for ReadStatus::Fail).
  */
-inline MultiReaderStatusPtr MultiReaderStatusEx(const EventPacketPtr& mainDescriptor,
-                                                const DictPtr<IString, IEventPacket>& eventPackets,
-                                                const NumberPtr& offset,
-                                                MultiReaderState state,
-                                                const StringPtr& stateMessage = nullptr,
-                                                const ListPtr<IInteger>& affectedInputIndices = nullptr,
-                                                const ListPtr<IInteger>& eventInputIndices = nullptr,
-                                                const ListPtr<IEventPacket>& orderedEventPackets = nullptr)
+inline MultiReaderStatusBuilderPtr MultiReaderStatusBuilder()
 {
-    return MultiReaderStatusEx_Create(
-        mainDescriptor, eventPackets, offset, state, stateMessage, affectedInputIndices, eventInputIndices, orderedEventPackets);
+    return MultiReaderStatusBuilder_Create();
 }
 
 /*!
