@@ -643,8 +643,16 @@ bool SumReaderFbImpl::handleStateLocked(const MultiReaderStatusPtr& status)
             }
             return false;
         default:
-            // Preparing/Inactive/Event: nothing to decide here - be patient (Preparing is
-            // never a reason to park or probe), and events are handled by handleEventsLocked
+            // Preparing/Inactive/Event: nothing to park or probe here - be patient (Preparing
+            // is never a reason to act), and events are handled by handleEventsLocked. But a
+            // standing "inputs failing (not excluded)" report from IgnoreFaultyInputs=false is
+            // now stale (the reader left InputsFailed), so clear it - otherwise it would
+            // linger until a read finally returns Ok, misreporting a since-recovered input.
+            if (!failedInputsMessage.empty())
+            {
+                failedInputsMessage.clear();
+                updateComponentStatusLocked();
+            }
             return false;
     }
 }
@@ -880,13 +888,36 @@ std::string SumReaderFbImpl::describeFailedInputsLocked(const MultiReaderStatusP
 
 void SumReaderFbImpl::maybeProbeLocked()
 {
-    if (readerErrored || !probingPortId.empty() || parkedPorts.empty())
-        return;
-    if (recoveryRetryIntervalSeconds <= 0)
+    if (readerErrored || recoveryRetryIntervalSeconds <= 0)
         return;
 
     const auto now = std::chrono::steady_clock::now();
-    if (now - lastProbeTime < std::chrono::duration<double>(recoveryRetryIntervalSeconds))
+    const auto interval = std::chrono::duration<double>(recoveryRetryIntervalSeconds);
+
+    if (!probingPortId.empty())
+    {
+        // A probe normally resolves in handleStateLocked: Ok unparks it, InputsFailed
+        // re-parks it. A probe of a port whose producer has gone permanently silent resolves
+        // as neither - the reader sits in Preparing (WaitingForData) with the probed port
+        // used-but-empty, which blocks the healthy inputs from summing and grows their queues
+        // unbounded. Abandon such a stuck probe after one interval (re-park it) so the healthy
+        // inputs resume; a later cycle retries it, interval-paced.
+        if (now - lastProbeTime >= interval)
+        {
+            const auto port = findPortByIdLocked(probingPortId);
+            if (port.assigned())
+            {
+                parkPortLocked(port, "no data");
+                lastProbeTime = now;  // re-pace so the retry waits a full interval
+                configureValueDescriptorLocked();
+            }
+        }
+        return;
+    }
+
+    if (parkedPorts.empty())
+        return;
+    if (now - lastProbeTime < interval)
         return;
 
     // Periodic fallback: probe the oldest parked port, one at a time, so a bad port cannot

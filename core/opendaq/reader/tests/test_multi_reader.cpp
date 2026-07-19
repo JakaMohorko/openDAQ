@@ -1368,8 +1368,10 @@ TEST_F(MultiReaderTest, EpochChangedBeforeFirstData)
     ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
     ASSERT_TRUE(status.getEventPackets().assigned());
     ASSERT_EQ(status.getEventPackets().getCount(), 1u);
-    ASSERT_TRUE(status.getEventPackets().hasKey("/multi_reader_signal_sig1"));
-    ASSERT_NE(status.getEventPackets().get("/multi_reader_signal_sig1"), nullptr);
+    // Event dict is keyed by the input id (C6): for a signal-built reader that is the signal's
+    // global id, not the synthetic internal port's - the same id getInputStates/setInputUsed use
+    ASSERT_TRUE(status.getEventPackets().hasKey("/sig1"));
+    ASSERT_NE(status.getEventPackets().get("/sig1"), nullptr);
 
     available = multi.getAvailableCount();
     ASSERT_EQ(available, 458u);
