@@ -420,6 +420,7 @@ void MultiReaderImpl::invalidateModelLocked()
     cachedStatus = nullptr;
     cachedStatusFingerprint = {};
     cachedCommonDomainDescriptor = nullptr;
+    cachedMainDescriptorPacket = nullptr;
 }
 
 std::vector<QueueReader*> MultiReaderImpl::collectUsedReaders(std::vector<SizeT>& slotIndices) const
@@ -465,10 +466,16 @@ void MultiReaderImpl::refreshMainInputDescriptorsLocked()
     }
 
     auto& reader = slots[mainSlot]->getQueueReader();
+    const auto prevValue = mainValueDescriptor;
+    const auto prevDomain = mainDomainDescriptor;
     if (reader.getValueDescriptor().assigned())
         mainValueDescriptor = reader.getValueDescriptor();
     if (reader.getDomainDescriptor().assigned())
         mainDomainDescriptor = reader.getDomainDescriptor();
+
+    // The cached main-descriptor packet embeds these; drop it if they changed
+    if (mainValueDescriptor != prevValue || mainDomainDescriptor != prevDomain)
+        cachedMainDescriptorPacket = nullptr;
 }
 
 SizeT MultiReaderImpl::mainSlotIndexLocked() const
@@ -1041,6 +1048,13 @@ void MultiReaderImpl::slotPacketReceived(SizeT slotIndex)
 
 EventPacketPtr MultiReaderImpl::mainDescriptorPacketLocked()
 {
+    // Cached: this packet only changes when the main value descriptor or the common output
+    // domain changes, but the status path rebuilt it on every read. The cache is cleared by
+    // invalidateModelLocked (model/common-domain change) and refreshMainInputDescriptorsLocked
+    // (main descriptors change) - the same points that clear cachedCommonDomainDescriptor.
+    if (cachedMainDescriptorPacket.assigned())
+        return cachedMainDescriptorPacket;
+
     // The domain part is the common output domain - the domain the status offset is
     // expressed in (spec sections 4.4 and 8.2) - not the main input's own domain. It is
     // rebuilt lazily per model build (invalidateModelLocked clears it).
@@ -1059,8 +1073,9 @@ EventPacketPtr MultiReaderImpl::mainDescriptorPacketLocked()
         if (cachedCommonDomainDescriptor.assigned())
             domainDescriptor = cachedCommonDomainDescriptor;
     }
-    return DataDescriptorChangedEventPacket(descriptorToEventPacketParam(mainValueDescriptor),
-                                            descriptorToEventPacketParam(domainDescriptor));
+    cachedMainDescriptorPacket = DataDescriptorChangedEventPacket(descriptorToEventPacketParam(mainValueDescriptor),
+                                                                  descriptorToEventPacketParam(domainDescriptor));
+    return cachedMainDescriptorPacket;
 }
 
 namespace
