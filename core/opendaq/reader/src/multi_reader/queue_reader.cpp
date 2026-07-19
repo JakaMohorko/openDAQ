@@ -117,10 +117,11 @@ QueueReader::QueueReader(const InputPortConfigPtr& port,  // Consider using Conn
                          ReadMode mode,
                          const LoggerComponentPtr& logger,
                          bool globalIdFromSignal)  // TODO
+    // Init order matches the member declaration order in the header (avoids C5038)
     : port(port)
     , connection(port.getConnection())
-    , readMode(mode) 
     , loggerComponent(logger)
+    , readMode(mode)
 {
     typeCtx.domainIn = SampleType::Undefined;
     typeCtx.domainOut = domainReadType;
@@ -332,7 +333,7 @@ void QueueReader::dropOutdatedPacketSegments()
 {
     while (getNumberOfEventPacketsInQueue() >= 2)
     {
-        auto foundEvent = dropUntilEvent();
+        [[maybe_unused]] auto foundEvent = dropUntilEvent();  // asserted only; NDEBUG drops the use
         assert(foundEvent && "Event should have been found.");
         consumeLeadingEventPackets();
     }
