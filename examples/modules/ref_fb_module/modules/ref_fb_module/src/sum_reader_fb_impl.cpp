@@ -92,6 +92,12 @@ void SumReaderFbImpl::initProperties()
     objPtr.addProperty(FloatProperty("RecoveryRetryInterval", 5.0));
     objPtr.getOnPropertyValueWrite("RecoveryRetryInterval") +=
         [this](PropertyObjectPtr&, PropertyValueEventArgsPtr&) { readerConfigChanged(); };
+
+    // C6: true (default) = park failing inputs so the rest keep summing; false = never
+    // exclude anything, report the failing inputs and wait for every input to work
+    objPtr.addProperty(BoolProperty("IgnoreFaultyInputs", true));
+    objPtr.getOnPropertyValueWrite("IgnoreFaultyInputs") +=
+        [this](PropertyObjectPtr&, PropertyValueEventArgsPtr&) { ignoreFaultyInputsChanged(); };
 }
 
 std::string SumReaderFbImpl::getNextPortID() const
@@ -218,9 +224,13 @@ void SumReaderFbImpl::createReaderLocked()
 
     parkedPorts.clear();
     probingPortId.clear();
+    failedInputsMessage.clear();
     readerErrored = false;
     rateModelDirty = true;
 
+    // The external listener stays for topology notifications (connect/disconnect reach the FB
+    // through the reader's forwarding - the slots own the ports' listener seats) and for
+    // packet-paced probe/staleness checks; parked-port recovery itself is status-driven (Q5)
     reader.setExternalListener(this->thisPtr<InputPortNotificationsPtr>());
     auto thisWeakRef = this->template getWeakRefInternal<IFunctionBlock>();
     reader.setOnDataAvailable(
@@ -237,6 +247,20 @@ void SumReaderFbImpl::refreshReaderConfigLocked()
     dataLossTimeoutSeconds = objPtr.getPropertyValue("DataLossTimeout");
     maxSyncDistanceSeconds = objPtr.getPropertyValue("MaxSynchronizationDistance");
     recoveryRetryIntervalSeconds = objPtr.getPropertyValue("RecoveryRetryInterval");
+    ignoreFaultyInputs = objPtr.getPropertyValue("IgnoreFaultyInputs");
+}
+
+void SumReaderFbImpl::ignoreFaultyInputsChanged()
+{
+    const bool previous = ignoreFaultyInputs;
+    ignoreFaultyInputs = objPtr.getPropertyValue("IgnoreFaultyInputs");
+    if (ignoreFaultyInputs == previous || !reader.assigned())
+        return;
+
+    // Both directions get a clean slate: enabling parking re-derives the parked set from the
+    // next failure report, disabling it re-includes every input
+    createReaderLocked();
+    updateComponentStatusLocked();
 }
 
 void SumReaderFbImpl::modeChanged()
@@ -296,17 +320,11 @@ void SumReaderFbImpl::onPacketReceived(const InputPortPtr& inputPort)
             return;
 
         const auto now = std::chrono::steady_clock::now();
-        const auto portId = inputPort.getGlobalId().toStdString();
 
-        if (probingPortId.empty() && parkedPorts.find(portId) != parkedPorts.end())
-        {
-            // Event-driven probe: activity on a parked port re-tests it (pacing is applied
-            // when the deferred check runs)
-            if (pendingProbePortId.empty())
-                pendingProbePortId = portId;
-            schedule = true;
-        }
-        else if (!probingPortId.empty())
+        // Event-driven recovery of parked ports no longer needs this packet hook: unused-input
+        // events fire the reader's onDataAvailable callback (review Q5), and the status-driven
+        // probe (probeEventfulParkedLocked) reacts to them
+        if (!probingPortId.empty())
         {
             // A pending probe resolves at status evaluation points; drive them from the
             // packet stream, since a probe of a data-starved input produces no data callbacks
@@ -360,16 +378,6 @@ void SumReaderFbImpl::deferredCheck()
     deferredCheckScheduled = false;
     if (!reader.assigned() || readerErrored)
         return;
-
-    // Event-driven probes run immediately: they only fire on event packets reaching a parked
-    // (inactive) port - descriptor changes - which may be the last wakeup this function block
-    // gets while every input is parked (data packets on inactive ports are dropped silently).
-    // Probe flapping on persistently bad ports is bounded by the event rate; the periodic
-    // fallback in maybeProbeLocked stays paced by the retry interval.
-    std::string probeTarget;
-    std::swap(probeTarget, pendingProbePortId);
-    if (!probeTarget.empty() && probingPortId.empty())
-        probePortLocked(probeTarget);
 
     processReaderLocked();
 }
@@ -443,6 +451,11 @@ void SumReaderFbImpl::processReaderLocked()
         acted |= handleStateLocked(status);
         if (readerErrored)
             return;
+
+        // Q5 recovery: a parked (unused) input whose per-input state reports Event fired
+        // this wakeup - probe it immediately (unpaced; this may be the last wakeup while
+        // every input is parked, and flapping is bounded by the event rate)
+        acted |= probeEventfulParkedLocked(status);
 
         if (!acted && count == 0)
             break;
@@ -548,6 +561,19 @@ bool SumReaderFbImpl::handleStateLocked(const MultiReaderStatusPtr& status)
     {
         case ReadStatus::InputsFailed:
         {
+            if (!ignoreFaultyInputs)
+            {
+                // Parking disabled by configuration: never exclude anything - report which
+                // inputs are failing and wait for all of them to work
+                const auto message = describeFailedInputsLocked(status);
+                if (message != failedInputsMessage)
+                {
+                    failedInputsMessage = message;
+                    updateComponentStatusLocked();
+                }
+                return false;
+            }
+
             // The per-input states name the failing inputs directly (the FB constructs the
             // reader from ports, so the input ids are the ports' global ids)
             bool acted = false;
@@ -602,6 +628,12 @@ bool SumReaderFbImpl::handleStateLocked(const MultiReaderStatusPtr& status)
             return acted;
         }
         case ReadStatus::Ok:
+            // Recovered: clear a standing failure report from the non-parking mode
+            if (!failedInputsMessage.empty())
+            {
+                failedInputsMessage.clear();
+                updateComponentStatusLocked();
+            }
             // Synchronized: a probe that made it into a synchronized read has proven itself
             if (!probingPortId.empty())
             {
@@ -797,6 +829,55 @@ void SumReaderFbImpl::probePortLocked(const std::string& portId)
     rateModelDirty = true;
 }
 
+bool SumReaderFbImpl::probeEventfulParkedLocked(const MultiReaderStatusPtr& status)
+{
+    if (readerErrored || !probingPortId.empty() || parkedPorts.empty())
+        return false;
+
+    for (const auto& [inputId, stateValue] : status.getInputStates())
+    {
+        if (static_cast<InputState>(static_cast<Int>(stateValue)) != InputState::Event)
+            continue;
+
+        const auto portId = StringPtr(inputId).toStdString();
+        if (parkedPorts.find(portId) == parkedPorts.end())
+            continue;
+
+        probePortLocked(portId);
+        return true;
+    }
+    return false;
+}
+
+std::string SumReaderFbImpl::describeFailedInputsLocked(const MultiReaderStatusPtr& status) const
+{
+    std::string result;
+    for (const auto& [inputId, stateValue] : status.getInputStates())
+    {
+        std::string reason;
+        switch (static_cast<InputState>(static_cast<Int>(stateValue)))
+        {
+            case InputState::Incompatible:
+                reason = "incompatible";
+                break;
+            case InputState::SynchronizationFailed:
+                reason = "cannot synchronize";
+                break;
+            case InputState::DataLost:
+                reason = "no data";
+                break;
+            default:
+                continue;
+        }
+
+        const auto port = findPortByIdLocked(StringPtr(inputId).toStdString());
+        if (!result.empty())
+            result += ", ";
+        result += fmt::format("{} ({})", port.assigned() ? port.getLocalId().toStdString() : StringPtr(inputId).toStdString(), reason);
+    }
+    return result;
+}
+
 void SumReaderFbImpl::maybeProbeLocked()
 {
     if (readerErrored || !probingPortId.empty() || parkedPorts.empty())
@@ -846,6 +927,13 @@ void SumReaderFbImpl::updateComponentStatusLocked()
             setComponentStatusWithMessage(ComponentStatus::Warning, fmt::format("No usable inputs - all excluded from sum: {}", parkedList));
         else
             setComponentStatusWithMessage(ComponentStatus::Warning, fmt::format("Inputs excluded from sum: {}", parkedList));
+        return;
+    }
+
+    if (!failedInputsMessage.empty())
+    {
+        // IgnoreFaultyInputs=false: nothing is excluded; the sum waits for every input
+        setComponentStatusWithMessage(ComponentStatus::Warning, fmt::format("Inputs failing (not excluded): {}", failedInputsMessage));
         return;
     }
 

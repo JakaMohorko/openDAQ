@@ -42,9 +42,11 @@ namespace multi_reader
  *    task state outlives the coordinator and is checked under its own lock.
  *
  * 2. Used/ready/event masks deciding whether the public onDataAvailable callback fires:
- *    (event & used).any() || (used.any() && (ready & used) == used).
- *    The "ready" meaning is phase-dependent (first sample while synchronizing, one full
- *    block while synchronized) - the owner sets the bits during its state evaluation.
+ *    event.any() || (used.any() && (ready & used) == used).
+ *    Events on unused slots participate deliberately (review Q5): they are the recovery
+ *    signal consumers react to with setInputUsed. The "ready" meaning is phase-dependent
+ *    (first sample while synchronizing, one full block while synchronized) - the owner
+ *    sets the bits during its state evaluation.
  *
  * Threading contract: requestEvaluation() and detach() are thread-safe. Everything else
  * (masks, callback queries) must be called with the owner's state lock held. The
@@ -75,6 +77,8 @@ public:
 
     // --- Masks (owner state lock held) ---
     void resize(SizeT slotCount);
+    /// S1 (stable slots): drops one slot's bits, shifting the following slots down by one.
+    void erase(SizeT index);
     SizeT getSlotCount() const;
 
     void setUsed(SizeT index, bool used);
@@ -87,6 +91,8 @@ public:
 
     /// (event & used).any()
     bool anyUsedEvent() const;
+    /// event.any() - unused slots included (review Q5)
+    bool anyEvent() const;
     /// used.any() && (ready & used) == used
     bool allUsedReady() const;
     /// The callback gate of spec section 3.5.

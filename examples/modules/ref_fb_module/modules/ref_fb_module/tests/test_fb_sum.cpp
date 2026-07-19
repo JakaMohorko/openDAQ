@@ -478,6 +478,47 @@ TEST_F(SumTest, EqualRatesDifferentRateParked)
         ASSERT_DOUBLE_EQ(values[i], 2.0 * static_cast<double>(ticks[i]));
 }
 
+TEST_F(SumTest, IgnoreFaultyInputsDisabledReportsWithoutParking)
+{
+    // C6: with IgnoreFaultyInputs=false a failing input is never excluded - the FB reports
+    // it and waits for every input, so no sum is emitted while the failure persists
+    fb.setPropertyValue("IgnoreFaultyInputs", False);
+
+    auto s1 = makeSignal("s1", 1000, 1);      // 1 kHz
+    auto s500 = makeSignal("s500", 1000, 2);  // 500 Hz -> incompatible in EqualRates mode
+    fb.getInputPorts()[0].connect(s1.value);
+    fb.getInputPorts()[1].connect(s500.value);
+
+    auto reader = createSumReader();
+    sendRamp(s1, 100);
+    sendRamp(s500, 50);
+
+    ASSERT_TRUE(waitForComponentStatus(ComponentStatus::Warning));
+    ASSERT_TRUE(waitForStatusMessageContains("not excluded"));
+    ASSERT_TRUE(waitForStatusMessageContains("SumPort_2"));
+
+    // Nothing was parked, so nothing sums - the reader waits for the failing input
+    SizeT zero = 0;
+    reader.read(nullptr, &zero);
+    ASSERT_EQ(reader.getAvailableCount(), 0u);
+
+    // Fixing the failing input recovers the whole sum without any probing
+    s500.domainDescriptor = makeDomainDescriptor(1000, 1);
+    s500.delta = 1;
+    s500.nextTick = s1.nextTick;
+    s500.domain.setDescriptor(s500.domainDescriptor);
+
+    const bool recovered = waitFor(
+        [&]
+        {
+            sendRamp(s1, 10);
+            sendRamp(s500, 10);
+            return getStatus() == ComponentStatus::Ok;
+        });
+    ASSERT_TRUE(recovered);
+    ASSERT_TRUE(waitForSumFactor(reader, 2.0));
+}
+
 TEST_F(SumTest, EqualRatesParkedRecoversOnDescriptorFix)
 {
     fb.setPropertyValue("RecoveryRetryInterval", 0.2);

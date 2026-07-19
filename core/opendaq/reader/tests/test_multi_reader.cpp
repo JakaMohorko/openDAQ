@@ -4274,6 +4274,17 @@ TEST_F(MultiReaderTest, DataLossVirtualClock)
     status = multi.read(nullptr, &count);
     ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
 
+    // Drain the buffered data: with in-band data loss (review 2.6) buffered pre-loss
+    // samples stay readable, so the loss only surfaces once the queue runs dry
+    {
+        double values0[10]{};
+        double values1[10]{};
+        void* buffers[2]{values0, values1};
+        count = 10;
+        status = multi.read(buffers, &count);
+        ASSERT_EQ(count, 10u);
+    }
+
     // Input 1 goes stale while input 0 keeps delivering (DL-2)
     virtualNow += std::chrono::seconds(6);
     sig0.createAndSendPacket(1);
@@ -4361,6 +4372,18 @@ TEST_F(MultiReaderTest, DataLossDeadlineFiresWithoutReads)
     status = multi.read(nullptr, &count);
     ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
     ASSERT_TRUE(multi.getIsSynchronized());
+
+    // Drain the buffered data: with in-band data loss (review 2.6) buffered pre-loss
+    // samples keep the reader synchronized until they are read
+    {
+        double values0[10]{};
+        double values1[10]{};
+        void* buffers[2]{values0, values1};
+        count = 10;
+        status = multi.read(buffers, &count);
+        ASSERT_EQ(count, 10u);
+        ASSERT_TRUE(multi.getIsSynchronized());
+    }
 
     const auto start = std::chrono::steady_clock::now();
     while (multi.getIsSynchronized() && std::chrono::steady_clock::now() - start < std::chrono::seconds(5))

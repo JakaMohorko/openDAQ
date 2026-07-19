@@ -155,6 +155,16 @@ public:
     SizeT getAvailableSamplesUntilEvent() const;
 
     bool hasPendingEvents() const;
+
+    /**
+     * @brief True while any event packet sits in the adopted queue, including behind data
+     * (hasPendingEvents covers only leading events). Conservative and cheap: a sticky
+     * adoption-time marker re-verified by a scan only while it is set - built for the
+     * owner's read fast path, which must escalate to a full evaluation whenever an event
+     * could surface.
+     */
+    bool hasQueuedEventPackets();
+
     EventPacketPtr popFrontEvent();
     
     bool isValid() const;
@@ -246,6 +256,9 @@ private:
     std::deque<SignalEvent> events;
 
     SizeT readingPosition = 0;
+    /// Sticky adoption-time marker backing hasQueuedEventPackets (conservative: may be true
+    /// after the event left the queue; never false while one is in it)
+    bool eventPacketAdopted = false;
 
     InputPortConfigPtr port;
     ConnectionPtr connection;
