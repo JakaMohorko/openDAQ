@@ -77,13 +77,9 @@ ReadPlan ReadCoordinator::createPlan(SizeT requestedCommonCount,
         count = 0;
 
     plan.commonCount = count;
-    plan.valueBuffers.resize(inputs.size(), nullptr);
-    plan.domainBuffers.resize(inputs.size(), nullptr);
-    for (SizeT i = 0; i < inputs.size(); ++i)
-    {
-        plan.valueBuffers[i] = valueBuffers ? valueBuffers[i] : nullptr;
-        plan.domainBuffers[i] = domainBuffers ? domainBuffers[i] : nullptr;
-    }
+    // Non-owning: the owner's staged scratch outlives the plan, so no per-read allocation or copy.
+    plan.valueBuffers = valueBuffers;
+    plan.domainBuffers = domainBuffers;
 
     return plan;
 }
@@ -96,7 +92,11 @@ CommitResult ReadCoordinator::commit(const ReadPlan& plan, const std::vector<Que
     for (SizeT i = 0; i < inputs.size(); ++i)
     {
         SizeT count = plan.commonCount;
-        const auto result = inputs[i]->read(plan.valueBuffers[i], plan.domainBuffers[i], &count);
+        // A null buffer array means "no buffers" (every entry null) - matches passing an all-null
+        // array; only index when the array is present.
+        void* valueBuffer = plan.valueBuffers ? plan.valueBuffers[i] : nullptr;
+        void* domainBuffer = plan.domainBuffers ? plan.domainBuffers[i] : nullptr;
+        const auto result = inputs[i]->read(valueBuffer, domainBuffer, &count);
         if (result != AdvanceResult::Success || count != plan.commonCount)
         {
             // Availability validated the whole plan; a failing input is an internal invariant break

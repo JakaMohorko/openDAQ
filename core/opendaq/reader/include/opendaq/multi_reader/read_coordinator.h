@@ -33,8 +33,11 @@ namespace multi_reader
 struct ReadPlan
 {
     SizeT commonCount = 0;                  // blockLcm-aligned, 0 = nothing to do
-    std::vector<void*> valueBuffers;        // per input; may hold nullptr entries (skip)
-    std::vector<void*> domainBuffers;       // per input; may hold nullptr entries
+    // Non-owning views of the caller's per-input buffer arrays (one entry per input; entries may
+    // be nullptr). The owner stages these in reusable scratch that outlives the plan, so the plan
+    // copies nothing - null for a skip, where the buffers are unused.
+    void* const* valueBuffers = nullptr;
+    void* const* domainBuffers = nullptr;
 };
 
 enum class CommitResult
