@@ -73,6 +73,10 @@ public:
 
     void resize(SizeT slotCount);
 
+    /// S1 (stable slots): drops one slot's state, shifting the following slots down by one;
+    /// the remaining slots keep their arming and deadlines.
+    void erase(SizeT slot);
+
     /// Producer path: record a packet arrival; arms the slot and clears a lost condition.
     void onPacket(SizeT slot);
 
@@ -82,6 +86,9 @@ public:
 
     /// Monitored, armed slots whose deadline has expired, in slot order.
     std::vector<SizeT> lostSlots() const;
+
+    /// Cheap steady-state probe for the read fast path: any expired deadline at all?
+    bool hasLostSlots() const;
 
 private:
     struct SlotState

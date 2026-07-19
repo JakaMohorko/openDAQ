@@ -136,9 +136,23 @@ void QueueReader::adoptPackets()
     PacketPtr packet = connection.dequeue();
     while (packet.assigned())
     {
+        // Sticky marker for hasQueuedEventPackets: the fast read path (owner's steady
+        // state) must learn about adopted events without scanning the queue per read
+        if (packet.getType() == PacketType::Event)
+            eventPacketAdopted = true;
         packets.push_back(std::move(packet));
         packet = connection.dequeue();
     }
+}
+
+bool QueueReader::hasQueuedEventPackets()
+{
+    // Conservative: set on adoption, re-verified (and cleared) by a scan only while set -
+    // the no-events steady state costs a single bool check per call
+    if (!eventPacketAdopted)
+        return false;
+    eventPacketAdopted = getNumberOfEventPacketsInQueue() != 0;
+    return eventPacketAdopted;
 }
 
 void QueueReader::drain()

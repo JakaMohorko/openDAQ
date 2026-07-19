@@ -472,12 +472,120 @@ SizeT MultiReaderImpl::mainSlotIndexLocked() const
     return findSlotByIdLocked(mainInputId);
 }
 
-// COMMENT: It seems like this function is called a lot. Even on every read. It looks very bulky, expensive
-//          and does a lot of checks. Are all of these necessary? Are all relevant to every time this is evaluated?
-//          I'd imagine that once we're synced no checks at all need to be done until: an event is encountered or 
-//          data is lost. We're now doing a bulk check of every single thing in too many places.
+bool MultiReaderImpl::exposeBuriedEventsLocked(const std::vector<SizeT>& affected)
+{
+    bool exposed = false;
+    for (const auto index : affected)
+    {
+        if (index >= slots.size())
+            continue;
 
-// COMMENT: Same here, what does "state locked" mean? The "locked" naming seems odd.
+        auto& reader = slots[index]->getQueueReader();
+        if (!reader.hasPendingEvents() && reader.hasQueuedEventPackets())
+        {
+            // The failing input has a corrective descriptor change queued behind data that
+            // was produced under the old, failing descriptor. That data can never be read
+            // while the input keeps failing, so drop it and let the event surface - the same
+            // semantics the setInputUsed(false -> true) recovery applies (dropForInactive).
+            // Without this, an actively producing input could never recover: the fix would
+            // stay buried behind unreadable data forever.
+            reader.dropForInactive();
+            exposed |= reader.hasPendingEvents();
+        }
+    }
+    return exposed;
+}
+
+void MultiReaderImpl::drainUnusedSlotsLocked()
+{
+    // C12/Q5: unused inputs stay observable. Their ports are inactive, so data is dropped at
+    // the connection and only events can arrive; draining them makes pending events visible
+    // in the per-input states and lets them fire the dataAvailable callback (the recovery
+    // signal a consumer answers with setInputUsed(id, true)).
+    for (auto* slot : slots)
+    {
+        if (slot->isUsed())
+            continue;
+
+        slot->syncConnection();
+        if (!slot->isConnected())
+        {
+            notificationCoordinator->setEvent(slot->getIndex(), false);
+            continue;
+        }
+
+        slot->clearPacketPending();
+        auto& reader = slot->getQueueReader();
+        reader.drain();
+        notificationCoordinator->setEvent(slot->getIndex(), reader.hasPendingEvents());
+    }
+}
+
+void MultiReaderImpl::refreshDataPlaneLocked()
+{
+    // Establishment phases (waiting/synchronizing/failed) still run the full evaluation -
+    // progress toward synchronization is exactly what those states are doing. The fast path
+    // below is the synchronized steady state of review N6: no checks until an event is
+    // encountered or a deadline expires; data packets only ever add availability.
+    if (invalid || !isActive || state != ReaderState::Synchronized)
+    {
+        evaluateStateLocked();
+        return;
+    }
+
+    bool escalate = false;
+    for (auto* slot : slots)
+    {
+        const bool packetsArrived = slot->clearPacketPending();
+
+        if (!slot->isUsed())
+        {
+            // Only events can arrive on an unused input's inactive port (C12/Q5)
+            if (packetsArrived)
+            {
+                slot->syncConnection();
+                if (slot->isConnected())
+                {
+                    auto& reader = slot->getQueueReader();
+                    reader.drain();
+                    notificationCoordinator->setEvent(slot->getIndex(), reader.hasPendingEvents());
+                }
+            }
+            continue;
+        }
+
+        auto& reader = slot->getQueueReader();
+        if (packetsArrived)
+            reader.drain();
+
+        // Checked even without new packets - both are cheap queries over already-adopted
+        // state (the drain above is the expensive part and stays gated on packet arrival):
+        // a leading event must be reported (EventPending), and a buried event needs the full
+        // evaluation so the partial segment in front of it can be discarded and the event
+        // can surface (discardLeftoverSegments). The reader's own consumption exposes both
+        // without any new packet arriving.
+        if (reader.hasPendingEvents() || reader.hasQueuedEventPackets())
+        {
+            escalate = true;
+            continue;
+        }
+
+        if (packetsArrived && syncManager->hasModel())
+        {
+            notificationCoordinator->setReady(slot->getIndex(),
+                                              reader.getAvailableSamplesUntilEvent() >= syncManager->getModel().blockLcm);
+        }
+    }
+
+    // Deadlines are maintained by the monitor's waiter thread; an unresolved loss must
+    // re-enter the full evaluation (it decides when the loss becomes visible, section 2.6)
+    if (!escalate && dataLossMonitor->hasLostSlots())
+        escalate = true;
+
+    if (escalate)
+        evaluateStateLocked();
+}
+
 void MultiReaderImpl::evaluateStateLocked()
 {
     // 1. Error is terminal; inactivity gates everything else
@@ -486,19 +594,24 @@ void MultiReaderImpl::evaluateStateLocked()
         setStateLocked(ReaderState::Error, stateMessage.empty() ? "Reader is invalid" : stateMessage);
         return;
     }
+
+    drainUnusedSlotsLocked();
+
     if (!isActive)
     {
         // Inactive readers are not monitored for data loss (spec section 3.6)
         for (SizeT i = 0; i < slots.size(); ++i)
             dataLossMonitor->setMonitored(i, false);
 
-        // COMMENT: This should have clearer documentation and reasoning for why this is here.
-        //          Events on "unused" ports should be reported to the user so they can react to them.
-        // COMMENT: The "inactive" and "used" terminology is getting mixed up.
-        
+        // Terminology (C12): ACTIVE/INACTIVE is the reader/port level switch (setActive) -
+        // "pause the whole reader". USED/UNUSED is per-input participation (setInputUsed) -
+        // "exclude this input from reading". The unused mechanism reuses port deactivation
+        // internally because that is what stops data while preserving events.
+        //
         // Inactivity suspends data flow only: descriptor/gap events are enqueued regardless
         // of the active flag and must still surface through reads (and through the
-        // dataAvailable callback, which is why the event bits are maintained here too)
+        // dataAvailable callback, which is why the event bits are maintained here too).
+        // Unused inputs' events were already drained above (drainUnusedSlotsLocked).
         std::vector<SizeT> inactiveEventInputs;
         std::vector<SizeT> inactiveSlotIndices;
         const auto inactiveReaders = collectUsedReaders(inactiveSlotIndices);
@@ -677,22 +790,40 @@ void MultiReaderImpl::evaluateStateLocked()
         if (!invalidInputs.empty())
         {
             invalidateModelLocked();
+            if (exposeBuriedEventsLocked(invalidInputs))
+            {
+                for (const auto index : invalidInputs)
+                    notificationCoordinator->setEvent(index, slots[index]->getQueueReader().hasPendingEvents());
+                setStateWithAffectedLocked(ReaderState::EventPending, "Events pending on inputs", "", std::move(invalidInputs));
+                return;
+            }
             setStateWithAffectedLocked(
                 ReaderState::Incompatible, "Inputs", " are not readable with the current descriptors", std::move(invalidInputs));
             return;
         }
     }
 
-    // 9. Data-loss deadlines (spec section 3.6): checked ahead of alignment so a stalled
-    // input surfaces even while the reader is synchronized; recovery is per input on its
-    // next packet, after which synchronization is re-established
+    // 9. Data-loss deadlines (spec section 3.6). In-band per review section 2.6: an input's
+    // buffered pre-loss data stays readable (the producer went silent AFTER producing it),
+    // so the loss only becomes the reader state once the affected input's queue is drained.
+    // Recovery is per input on its next packet, after which synchronization is re-established.
     {
-        auto lost = dataLossMonitor->lostSlots();
+        const auto lost = dataLossMonitor->lostSlots();
         if (!lost.empty())
         {
-            invalidateSynchronizationLocked();
-            setStateWithAffectedLocked(ReaderState::DataLost, "Inputs", " missed their packet deadline", std::move(lost));
-            return;
+            std::vector<SizeT> drainedLost;
+            for (const auto index : lost)
+            {
+                if (slots[index]->getQueueReader().getAvailableSamples() == 0)
+                    drainedLost.push_back(index);
+            }
+            if (!drainedLost.empty())
+            {
+                invalidateSynchronizationLocked();
+                setStateWithAffectedLocked(ReaderState::DataLost, "Inputs", " missed their packet deadline", std::move(drainedLost));
+                return;
+            }
+            // Lost but still buffered: keep reading - the loss surfaces when the buffer runs dry
         }
     }
 
@@ -708,6 +839,13 @@ void MultiReaderImpl::evaluateStateLocked()
         if (!setup.ok())
         {
             readCoordinator->invalidate();
+            if (exposeBuriedEventsLocked(setup.affectedInputs))
+            {
+                for (const auto index : setup.affectedInputs)
+                    notificationCoordinator->setEvent(index, slots[index]->getQueueReader().hasPendingEvents());
+                setStateWithAffectedLocked(ReaderState::EventPending, "Events pending on inputs", "", std::move(setup.affectedInputs));
+                return;
+            }
             setStateLocked(ReaderState::Incompatible, std::move(setup.message), std::move(setup.affectedInputs));
             return;
         }
@@ -750,6 +888,14 @@ void MultiReaderImpl::evaluateStateLocked()
                 break;
             case SyncOutcome::Failed:
                 // Synchronization failure no longer deactivates the reader (spec section 8.5)
+                if (exposeBuriedEventsLocked(result.affectedInputs))
+                {
+                    invalidateSynchronizationLocked();
+                    for (const auto index : result.affectedInputs)
+                        notificationCoordinator->setEvent(index, slots[index]->getQueueReader().hasPendingEvents());
+                    setStateWithAffectedLocked(ReaderState::EventPending, "Events pending on inputs", "", std::move(result.affectedInputs));
+                    break;
+                }
                 setStateLocked(ReaderState::SynchronizationFailed, std::move(result.message), std::move(result.affectedInputs));
                 break;
         }
@@ -776,7 +922,10 @@ void MultiReaderImpl::onCoalescedEvaluation()
         if (invalid)
             return;
 
-        evaluateStateLocked();
+        // The coalesced task is the readiness/gate maintainer: data-only arrivals take the
+        // fast path (drain + readiness bits); events and deadlines escalate to the full
+        // evaluation inside it
+        refreshDataPlaneLocked();
         if (notificationCoordinator->shouldInvokeCallback())
             callback = readCallback;
     }
@@ -1103,7 +1252,7 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
         return skip ? OPENDAQ_IGNORED : OPENDAQ_SUCCESS;
     }
 
-    evaluateStateLocked();
+    refreshDataPlaneLocked();
 
     // Zero-count handshake: report events or the current state without consuming data.
     // With a timeout the call waits for events to arrive instead of returning immediately.
@@ -1117,7 +1266,7 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
                                      {
                                          if (invalid)
                                              return true;
-                                         evaluateStateLocked();
+                                         refreshDataPlaneLocked();
                                          return state == ReaderState::EventPending;
                                      });
         }
@@ -1139,7 +1288,7 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
                                  {
                                      if (invalid)
                                          return true;
-                                     evaluateStateLocked();
+                                     refreshDataPlaneLocked();
                                      if (state == ReaderState::EventPending)
                                          return true;
                                      if (state != ReaderState::Synchronized)
@@ -1160,7 +1309,7 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
             *count = 0;
             return OPENDAQ_SUCCESS;
         }
-        evaluateStateLocked();
+        refreshDataPlaneLocked();
     }
 
     if (state == ReaderState::EventPending)
@@ -1289,7 +1438,7 @@ ErrCode MultiReaderImpl::getAvailableCount(SizeT* count)
     if (invalid)
         return OPENDAQ_SUCCESS;
 
-    evaluateStateLocked();
+    refreshDataPlaneLocked();
     if (state == ReaderState::Synchronized)
     {
         std::vector<SizeT> slotIndices;
@@ -1585,15 +1734,10 @@ ErrCode MultiReaderImpl::removeInput(IString* id)
     slotObjects.erase(slotObjects.begin() + position);
     reindexSlotsLocked();
 
-    notificationCoordinator->resize(0);
-    notificationCoordinator->resize(slots.size());
-    for (SizeT i = 0; i < slots.size(); ++i)
-        notificationCoordinator->setUsed(i, slots[i]->isUsed());
-
-    // Slot indices shifted - drop all per-slot monitor state; the remaining inputs re-arm
-    // on their next packets
-    dataLossMonitor->resize(0);
-    dataLossMonitor->resize(slots.size());
+    // S1 (stable slots): only the removed input's per-slot state goes; the remaining
+    // inputs keep their readiness/event bits and armed data-loss deadlines
+    notificationCoordinator->erase(position);
+    dataLossMonitor->erase(position);
 
     invalidateModelLocked();
     evaluateStateLocked();

@@ -97,7 +97,7 @@ TEST_F(NotificationCoordinatorTest, QueuedTaskOutlivesCoordinator)
     ASSERT_EQ(evaluations, 0);
 }
 
-TEST_F(NotificationCoordinatorTest, EventOnUsedInputGatesCallback)
+TEST_F(NotificationCoordinatorTest, EventOnAnyInputGatesCallback)
 {
     NotificationCoordinator coordinator(manualExecutor(), loggerComponent);
     coordinator.resize(3);
@@ -108,8 +108,15 @@ TEST_F(NotificationCoordinatorTest, EventOnUsedInputGatesCallback)
     ASSERT_TRUE(coordinator.anyUsedEvent());
     ASSERT_TRUE(coordinator.shouldInvokeCallback());
 
-    // Events on unused inputs do not count
+    // Events on unused inputs fire the callback too (review Q5): the notification is the
+    // recovery API for consumers that parked the input
     coordinator.setUsed(1, false);
+    ASSERT_FALSE(coordinator.anyUsedEvent());
+    ASSERT_TRUE(coordinator.anyEvent());
+    ASSERT_TRUE(coordinator.shouldInvokeCallback());
+
+    // Consuming the event clears the gate
+    coordinator.setEvent(1, false);
     ASSERT_FALSE(coordinator.shouldInvokeCallback());
 }
 

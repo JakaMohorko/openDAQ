@@ -44,9 +44,12 @@ namespace SumReader
  *   i.e. the output runs at the GCD of the input rates and sums the coinciding-tick samples).
  * - Recoverable per-input failures (`Incompatible`, `SynchronizationFailed`, `DataLost`) park
  *   the affected ports (`setInputUsed(false)`) so the remaining inputs keep summing; parked
- *   ports are probed back automatically (on activity via the reader's external listener, and
- *   periodically every `RecoveryRetryInterval` seconds).
- * - Unrecoverable reader failure (`Error`) is reported as `ComponentStatus::Error` and stops
+ *   ports are probed back automatically - immediately when the status reports an event on a
+ *   parked input (unused-input events fire onDataAvailable, review Q5), and periodically
+ *   every `RecoveryRetryInterval` seconds.
+ * - `IgnoreFaultyInputs` (default true) selects the parking behavior; when false, failing
+ *   inputs are never excluded - the FB reports them and waits for every input to work.
+ * - Unrecoverable reader failure (`Fail`) is reported as `ComponentStatus::Error` and stops
  *   reads; there is no silent reader re-creation.
  */
 class SumReaderFbImpl final : public FunctionBlock
@@ -80,6 +83,7 @@ private:
     void refreshReaderConfigLocked();
     void modeChanged();
     void readerConfigChanged();
+    void ignoreFaultyInputsChanged();
 
     void onConnected(const InputPortPtr& inputPort) override;
     void onDisconnected(const InputPortPtr& inputPort) override;
@@ -99,6 +103,9 @@ private:
     void unparkLocked(const std::string& portId);
     void probePortLocked(const std::string& portId);
     void maybeProbeLocked();
+    /// Q5 recovery path: probes a parked port whose per-input state reports Event.
+    bool probeEventfulParkedLocked(const MultiReaderStatusPtr& status);
+    std::string describeFailedInputsLocked(const MultiReaderStatusPtr& status) const;
     void updateComponentStatusLocked();
 
     bool isActivePortLocked(const std::string& portId) const;
@@ -118,7 +125,6 @@ private:
     // std::map: parked-port warnings enumerate in a deterministic order
     std::map<std::string, ParkedInfo> parkedPorts;
     std::string probingPortId;
-    std::string pendingProbePortId;
     std::atomic<bool> deferredCheckScheduled{false};
     std::chrono::steady_clock::time_point lastProbeTime{};
     std::chrono::steady_clock::time_point lastReaderCheck{};
@@ -128,6 +134,9 @@ private:
     double dataLossTimeoutSeconds = 5.0;
     double maxSyncDistanceSeconds = 5.0;
     double recoveryRetryIntervalSeconds = 5.0;
+    bool ignoreFaultyInputs = true;
+    /// Non-empty while IgnoreFaultyInputs=false and inputs are failing (component status text)
+    std::string failedInputsMessage;
 
     // Derived from public reader data (getCommonSampleRate + per-input domain descriptors):
     // per-slot sample-rate dividers and the aligned-block quantum they imply

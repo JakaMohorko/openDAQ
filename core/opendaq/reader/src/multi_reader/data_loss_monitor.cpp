@@ -86,6 +86,34 @@ void DataLossMonitor::resize(SizeT slotCount)
     cv.notify_all();
 }
 
+void DataLossMonitor::erase(SizeT slot)
+{
+    {
+        std::unique_lock lock(mutex);
+        if (slot >= slots.size())
+            return;
+        // S1 (stable slots): removing one input must not disturb the remaining inputs'
+        // arming or deadlines
+        slots.erase(slots.begin() + slot);
+    }
+    cv.notify_all();
+}
+
+bool DataLossMonitor::hasLostSlots() const
+{
+    std::unique_lock lock(mutex);
+    if (timeout.count() <= 0)
+        return false;
+
+    const auto now = clock();
+    for (const auto& slot : slots)
+    {
+        if (slot.monitored && slot.armed && now - slot.lastArrival > timeout)
+            return true;
+    }
+    return false;
+}
+
 void DataLossMonitor::onPacket(SizeT slot)
 {
     bool wake = false;

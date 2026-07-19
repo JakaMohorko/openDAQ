@@ -72,6 +72,14 @@ void NotificationCoordinator::resize(SizeT slotCount)
     eventMask.resize(slotCount, false);
 }
 
+void NotificationCoordinator::erase(SizeT index)
+{
+    // S1 (stable slots): removing one input must not disturb the remaining inputs' bits
+    usedMask.erase(usedMask.begin() + index);
+    readyMask.erase(readyMask.begin() + index);
+    eventMask.erase(eventMask.begin() + index);
+}
+
 SizeT NotificationCoordinator::getSlotCount() const
 {
     return usedMask.size();
@@ -113,6 +121,16 @@ bool NotificationCoordinator::anyUsedEvent() const
     return false;
 }
 
+bool NotificationCoordinator::anyEvent() const
+{
+    for (SizeT i = 0; i < eventMask.size(); ++i)
+    {
+        if (eventMask[i])
+            return true;
+    }
+    return false;
+}
+
 bool NotificationCoordinator::allUsedReady() const
 {
     bool anyUsed = false;
@@ -129,7 +147,9 @@ bool NotificationCoordinator::allUsedReady() const
 
 bool NotificationCoordinator::shouldInvokeCallback() const
 {
-    return anyUsedEvent() || allUsedReady();
+    // Q5: events on unused inputs fire the callback too - that notification is the
+    // recovery API (the consumer can re-include the input with setInputUsed)
+    return anyEvent() || allUsedReady();
 }
 
 }  // namespace multi_reader

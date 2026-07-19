@@ -170,7 +170,20 @@ private:
     void applyConfigToSyncManager();
 
     // --- State machine (spec section 6.2; state mutex held) ---
+    /// Full state evaluation - the transition handler run by the paths that change state
+    /// (connect/disconnect, used/active changes, topology, events, deadlines).
     void evaluateStateLocked();
+    /// Data-plane fast path (review C11/N6): while synchronized, drains only the slots that
+    /// received packets since the last look and escalates to evaluateStateLocked only when
+    /// an event surfaced or a deadline expired; data packets never re-run the checks.
+    void refreshDataPlaneLocked();
+    /// C12/Q5: adopts unused inputs' queued event packets so they surface in the per-input
+    /// states and fire the callback gate.
+    void drainUnusedSlotsLocked();
+    /// Failure-state recovery: a failed input with a corrective descriptor change buried
+    /// behind unreadable stale data drops that data (dropForInactive semantics) so the event
+    /// can surface. Returns true when any event became pending.
+    bool exposeBuriedEventsLocked(const std::vector<SizeT>& affected);
     void invalidateSynchronizationLocked();
     void invalidateModelLocked();
     void setStateLocked(ReaderState newState, std::string message = {}, std::vector<SizeT> affected = {});
