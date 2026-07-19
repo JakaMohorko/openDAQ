@@ -425,6 +425,13 @@ void MultiReaderImpl::invalidateModelLocked()
 std::vector<QueueReader*> MultiReaderImpl::collectUsedReaders(std::vector<SizeT>& slotIndices) const
 {
     std::vector<QueueReader*> readers;
+    collectUsedReadersInto(readers, slotIndices);
+    return readers;
+}
+
+void MultiReaderImpl::collectUsedReadersInto(std::vector<QueueReader*>& readers, std::vector<SizeT>& slotIndices) const
+{
+    readers.clear();
     slotIndices.clear();
     for (SizeT i = 0; i < slots.size(); ++i)
     {
@@ -433,7 +440,6 @@ std::vector<QueueReader*> MultiReaderImpl::collectUsedReaders(std::vector<SizeT>
         readers.push_back(&slots[i]->getQueueReader());
         slotIndices.push_back(i);
     }
-    return readers;
 }
 
 // COMMENT: What does "main descriptors locked" mean?
@@ -1348,27 +1354,29 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
         return OPENDAQ_SUCCESS;
     }
 
-    // Plan against availability, then commit every input - a partial commit is impossible
-    std::vector<SizeT> slotIndices;
-    const auto used = collectUsedReaders(slotIndices);
+    // Plan against availability, then commit every input - a partial commit is impossible.
+    // Reuse member scratch (retains capacity across reads) to avoid per-read heap allocation.
+    collectUsedReadersInto(readScratchUsed, readScratchSlotIndices);
+    auto& used = readScratchUsed;
+    auto& slotIndices = readScratchSlotIndices;
     const auto& model = syncManager->getModel();
 
-    std::vector<void*> usedValueBuffers(used.size(), nullptr);
-    std::vector<void*> usedDomainBuffers(used.size(), nullptr);
+    readScratchValueBuffers.assign(used.size(), nullptr);
+    readScratchDomainBuffers.assign(used.size(), nullptr);
     for (SizeT position = 0; position < used.size(); ++position)
     {
         if (valueBuffers)
-            usedValueBuffers[position] = valueBuffers[slotIndices[position]];
+            readScratchValueBuffers[position] = valueBuffers[slotIndices[position]];
         if (domainBuffers)
-            usedDomainBuffers[position] = domainBuffers[slotIndices[position]];
+            readScratchDomainBuffers[position] = domainBuffers[slotIndices[position]];
     }
 
     const auto plan = readCoordinator->createPlan(requested,
                                                   used,
                                                   model,
                                                   minReadCount,
-                                                  skip ? nullptr : usedValueBuffers.data(),
-                                                  skip ? nullptr : usedDomainBuffers.data());
+                                                  skip ? nullptr : readScratchValueBuffers.data(),
+                                                  skip ? nullptr : readScratchDomainBuffers.data());
 
     const auto offsetTick = nextReadTick;
 
