@@ -130,6 +130,22 @@ MultiReaderStatusImpl::MultiReaderStatusImpl(const EventPacketPtr& mainDescripto
 {
 }
 
+MultiReaderStatusImpl::MultiReaderStatusImpl(const EventPacketPtr& mainDescriptor,
+                                             const DictPtr<IString, IEventPacket>& eventPackets,
+                                             const NumberPtr& offset,
+                                             ReadStatus readStatus,
+                                             const StringPtr& stateMessage,
+                                             std::vector<std::pair<StringPtr, Int>> inputStateSnapshot)
+    // Only Fail is unrecoverable, so only Fail reads as invalid (review decision C5/Q1)
+    : Super(mainDescriptor, readStatus != ReadStatus::Fail, offset)
+    , eventPackets(eventPackets.assigned() ? eventPackets : Dict<IString, IEventPacket>())
+    , readStatus(readStatus)
+    , stateMessage(stateMessage.assigned() ? stateMessage : String(""))
+    // inputStates left null - boxed lazily from the snapshot on the first getInputStates()
+    , inputStateSnapshot(std::move(inputStateSnapshot))
+{
+}
+
 ErrCode MultiReaderStatusImpl::getReadStatus(ReadStatus* status)
 {
     OPENDAQ_PARAM_NOT_NULL(status);
@@ -165,6 +181,15 @@ ErrCode MultiReaderStatusImpl::getEventPackets(IDict** events)
 ErrCode MultiReaderStatusImpl::getInputStates(IDict** inputStates)
 {
     OPENDAQ_PARAM_NOT_NULL(inputStates);
+    // Lazy path: box the captured snapshot into the dict on first access and reuse it. The dict
+    // constructor assigns this->inputStates eagerly, so this only ever runs for the read path.
+    if (!this->inputStates.assigned())
+    {
+        auto states = Dict<IString, IInteger>();
+        for (const auto& [id, inputState] : inputStateSnapshot)
+            states.set(id, inputState);
+        this->inputStates = states;
+    }
     *inputStates = this->inputStates.addRefAndReturn();
     return OPENDAQ_SUCCESS;
 }
