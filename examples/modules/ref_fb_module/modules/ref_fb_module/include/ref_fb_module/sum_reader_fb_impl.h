@@ -77,7 +77,7 @@ private:
     void createDisconnectedPort();
     bool updateInputPortsLocked();
     void createReaderLocked();
-    void applyReaderConfigLocked();
+    void refreshReaderConfigLocked();
     void modeChanged();
     void readerConfigChanged();
 

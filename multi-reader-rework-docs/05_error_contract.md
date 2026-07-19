@@ -104,7 +104,7 @@ Methods not listed under an interface return only `OPENDAQ_SUCCESS` (plus rule 5
 | `getTargetSampleRate(rate)` *(new)* | `ERR_ARGUMENT_NULL` | out null; returns null when unset |
 | `setResamplerBuilder(builder)` *(new)* | — | null restores the default `LinearResamplerBuilder` |
 | `getResamplerBuilder(builder)` *(new)* | `ERR_ARGUMENT_NULL` | out null |
-| `setMaxSynchronizationDistance(seconds)` / `setDataLossTimeout(seconds)` *(new)* | `ERR_INVALIDPARAMETER` | negative value; 0 disables; null → `ERR_ARGUMENT_NULL` |
+| `setMaxSynchronizationDistance(seconds)` / `setDataLossTimeout(seconds)` *(new, builder-only per C1/C2)* | `ERR_INVALIDPARAMETER` | negative value; 0 disables; null → `ERR_ARGUMENT_NULL`; not present on the reader |
 
 Runtime configuration changes (`setMainInput`, `setTargetSampleRate`, `setResamplerBuilder`, `setInputUsed`) succeed immediately and invalidate synchronization (spec §5); any resulting incompatibility is reported through the state machine on the next evaluation, **not** as an error code from the setter — the setter cannot know yet (descriptors may still change).
 
