@@ -53,6 +53,8 @@ struct IInputSlotListener
     virtual void slotPacketReceived(SizeT slotIndex) = 0;
 };
 
+// COMMENT: The name "InputSlot" is too generic and could cause namespace/include path clashes later on.
+//          It should be renamed to something similar to "MultiReaderInputSlot" or "MultiReaderInput". 
 /**
  * @brief One input of the multi reader: owns the port reference and the per-input QueueReader,
  * implements IInputPortNotifications for that port, and holds the used/connected/pending flags.
