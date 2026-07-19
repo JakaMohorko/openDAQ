@@ -555,26 +555,31 @@ void MultiReaderImpl::refreshDataPlaneLocked()
         }
 
         auto& reader = slot->getQueueReader();
+
+        // The drain (the expensive step - adopts queued packets) is gated on arrival: a slot
+        // with no new packet has nothing new to adopt.
         if (packetsArrived)
             reader.drain();
 
-        // Checked even without new packets - both are cheap queries over already-adopted
-        // state (the drain above is the expensive part and stays gated on packet arrival):
-        // a leading event must be reported (EventPending), and a buried event needs the full
-        // evaluation so the partial segment in front of it can be discarded and the event
-        // can surface (discardLeftoverSegments). The reader's own consumption exposes both
-        // without any new packet arriving.
+        // The event check runs EVERY cycle, not only on arrival: a leading event must be
+        // reported (EventPending), and a buried event needs the full evaluation so the
+        // partial segment in front of it can be discarded and the event can surface
+        // (discardLeftoverSegments). A buried event becomes reachable through the reader's
+        // own consumption (a read advancing the frontier past the data ahead of it) with no
+        // new packet arriving, so gating this on packetsArrived would miss it. Both queries
+        // are O(1) (empty-check / sticky adoption flag), so per-cycle is cheap.
         if (reader.hasPendingEvents() || reader.hasQueuedEventPackets())
         {
             escalate = true;
             continue;
         }
 
-        // Readiness is recomputed every cycle, not only when a packet arrived: a read that
-        // drained this slot below a block must lower its ready bit even though no new packet
-        // came in, or the callback gate (allUsedReady) would fire spuriously forever off a
-        // stale-true bit. This is a cheap O(1) query; the expensive drain above stays gated.
-        if (syncManager->hasModel())
+        // Readiness only RISES on arrival (a drained packet adds data). It FALLS only on a
+        // read, which readInternal's commit path lowers directly - so an untriggered slot's
+        // maintained bit is already correct and needs no recompute. This drops the per-cycle
+        // O(buffered) getAvailableSamplesUntilEvent call for untriggered slots (the perf
+        // point); the O(1) event check above still visits every slot.
+        if (packetsArrived && syncManager->hasModel())
         {
             notificationCoordinator->setReady(slot->getIndex(),
                                               reader.getAvailableSamplesUntilEvent() >= syncManager->getModel().blockLcm);
@@ -1382,6 +1387,17 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
 
     if (plan.commonCount > 0 && nextReadTick.has_value() && model.ticksPerCommonSample() > 0)
         nextReadTick = *nextReadTick + static_cast<std::int64_t>(plan.commonCount) * model.ticksPerCommonSample();
+
+    // The commit consumed from every used input, so their readiness may have fallen below a
+    // block. Lower it here (this is the "fall on read" half of readiness maintenance) so the
+    // coalesced pass only has to RAISE the bits of slots that receive packets - it never has
+    // to re-scan untriggered slots to catch a stale-true bit (review perf follow-up).
+    if (plan.commonCount > 0)
+    {
+        const auto block = model.blockLcm;
+        for (SizeT position = 0; position < used.size(); ++position)
+            notificationCoordinator->setReady(slotIndices[position], used[position]->getAvailableSamplesUntilEvent() >= block);
+    }
 
     NumberPtr offsetNumber = offsetTick.has_value() ? NumberPtr(*offsetTick) : NumberPtr(0);
     if (status)

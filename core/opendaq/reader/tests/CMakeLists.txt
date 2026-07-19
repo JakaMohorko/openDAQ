@@ -59,3 +59,13 @@ target_link_libraries(${TEST_APP} PRIVATE daq::coreobjects daq::opendaq
 if (OPENDAQ_ENABLE_COVERAGE)
     setup_target_for_coverage(${TEST_APP}coverage ${TEST_APP} ${TEST_APP}coverage)
 endif()
+
+# Standalone multi reader performance benchmark (see bench_multi_reader.cpp). Not a test and
+# EXCLUDE_FROM_ALL: built only on demand (cmake --build ... --target bench_multi_reader) for
+# perf comparison, never as part of the normal/CI build. Uses only the public API so the same
+# source builds against the pre-rework branch too.
+add_executable(bench_multi_reader EXCLUDE_FROM_ALL bench_multi_reader.cpp)
+target_link_libraries(bench_multi_reader PRIVATE daq::coreobjects daq::opendaq)
+if (MSVC)
+    target_compile_options(bench_multi_reader PRIVATE /bigobj)
+endif()
