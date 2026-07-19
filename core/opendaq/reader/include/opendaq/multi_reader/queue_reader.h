@@ -260,6 +260,15 @@ private:
     /// after the event left the queue; never false while one is in it)
     bool eventPacketAdopted = false;
 
+    /// O(1) cache of getAvailableSamplesNative (leading-data-packet samples). Recomputed lazily
+    /// on the first query after any packets/readingPosition mutation (invalidateAvailable()),
+    /// then reused - main's reader gets this count in O(1) from the connection, so without the
+    /// cache repeated availability queries on a buffered backlog are an O(packets) regression.
+    mutable bool availableNativeValid = false;
+    mutable SizeT availableNativeCache = 0;
+    void invalidateAvailable() { availableNativeValid = false; }
+    SizeT recomputeAvailableNative() const;
+
     InputPortConfigPtr port;
     ConnectionPtr connection;
 
