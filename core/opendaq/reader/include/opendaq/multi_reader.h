@@ -210,35 +210,9 @@ DECLARE_OPENDAQ_INTERFACE(IMultiReader, ISampleReader)
      */
     virtual ErrCode INTERFACE_FUNC getMainInput(IString** id) = 0;
 
-    /*!
-     * @brief Sets the maximum allowed distance, in seconds, between the first unread samples of
-     * the used inputs when synchronization starts. Inputs farther from the latest start than the
-     * threshold fail the synchronization with per-input diagnostics in the status; the reader
-     * stays active. Zero disables the check (default).
-     * @param distance Threshold in seconds; must not be negative.
-     *
-     * // COMMENT: The max sync and data loss timeout API methods should only be in the builder
-     */
-    virtual ErrCode INTERFACE_FUNC setMaxSynchronizationDistance(IRatio* distance) = 0;
-
-    /*!
-     * @brief Gets the maximum synchronization distance in seconds; zero when disabled.
-     */
-    virtual ErrCode INTERFACE_FUNC getMaxSynchronizationDistance(IRatio** distance) = 0;
-
-    /*!
-     * @brief Sets the per-input packet-liveness deadline in seconds. Monitoring arms for each
-     * used, connected input after its first packet; an input missing the deadline puts the
-     * reader into the DataLost state listing every lost input, and recovers per input on its
-     * next packet. Zero disables monitoring (default).
-     * @param timeout Deadline in seconds; must not be negative.
-     */
-    virtual ErrCode INTERFACE_FUNC setDataLossTimeout(IRatio* timeout) = 0;
-
-    /*!
-     * @brief Gets the data-loss timeout in seconds; zero when disabled.
-     */
-    virtual ErrCode INTERFACE_FUNC getDataLossTimeout(IRatio** timeout) = 0;
+    // The maximum synchronization distance and the data-loss timeout are synchronization-defining
+    // configuration and exist only on IMultiReaderBuilder; changing them at runtime means
+    // rebuilding the reader (the documented dispose-and-rebuild consumer pattern).
 };
 
 /*!@}*/

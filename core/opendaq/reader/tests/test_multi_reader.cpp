@@ -4227,11 +4227,8 @@ TEST_F(MultiReaderTest, Phase4BuilderAccessors)
                      .build();
 
     ASSERT_EQ(multi.getMainInput(), mainId);
-    ASSERT_EQ(multi.getMaxSynchronizationDistance(), Ratio(5, 1));
-    ASSERT_EQ(multi.getDataLossTimeout(), Ratio(1, 2));
-
-    ASSERT_THROW(multi.setMaxSynchronizationDistance(Ratio(-1, 1)), InvalidParameterException);
-    ASSERT_THROW(multi.setDataLossTimeout(Ratio(-1, 1)), InvalidParameterException);
+    // C1/C2: the sync distance and data-loss timeout are builder-only configuration;
+    // the reader exposes no accessors for them
 }
 
 TEST_F(MultiReaderTest, DataLossVirtualClock)
@@ -4241,15 +4238,16 @@ TEST_F(MultiReaderTest, DataLossVirtualClock)
     auto& sig0 = addSignal(0, 10, createDomainSignal());
     auto& sig1 = addSignal(0, 10, createDomainSignal());
 
-    auto multi =
-        MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
+    auto multi = MultiReaderBuilder()
+                     .setInputPortNotificationMethod(PacketReadyNotification::SameThread)
+                     .addSignals(signalsToList())
+                     .setDataLossTimeout(Ratio(10, 1))  // ten virtual seconds
+                     .build();
 
     auto* impl = dynamic_cast<MultiReaderImpl*>(multi.asPtr<IReaderConfig>().getObject());
     ASSERT_NE(impl, nullptr);
     auto virtualNow = std::chrono::steady_clock::now();
     impl->setDataLossClockForTest([&virtualNow] { return virtualNow; });
-
-    multi.setDataLossTimeout(Ratio(10, 1));  // ten virtual seconds
 
     SizeT count{0};
     auto status = multi.read(nullptr, &count);
@@ -4287,15 +4285,16 @@ TEST_F(MultiReaderTest, DataLossInactiveAndUnusedNotMonitored)
     addSignal(0, 10, createDomainSignal());
     addSignal(0, 10, createDomainSignal());
 
-    auto multi =
-        MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
+    auto multi = MultiReaderBuilder()
+                     .setInputPortNotificationMethod(PacketReadyNotification::SameThread)
+                     .addSignals(signalsToList())
+                     .setDataLossTimeout(Ratio(10, 1))
+                     .build();
 
     auto* impl = dynamic_cast<MultiReaderImpl*>(multi.asPtr<IReaderConfig>().getObject());
     ASSERT_NE(impl, nullptr);
     auto virtualNow = std::chrono::steady_clock::now();
     impl->setDataLossClockForTest([&virtualNow] { return virtualNow; });
-
-    multi.setDataLossTimeout(Ratio(10, 1));
 
     SizeT count{0};
     auto status = multi.read(nullptr, &count);
@@ -4330,10 +4329,11 @@ TEST_F(MultiReaderTest, DataLossDeadlineFiresWithoutReads)
     addSignal(0, 10, createDomainSignal());
     addSignal(0, 10, createDomainSignal());
 
-    auto multi =
-        MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-
-    multi.setDataLossTimeout(Ratio(1, 20));  // 50 ms
+    auto multi = MultiReaderBuilder()
+                     .setInputPortNotificationMethod(PacketReadyNotification::SameThread)
+                     .addSignals(signalsToList())
+                     .setDataLossTimeout(Ratio(1, 20))  // 50 ms
+                     .build();
 
     SizeT count{0};
     auto status = multi.read(nullptr, &count);

@@ -1606,58 +1606,6 @@ ErrCode MultiReaderImpl::getMainInput(IString** id)
     return OPENDAQ_SUCCESS;
 }
 
-ErrCode MultiReaderImpl::setMaxSynchronizationDistance(IRatio* distance)
-{
-    OPENDAQ_PARAM_NOT_NULL(distance);
-    if (RatioPtr::Borrow(distance).getNumerator() < 0)
-        return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPARAMETER, "Maximum synchronization distance must not be negative.");
-
-    {
-        std::lock_guard lock(mutex);
-        maxSynchronizationDistance = distance;
-        syncManager->setMaxSynchronizationDistance(ratioSecondsToDuration(maxSynchronizationDistance));
-        invalidateSynchronizationLocked();
-        evaluateStateLocked();
-    }
-    notifyCondition.notify_all();
-    return OPENDAQ_SUCCESS;
-}
-
-ErrCode MultiReaderImpl::getMaxSynchronizationDistance(IRatio** distance)
-{
-    OPENDAQ_PARAM_NOT_NULL(distance);
-
-    std::lock_guard lock(mutex);
-    *distance = (maxSynchronizationDistance.assigned() ? maxSynchronizationDistance : Ratio(0, 1)).addRefAndReturn();
-    return OPENDAQ_SUCCESS;
-}
-
-ErrCode MultiReaderImpl::setDataLossTimeout(IRatio* timeout)
-{
-    OPENDAQ_PARAM_NOT_NULL(timeout);
-    if (RatioPtr::Borrow(timeout).getNumerator() < 0)
-        return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPARAMETER, "Data-loss timeout must not be negative.");
-
-    {
-        std::lock_guard lock(mutex);
-        dataLossTimeout = timeout;
-        applyDataLossTimeoutLocked();
-        evaluateStateLocked();
-    }
-    notifyCondition.notify_all();
-    return OPENDAQ_SUCCESS;
-}
-
-ErrCode MultiReaderImpl::getDataLossTimeout(IRatio** timeout)
-{
-    OPENDAQ_PARAM_NOT_NULL(timeout);
-
-    std::lock_guard lock(mutex);
-    *timeout = (dataLossTimeout.assigned() ? dataLossTimeout : Ratio(0, 1)).addRefAndReturn();
-    return OPENDAQ_SUCCESS;
-}
-
-
 // --- IReaderConfig ----------------------------------------------------------------------------
 
 ErrCode MultiReaderImpl::getValueTransformFunction(IFunction** transform)

@@ -101,12 +101,6 @@ public:
     ErrCode INTERFACE_FUNC setMainInput(IString* id) override;
     ErrCode INTERFACE_FUNC getMainInput(IString** id) override;
 
-    // COMMENT: As mentioned, these should not be on the Multi Reader interface.
-    ErrCode INTERFACE_FUNC setMaxSynchronizationDistance(IRatio* distance) override;
-    ErrCode INTERFACE_FUNC getMaxSynchronizationDistance(IRatio** distance) override;
-    ErrCode INTERFACE_FUNC setDataLossTimeout(IRatio* timeout) override;
-    ErrCode INTERFACE_FUNC getDataLossTimeout(IRatio** timeout) override;
-
     /// Test hook (test scaffolding section 2.7): replaces the data-loss time source so
     /// deadline tests run on virtual time with zero real sleeps. Inline so tests can call
     /// it without the implementation being exported from the library.

@@ -193,6 +193,8 @@ void SumReaderFbImpl::createReaderLocked()
         reader.release();
     }
 
+    refreshReaderConfigLocked();
+
     // No descriptor replay is needed here: adopting a connected port re-enqueues the last
     // descriptor event (setListener calls enqueueLastDescriptor), so the new reader learns
     // the current descriptors on adoption.
@@ -200,6 +202,8 @@ void SumReaderFbImpl::createReaderLocked()
                        .setDomainReadType(SampleType::Int64)
                        .setValueReadType(SampleType::Float64)
                        .setAllowDifferentSamplingRates(mode != SumMode::EqualRates)
+                       .setDataLossTimeout(secondsToRatio(dataLossTimeoutSeconds))
+                       .setMaxSynchronizationDistance(secondsToRatio(maxSyncDistanceSeconds))
                        .setInputPortNotificationMethod(notificationMode);
 
     for (const auto& port : connectedPorts)
@@ -217,8 +221,6 @@ void SumReaderFbImpl::createReaderLocked()
     readerErrored = false;
     rateModelDirty = true;
 
-    applyReaderConfigLocked();
-
     reader.setExternalListener(this->thisPtr<InputPortNotificationsPtr>());
     auto thisWeakRef = this->template getWeakRefInternal<IFunctionBlock>();
     reader.setOnDataAvailable(
@@ -230,14 +232,11 @@ void SumReaderFbImpl::createReaderLocked()
         });
 }
 
-void SumReaderFbImpl::applyReaderConfigLocked()
+void SumReaderFbImpl::refreshReaderConfigLocked()
 {
     dataLossTimeoutSeconds = objPtr.getPropertyValue("DataLossTimeout");
     maxSyncDistanceSeconds = objPtr.getPropertyValue("MaxSynchronizationDistance");
     recoveryRetryIntervalSeconds = objPtr.getPropertyValue("RecoveryRetryInterval");
-
-    reader.setDataLossTimeout(secondsToRatio(dataLossTimeoutSeconds));
-    reader.setMaxSynchronizationDistance(secondsToRatio(maxSyncDistanceSeconds));
 }
 
 void SumReaderFbImpl::modeChanged()
@@ -252,8 +251,19 @@ void SumReaderFbImpl::modeChanged()
 
 void SumReaderFbImpl::readerConfigChanged()
 {
-    if (reader.assigned())
-        applyReaderConfigLocked();
+    // The sync distance and data-loss timeout are builder-only reader configuration: changing
+    // them rebuilds the reader. The recovery retry interval is FB-side probe pacing and needs
+    // no rebuild.
+    const auto previousDataLossTimeout = dataLossTimeoutSeconds;
+    const auto previousSyncDistance = maxSyncDistanceSeconds;
+    refreshReaderConfigLocked();
+
+    if (reader.assigned() &&
+        (dataLossTimeoutSeconds != previousDataLossTimeout || maxSyncDistanceSeconds != previousSyncDistance))
+    {
+        createReaderLocked();
+        updateComponentStatusLocked();
+    }
 }
 
 void SumReaderFbImpl::onConnected(const InputPortPtr& inputPort)

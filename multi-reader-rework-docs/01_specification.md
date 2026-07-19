@@ -328,9 +328,13 @@ The complete per-method error contract — which error codes each public method 
 setMainInput(IString* inputId) / getMainInput(IString** )          // runtime too; empty → first used input
 setTargetSampleRate(IRatio* rate) / getTargetSampleRate(...)       // runtime too; unset → main input rate
 setResamplerBuilder(IResamplerBuilder*) / getResamplerBuilder(...) // default: LinearResamplerBuilder
-setMaxSynchronizationDistance(IRatio* seconds) / get...            // 0 disables (default 0 for compat)
-setDataLossTimeout(IRatio* seconds) / get...                       // 0 disables (default 0)
+setMaxSynchronizationDistance(IRatio* seconds) / get...            // BUILDER-ONLY (C1); 0 disables (default 0)
+setDataLossTimeout(IRatio* seconds) / get...                       // BUILDER-ONLY (C2); 0 disables (default 0)
 ```
+
+Per review comments C1/C2 the synchronization distance and data-loss timeout exist only on
+`IMultiReaderBuilder` — the reader has neither setters nor getters. Changing them at runtime
+means rebuilding the reader (the documented dispose-and-rebuild pattern).
 
 `IMultiReaderStatus` additions (existing `getEventPackets`, `getMainDescriptor` retained):
 
