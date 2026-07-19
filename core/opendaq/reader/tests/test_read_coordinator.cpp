@@ -3,9 +3,11 @@
 #include <opendaq/event_packet_ids.h>
 #include <opendaq/input_port_factory.h>
 #include <opendaq/packet_factory.h>
-#include <opendaq/read_coordinator.h>
-#include <opendaq/synchronization_manager.h>
+#include <opendaq/multi_reader/read_coordinator.h>
+#include <opendaq/multi_reader/synchronization_manager.h>
 #include "reader_common.h"
+
+using namespace daq::multi_reader;
 
 #include <array>
 #include <memory>

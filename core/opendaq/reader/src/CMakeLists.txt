@@ -133,22 +133,22 @@ function(create_component_source_groups_${BASE_NAME})
         ${SDK_HEADERS_DIR}/multi_reader_builder.h
         ${SDK_HEADERS_DIR}/multi_reader_builder_impl.h
         ${SDK_HEADERS_DIR}/multi_reader.h
-        ${SDK_HEADERS_DIR}/queue_reader.h
-        ${SDK_HEADERS_DIR}/data_loss_monitor.h
-        ${SDK_HEADERS_DIR}/input_slot.h
-        ${SDK_HEADERS_DIR}/synchronization_manager.h
-        ${SDK_HEADERS_DIR}/notification_coordinator.h
-        ${SDK_HEADERS_DIR}/read_coordinator.h
+        ${SDK_HEADERS_DIR}/multi_reader/queue_reader.h
+        ${SDK_HEADERS_DIR}/multi_reader/data_loss_monitor.h
+        ${SDK_HEADERS_DIR}/multi_reader/input.h
+        ${SDK_HEADERS_DIR}/multi_reader/synchronization_manager.h
+        ${SDK_HEADERS_DIR}/multi_reader/notification_coordinator.h
+        ${SDK_HEADERS_DIR}/multi_reader/read_coordinator.h
         ${SDK_HEADERS_DIR}/multi_reader_impl.h
 		${SDK_HEADERS_DIR}/multi_reader_status.h
         ${SDK_SRC_DIR}/multi_reader_impl.cpp
         ${SDK_SRC_DIR}/multi_reader_builder_impl.cpp
-        ${SDK_SRC_DIR}/queue_reader.cpp
-        ${SDK_SRC_DIR}/data_loss_monitor.cpp
-        ${SDK_SRC_DIR}/input_slot.cpp
-        ${SDK_SRC_DIR}/synchronization_manager.cpp
-        ${SDK_SRC_DIR}/notification_coordinator.cpp
-        ${SDK_SRC_DIR}/read_coordinator.cpp
+        ${SDK_SRC_DIR}/multi_reader/queue_reader.cpp
+        ${SDK_SRC_DIR}/multi_reader/data_loss_monitor.cpp
+        ${SDK_SRC_DIR}/multi_reader/input.cpp
+        ${SDK_SRC_DIR}/multi_reader/synchronization_manager.cpp
+        ${SDK_SRC_DIR}/multi_reader/notification_coordinator.cpp
+        ${SDK_SRC_DIR}/multi_reader/read_coordinator.cpp
     )
 endfunction()
 
@@ -175,12 +175,12 @@ set(SRC_PrivateHeaders_Component
     packet_reader_impl.h
     multi_reader_impl.h
     multi_reader_builder_impl.h
-    queue_reader.h
-    data_loss_monitor.h
-    input_slot.h
-    synchronization_manager.h
-    notification_coordinator.h
-    read_coordinator.h
+    multi_reader/queue_reader.h
+    multi_reader/data_loss_monitor.h
+    multi_reader/input.h
+    multi_reader/synchronization_manager.h
+    multi_reader/notification_coordinator.h
+    multi_reader/read_coordinator.h
     reader_status_impl.h
     reader_impl.h
     enum_flags.h
@@ -201,12 +201,12 @@ set(SRC_Cpp_Component
     typed_reading_utils.cpp
     multi_reader_impl.cpp
     multi_reader_builder_impl.cpp
-    queue_reader.cpp
-    data_loss_monitor.cpp
-    input_slot.cpp
-    synchronization_manager.cpp
-    notification_coordinator.cpp
-    read_coordinator.cpp
+    multi_reader/queue_reader.cpp
+    multi_reader/data_loss_monitor.cpp
+    multi_reader/input.cpp
+    multi_reader/synchronization_manager.cpp
+    multi_reader/notification_coordinator.cpp
+    multi_reader/read_coordinator.cpp
     reader.natvis
     PARENT_SCOPE
 )

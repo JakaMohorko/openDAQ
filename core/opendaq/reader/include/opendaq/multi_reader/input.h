@@ -18,7 +18,7 @@
 #include <opendaq/input_port_config_ptr.h>
 #include <opendaq/input_port_notifications.h>
 #include <opendaq/logger_component_ptr.h>
-#include <opendaq/queue_reader.h>
+#include <opendaq/multi_reader/queue_reader.h>
 #include <opendaq/signal_ptr.h>
 
 #include <atomic>
@@ -26,8 +26,11 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+namespace multi_reader
+{
+
 /**
- * @brief Semantic notifications an InputSlot raises toward its owner (the multi reader).
+ * @brief Semantic notifications an Input raises toward its owner (the multi reader).
  *
  * Non-owning: the owner holds the strong reference to every slot and detaches itself
  * (detachListener) before it goes away. Calls arrive on producer/connection threads and
@@ -35,9 +38,9 @@ BEGIN_NAMESPACE_OPENDAQ
  * this callback where needed, and never call back into the slot from inside the callback
  * except through the owner-locked slot API.
  */
-struct IInputSlotListener
+struct IInputListener
 {
-    virtual ~IInputSlotListener() = default;
+    virtual ~IInputListener() = default;
 
     /// A signal is proposed to the slot's port; return true to accept.
     virtual bool slotAcceptsSignal(SizeT slotIndex, const SignalPtr& signal) = 0;
@@ -53,8 +56,6 @@ struct IInputSlotListener
     virtual void slotPacketReceived(SizeT slotIndex) = 0;
 };
 
-// COMMENT: The name "InputSlot" is too generic and could cause namespace/include path clashes later on.
-//          It should be renamed to something similar to "MultiReaderInputSlot" or "MultiReaderInput". 
 /**
  * @brief One input of the multi reader: owns the port reference and the per-input QueueReader,
  * implements IInputPortNotifications for that port, and holds the used/connected/pending flags.
@@ -67,18 +68,18 @@ struct IInputSlotListener
  * - The port holds only a weak reference to this object (its listener), so the owner's strong
  *   reference controls the lifetime; once it is dropped, port notifications stop.
  */
-class InputSlot final : public ImplementationOfWeak<IInputPortNotifications>
+class Input final : public ImplementationOfWeak<IInputPortNotifications>
 {
 public:
     using SteadyClock = std::chrono::steady_clock;
 
-    explicit InputSlot(SizeT index,
+    explicit Input(SizeT index,
                        const InputPortConfigPtr& port,
                        SampleType valueReadType,
                        SampleType domainReadType,
                        ReadMode mode,
                        const LoggerComponentPtr& logger,
-                       IInputSlotListener* listener,
+                       IInputListener* listener,
                        bool globalIdFromSignal);
 
     // IInputPortNotifications (producer/connection threads)
@@ -135,7 +136,7 @@ public:
     void detachListener();
 
 private:
-    IInputSlotListener* getListener() const;
+    IInputListener* getListener() const;
 
     std::atomic<SizeT> index;
     const bool globalIdFromSignal;
@@ -144,7 +145,7 @@ private:
     QueueReader queueReader;
     // Phase 5 (resampling) adds: ResamplerPtr resampler; // null on the direct path
 
-    std::atomic<IInputSlotListener*> listener;
+    std::atomic<IInputListener*> listener;
     std::atomic_bool used{true};
     std::atomic_bool connectedState{false};
     std::atomic_bool packetPending{false};
@@ -152,5 +153,7 @@ private:
 
     LoggerComponentPtr loggerComponent;
 };
+
+}  // namespace multi_reader
 
 END_NAMESPACE_OPENDAQ

@@ -1,14 +1,17 @@
-#include <opendaq/input_slot.h>
+#include <opendaq/multi_reader/input.h>
 
 BEGIN_NAMESPACE_OPENDAQ
 
-InputSlot::InputSlot(SizeT index,
+namespace multi_reader
+{
+
+Input::Input(SizeT index,
                      const InputPortConfigPtr& port,
                      SampleType valueReadType,
                      SampleType domainReadType,
                      ReadMode mode,
                      const LoggerComponentPtr& logger,
-                     IInputSlotListener* listener,
+                     IInputListener* listener,
                      bool globalIdFromSignal)
     : index(index)
     , globalIdFromSignal(globalIdFromSignal)
@@ -20,7 +23,7 @@ InputSlot::InputSlot(SizeT index,
     connectedState = port.getConnection().assigned();
 }
 
-ErrCode InputSlot::acceptsSignal(IInputPort* inputPort, ISignal* signal, Bool* accept)
+ErrCode Input::acceptsSignal(IInputPort* inputPort, ISignal* signal, Bool* accept)
 {
     OPENDAQ_PARAM_NOT_NULL(accept);
 
@@ -34,7 +37,7 @@ ErrCode InputSlot::acceptsSignal(IInputPort* inputPort, ISignal* signal, Bool* a
     });
 }
 
-ErrCode InputSlot::connected(IInputPort* /*inputPort*/)
+ErrCode Input::connected(IInputPort* /*inputPort*/)
 {
     return daqTry([&]
     {
@@ -45,7 +48,7 @@ ErrCode InputSlot::connected(IInputPort* /*inputPort*/)
     });
 }
 
-ErrCode InputSlot::disconnected(IInputPort* /*inputPort*/)
+ErrCode Input::disconnected(IInputPort* /*inputPort*/)
 {
     return daqTry([&]
     {
@@ -56,7 +59,7 @@ ErrCode InputSlot::disconnected(IInputPort* /*inputPort*/)
     });
 }
 
-ErrCode InputSlot::packetReceived(IInputPort* /*inputPort*/)
+ErrCode Input::packetReceived(IInputPort* /*inputPort*/)
 {
     return daqTry([&]
     {
@@ -68,17 +71,17 @@ ErrCode InputSlot::packetReceived(IInputPort* /*inputPort*/)
     });
 }
 
-SizeT InputSlot::getIndex() const
+SizeT Input::getIndex() const
 {
     return index;
 }
 
-void InputSlot::setIndex(SizeT newIndex)
+void Input::setIndex(SizeT newIndex)
 {
     index = newIndex;
 }
 
-StringPtr InputSlot::getInputId() const
+StringPtr Input::getInputId() const
 {
     if (globalIdFromSignal)
     {
@@ -88,27 +91,27 @@ StringPtr InputSlot::getInputId() const
     return port.getGlobalId();
 }
 
-const InputPortConfigPtr& InputSlot::getPort() const
+const InputPortConfigPtr& Input::getPort() const
 {
     return port;
 }
 
-QueueReader& InputSlot::getQueueReader()
+QueueReader& Input::getQueueReader()
 {
     return queueReader;
 }
 
-bool InputSlot::isConnected() const
+bool Input::isConnected() const
 {
     return connectedState;
 }
 
-void InputSlot::rebindConnection()
+void Input::rebindConnection()
 {
     queueReader.updateConnection();
 }
 
-bool InputSlot::syncConnection()
+bool Input::syncConnection()
 {
     connectedState = port.getConnection().assigned();
     const bool rebound = queueReader.refreshConnection();
@@ -119,44 +122,46 @@ bool InputSlot::syncConnection()
     return rebound;
 }
 
-bool InputSlot::isUsed() const
+bool Input::isUsed() const
 {
     return used;
 }
 
-void InputSlot::setUsed(bool value)
+void Input::setUsed(bool value)
 {
     used = value;
 }
 
-bool InputSlot::isPacketPending() const
+bool Input::isPacketPending() const
 {
     return packetPending;
 }
 
-bool InputSlot::clearPacketPending()
+bool Input::clearPacketPending()
 {
     return packetPending.exchange(false);
 }
 
-InputSlot::SteadyClock::time_point InputSlot::getLastPacketArrival() const
+Input::SteadyClock::time_point Input::getLastPacketArrival() const
 {
     return lastPacketArrival.load();
 }
 
-void InputSlot::setPortActive(bool active)
+void Input::setPortActive(bool active)
 {
     port.setActive(active);
 }
 
-void InputSlot::detachListener()
+void Input::detachListener()
 {
     listener = nullptr;
 }
 
-IInputSlotListener* InputSlot::getListener() const
+IInputListener* Input::getListener() const
 {
     return listener.load();
 }
+
+}  // namespace multi_reader
 
 END_NAMESPACE_OPENDAQ

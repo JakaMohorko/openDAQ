@@ -1,8 +1,11 @@
-#include <opendaq/data_loss_monitor.h>
+#include <opendaq/multi_reader/data_loss_monitor.h>
 
 #include <algorithm>
 
 BEGIN_NAMESPACE_OPENDAQ
+
+namespace multi_reader
+{
 
 DataLossMonitor::DataLossMonitor()
     : clock([] { return std::chrono::steady_clock::now(); })
@@ -203,5 +206,7 @@ void DataLossMonitor::waiterLoop()
         }
     }
 }
+
+}  // namespace multi_reader
 
 END_NAMESPACE_OPENDAQ

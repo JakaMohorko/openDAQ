@@ -1,9 +1,12 @@
-#include <opendaq/read_coordinator.h>
+#include <opendaq/multi_reader/read_coordinator.h>
 
 #include <algorithm>
 #include <limits>
 
 BEGIN_NAMESPACE_OPENDAQ
+
+namespace multi_reader
+{
 
 ReadCoordinator::ReadCoordinator(const LoggerComponentPtr& logger)
     : loggerComponent(logger)
@@ -144,5 +147,7 @@ std::vector<SizeT> ReadCoordinator::discardLeftoverSegments(const std::vector<Qu
     }
     return discarded;
 }
+
+}  // namespace multi_reader
 
 END_NAMESPACE_OPENDAQ

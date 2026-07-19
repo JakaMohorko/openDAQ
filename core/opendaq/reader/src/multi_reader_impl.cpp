@@ -23,10 +23,51 @@ using namespace std::chrono;
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// The multi reader internals (Input, QueueReader, SynchronizationManager, ReadCoordinator,
+// NotificationCoordinator, DataLossMonitor) live in daq::multi_reader
+using namespace multi_reader;
+
 // --- Construction -----------------------------------------------------------------------------
 
-// COMMENT: I would remove this constructor and delegate it to the builder constructor.
-//          In general, the builder constructor should be used in every case.
+namespace
+{
+
+// The legacy list factories delegate through here so the builder constructor is the single
+// wiring path. The builder's defaults already match the legacy behavior (SameThread
+// notifications, no main input, no sync distance, no data-loss timeout).
+MultiReaderBuilderPtr builderFromLegacyArgs(const ListPtr<IComponent>& list,
+                                            SampleType valueReadType,
+                                            SampleType domainReadType,
+                                            ReadMode mode,
+                                            Int requiredCommonSampleRate,
+                                            Bool startOnFullUnitOfDomain,
+                                            SizeT minReadCount)
+{
+    if (!list.assigned())
+        DAQ_THROW_EXCEPTION(NotAssignedException, "List of inputs is not assigned");
+
+    auto builder = MultiReaderBuilder();
+    for (const auto& component : list)
+    {
+        if (auto signal = component.asPtrOrNull<ISignal>(); signal.assigned())
+            builder.addSignal(signal);
+        else if (auto port = component.asPtrOrNull<IInputPort>(); port.assigned())
+            builder.addInputPort(port);
+        else
+            DAQ_THROW_EXCEPTION(InvalidParameterException, "One of the elements of input list is not signal or input port");
+    }
+
+    builder.setValueReadType(valueReadType);
+    builder.setDomainReadType(domainReadType);
+    builder.setReadMode(mode);
+    builder.setRequiredCommonSampleRate(requiredCommonSampleRate);
+    builder.setStartOnFullUnitOfDomain(startOnFullUnitOfDomain);
+    builder.setMinReadCount(minReadCount);
+    return builder;
+}
+
+}  // namespace
+
 MultiReaderImpl::MultiReaderImpl(const ListPtr<IComponent>& list,
                                  SampleType valueReadType,
                                  SampleType domainReadType,
@@ -35,55 +76,8 @@ MultiReaderImpl::MultiReaderImpl(const ListPtr<IComponent>& list,
                                  Int requiredCommonSampleRate,
                                  Bool startOnFullUnitOfDomain,
                                  SizeT minReadCount)
-    : requiredCommonSampleRate(requiredCommonSampleRate)
-    , startOnFullUnitOfDomain(startOnFullUnitOfDomain)
-    , minReadCount(minReadCount)
-    , notificationMethodsList(List<PacketReadyNotification>())
-    , valueReadType(valueReadType)
-    , domainReadType(domainReadType)
-    , readMode(mode)
+    : MultiReaderImpl(builderFromLegacyArgs(list, valueReadType, domainReadType, mode, requiredCommonSampleRate, startOnFullUnitOfDomain, minReadCount))
 {
-    this->internalAddRef();
-    try
-    {
-        checkListSizeAndCacheContext(list);
-        loggerComponent = context.getLogger().getOrAddComponent("MultiReader");
-        typeOfInputs = sourceComponentsType(list);
-
-        // Bounded packetReceived makes SameThread safe as the default for both
-        // construction types (behavior change, spec section 8.5)
-        notificationMethod = PacketReadyNotification::SameThread;
-
-        resolvedDomainReadType = domainReadType == SampleType::Undefined ? SampleType::Int64 : domainReadType;
-
-        syncManager = std::make_unique<SynchronizationManager>(loggerComponent);
-        readCoordinator = std::make_unique<ReadCoordinator>(loggerComponent);
-        notificationCoordinator = std::make_unique<NotificationCoordinator>(context.getScheduler(), loggerComponent);
-        notificationCoordinator->setEvaluationCallback([this] { onCoalescedEvaluation(); });
-        dataLossMonitor = std::make_unique<DataLossMonitor>();
-        dataLossMonitor->setDeadlineCallback(
-            [this]
-            {
-                // Deadlines enter the same coalesced evaluation path as packets (spec section 9.5)
-                notificationCoordinator->requestEvaluation();
-                notifyCondition.notify_all();
-            });
-        applyConfigToSyncManager();
-
-        auto ports = createOrAdoptPorts(list);
-        createSlots(ports);
-
-        std::lock_guard lock(mutex);
-        // Adopted ports may arrive deactivated (a previous owner parked them via
-        // setInputUsed(false)); their active state belongs to this reader now
-        setPortsActiveLocked(isActive);
-        evaluateStateLocked();
-    }
-    catch (...)
-    {
-        this->releaseWeakRefOnException();
-        throw;
-    }
 }
 
 MultiReaderImpl::MultiReaderImpl(MultiReaderImpl* old, SampleType valueReadType, SampleType domainReadType)
@@ -185,10 +179,9 @@ MultiReaderImpl::MultiReaderImpl(const MultiReaderBuilderPtr& builder)
     try
     {
         auto sourceComponents = builder.getSourceComponents();
-        checkListSizeAndCacheContext(sourceComponents);
+        normalizeSources(sourceComponents);
 
         loggerComponent = context.getLogger().getOrAddComponent("MultiReader");
-        typeOfInputs = sourceComponentsType(sourceComponents);
 
         // Deprecated (spec section 8.4): the value is ignored; kept on the builder for compatibility
         if (tickOffsetTolerance.assigned() && tickOffsetTolerance.getNumerator() != 0)
@@ -254,27 +247,27 @@ MultiReaderImpl::~MultiReaderImpl()
     }
 }
 
-// COMMENT: This feels like it's doing two unconnected things for no reason.
-void MultiReaderImpl::checkListSizeAndCacheContext(const ListPtr<IComponent>& list)
+void MultiReaderImpl::normalizeSources(const ListPtr<IComponent>& list)
 {
     if (!list.assigned())
         DAQ_THROW_EXCEPTION(NotAssignedException, "List of inputs is not assigned");
     if (list.getCount() == 0)
         DAQ_THROW_EXCEPTION(InvalidParameterException, "Need at least one signal.");
-    context = list[0].getContext();
-}
 
-// COMMENT: Is this needed? We should cache it when we check if all the source components are the same.
-MultiReaderImpl::InputType MultiReaderImpl::sourceComponentsType(const ListPtr<IComponent>& sources) const
-{
-    if (sources.getCount() == 0)
-        return InputType::Unknown;
+    if (!context.assigned())
+        context = list[0].getContext();
 
-    if (sources[0].supportsInterface(IInputPort::Id))
-        return InputType::Ports;
-    if (sources[0].supportsInterface(ISignal::Id))
-        return InputType::Signals;
-    DAQ_THROW_EXCEPTION(InvalidParameterException, "Invalid component type, only IInputPort and ISignal are supported.");
+    // The input type is determined once and only ever narrows from Unknown; per-element
+    // homogeneity (no mixing of signals and ports) is enforced by createOrAdoptPorts
+    if (typeOfInputs == InputType::Unknown)
+    {
+        if (list[0].supportsInterface(IInputPort::Id))
+            typeOfInputs = InputType::Ports;
+        else if (list[0].supportsInterface(ISignal::Id))
+            typeOfInputs = InputType::Signals;
+        else
+            DAQ_THROW_EXCEPTION(InvalidParameterException, "Invalid component type, only IInputPort and ISignal are supported.");
+    }
 }
 
 ListPtr<IInputPortConfig> MultiReaderImpl::createOrAdoptPorts(const ListPtr<IComponent>& list) const
@@ -345,15 +338,15 @@ void MultiReaderImpl::createSlots(const ListPtr<IInputPortConfig>& inputPorts)
                                 "Multi reader created from signals cannot have an unspecified input port notification method.");
         }
 
-        auto slotObject = createWithImplementation<IInputPortNotifications, InputSlot>(position,
+        auto slotObject = createWithImplementation<IInputPortNotifications, Input>(position,
                                                                                        port,
                                                                                        valueReadType,
                                                                                        resolvedDomainReadType,
                                                                                        readMode,
                                                                                        loggerComponent,
-                                                                                       static_cast<IInputSlotListener*>(this),
+                                                                                       static_cast<IInputListener*>(this),
                                                                                        typeOfInputs == InputType::Signals);
-        auto* slot = static_cast<InputSlot*>(slotObject.getObject());
+        auto* slot = static_cast<Input*>(slotObject.getObject());
         port.setListener(slotObject);
 
         slotObjects.push_back(std::move(slotObject));
@@ -444,7 +437,7 @@ std::vector<QueueReader*> MultiReaderImpl::collectUsedReaders(std::vector<SizeT>
 }
 
 // COMMENT: What does "main descriptors locked" mean?
-void MultiReaderImpl::updateMainDescriptorsLocked()
+void MultiReaderImpl::refreshMainInputDescriptorsLocked()
 {
     if (slots.empty())
         return;
@@ -671,7 +664,7 @@ void MultiReaderImpl::evaluateStateLocked()
         }
     }
 
-    updateMainDescriptorsLocked();
+    refreshMainInputDescriptorsLocked();
 
     // 7. Local validity
     {
@@ -794,7 +787,7 @@ void MultiReaderImpl::onCoalescedEvaluation()
         wrapHandler(callback);
 }
 
-// --- IInputSlotListener -----------------------------------------------------------------------
+// --- IInputListener -----------------------------------------------------------------------
 
 bool MultiReaderImpl::slotAcceptsSignal(SizeT slotIndex, const SignalPtr& signal)
 {
@@ -1002,7 +995,7 @@ MultiReaderStatusPtr MultiReaderImpl::readEventsLocked()
     // changed rates, so the whole model is rebuilt right away - accessors like
     // getCommonSampleRate must reflect the new descriptors as soon as the events are out
     invalidateModelLocked();
-    updateMainDescriptorsLocked();
+    refreshMainInputDescriptorsLocked();
     evaluateStateLocked();
 
     return createStatusLocked(events, nullptr, eventInputIndices, orderedEventPackets);
@@ -1468,8 +1461,7 @@ ErrCode MultiReaderImpl::addInput(IComponent* input)
         list.pushBack(input);
 
         std::lock_guard lock(mutex);
-        if (typeOfInputs == InputType::Unknown)
-            typeOfInputs = sourceComponentsType(list);
+        normalizeSources(list);
 
         auto ports = createOrAdoptPorts(list);
         createSlots(ports);
@@ -1665,48 +1657,6 @@ ErrCode MultiReaderImpl::getDataLossTimeout(IRatio** timeout)
     return OPENDAQ_SUCCESS;
 }
 
-
-// --- IInputPortNotifications (compat pass-through; slots are the real listeners) ---------------
-
-ErrCode MultiReaderImpl::acceptsSignal(IInputPort* port, ISignal* signal, Bool* accept)
-{
-    OPENDAQ_PARAM_NOT_NULL(port);
-    OPENDAQ_PARAM_NOT_NULL(signal);
-    OPENDAQ_PARAM_NOT_NULL(accept);
-
-    if (externalListener.assigned() && externalListener.getRef().assigned())
-        return externalListener.getRef()->acceptsSignal(port, signal, accept);
-
-    *accept = true;
-    return OPENDAQ_SUCCESS;
-}
-
-ErrCode MultiReaderImpl::connected(IInputPort* port)
-{
-    OPENDAQ_PARAM_NOT_NULL(port);
-
-    if (externalListener.assigned() && externalListener.getRef().assigned())
-        return externalListener.getRef()->connected(port);
-    return OPENDAQ_SUCCESS;
-}
-
-ErrCode MultiReaderImpl::disconnected(IInputPort* port)
-{
-    OPENDAQ_PARAM_NOT_NULL(port);
-
-    if (externalListener.assigned() && externalListener.getRef().assigned())
-        return externalListener.getRef()->disconnected(port);
-    return OPENDAQ_SUCCESS;
-}
-
-ErrCode MultiReaderImpl::packetReceived(IInputPort* inputPort)
-{
-    OPENDAQ_PARAM_NOT_NULL(inputPort);
-
-    if (externalListener.assigned() && externalListener.getRef().assigned())
-        return externalListener.getRef()->packetReceived(inputPort);
-    return OPENDAQ_SUCCESS;
-}
 
 // --- IReaderConfig ----------------------------------------------------------------------------
 

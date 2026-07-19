@@ -26,6 +26,9 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+namespace multi_reader
+{
+
 /**
  * @brief Per-input packet-liveness deadlines (spec section 3.6).
  *
@@ -103,5 +106,7 @@ private:
     DeadlineCallback callback;
     std::vector<SlotState> slots;
 };
+
+}  // namespace multi_reader
 
 END_NAMESPACE_OPENDAQ

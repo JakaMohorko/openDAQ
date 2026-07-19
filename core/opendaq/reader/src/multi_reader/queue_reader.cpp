@@ -1,4 +1,4 @@
-#include <opendaq/queue_reader.h>
+#include <opendaq/multi_reader/queue_reader.h>
 
 #include <opendaq/custom_log.h>
 #include <opendaq/event_packet_utils.h>
@@ -7,6 +7,9 @@
 #include <limits>
 
 BEGIN_NAMESPACE_OPENDAQ
+
+namespace multi_reader
+{
 
 // COMMENT: We should maybe revisit the IMultiReaderStatus and how this is reported to them. Using event packets
 //          is likely not the most intuitive.
@@ -889,5 +892,7 @@ bool QueueReader::dropUntilEvent()
     }
     return foundEvent;
 }
+
+}  // namespace multi_reader
 
 END_NAMESPACE_OPENDAQ

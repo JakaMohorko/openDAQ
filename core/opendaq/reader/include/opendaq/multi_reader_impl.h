@@ -17,14 +17,14 @@
 #include <opendaq/multi_reader.h>
 #include <opendaq/multi_reader_status.h>
 
-#include <opendaq/data_loss_monitor.h>
-#include <opendaq/input_slot.h>
+#include <opendaq/multi_reader/data_loss_monitor.h>
+#include <opendaq/multi_reader/input.h>
 #include <opendaq/multi_reader_builder_ptr.h>
-#include <opendaq/notification_coordinator.h>
-#include <opendaq/read_coordinator.h>
+#include <opendaq/multi_reader/notification_coordinator.h>
+#include <opendaq/multi_reader/read_coordinator.h>
 #include <opendaq/reader_config_ptr.h>
 #include <opendaq/reader_factory.h>
-#include <opendaq/synchronization_manager.h>
+#include <opendaq/multi_reader/synchronization_manager.h>
 
 #include <condition_variable>
 #include <memory>
@@ -42,12 +42,17 @@ BEGIN_NAMESPACE_OPENDAQ
  * the ReadCoordinator and callback coalescing in the NotificationCoordinator.
  *
  * Locking (spec section 9): one state mutex; producer threads never take it
- * (InputSlot::packetReceived only touches atomics and schedules the coalesced
+ * (Input::packetReceived only touches atomics and schedules the coalesced
  * evaluation); user callbacks are invoked with no lock held.
+ *
+ * Naming convention: a "...Locked" suffix means "the caller must already hold `mutex`" -
+ * such a method never takes the lock itself and must only be called from code that does.
+ * Methods without the suffix acquire the lock themselves (or need none).
  */
-class MultiReaderImpl : public ImplementationOfWeak<IMultiReader, IReaderConfig, IInputPortNotifications>, private IInputSlotListener
+class MultiReaderImpl : public ImplementationOfWeak<IMultiReader, IReaderConfig>, private multi_reader::IInputListener
 {
 public:
+    /// Legacy list factory path; delegates to the builder constructor (the single wiring path).
     MultiReaderImpl(const ListPtr<IComponent>& list,
                     SampleType valueReadType,
                     SampleType domainReadType,
@@ -57,7 +62,8 @@ public:
                     Bool startOnFullUnitOfDomain = false,
                     SizeT minReadCount = 1);
 
-    // COMMENT: These can likely be removed in future phases.
+    /// Deprecated MultiReaderFromExisting path; scheduled for removal (Phase 6.1) and
+    /// deliberately not migrated to the builder constructor.
     MultiReaderImpl(MultiReaderImpl* old, SampleType valueReadType, SampleType domainReadType);
 
     MultiReaderImpl(const MultiReaderBuilderPtr& builder);
@@ -104,18 +110,10 @@ public:
     /// Test hook (test scaffolding section 2.7): replaces the data-loss time source so
     /// deadline tests run on virtual time with zero real sleeps. Inline so tests can call
     /// it without the implementation being exported from the library.
-    void setDataLossClockForTest(DataLossMonitor::Clock clock)
+    void setDataLossClockForTest(multi_reader::DataLossMonitor::Clock clock)
     {
         dataLossMonitor->setClockForTest(std::move(clock));
     }
-
-    // COMMENT: Why do we need the notifications on both the multi reader and the input slot? This seems
-    //          like either a bug or an overcomplication. Input ports can anyhow only have 1 listener assigned.
-    // IInputPortNotifications (compat surface; the per-port listeners are the InputSlots)
-    ErrCode INTERFACE_FUNC acceptsSignal(IInputPort* port, ISignal* signal, Bool* accept) override;
-    ErrCode INTERFACE_FUNC connected(IInputPort* port) override;
-    ErrCode INTERFACE_FUNC disconnected(IInputPort* port) override;
-    ErrCode INTERFACE_FUNC packetReceived(IInputPort* inputPort) override;
 
     // IReaderConfig
     ErrCode INTERFACE_FUNC getValueTransformFunction(IFunction** transform) override;
@@ -135,17 +133,24 @@ private:
         Ports,
     };
 
-    // --- IInputSlotListener (semantic port notifications from the slots) ---
-    // COMMENT: These are probably necessary, but even then I'm not 100% certain.
-    //          Probably must be there to synchronize calls to the external listeners.
+    // --- IInputListener (semantic port notifications from the slots) ---
+    // Why this second listener surface exists: a port can have exactly one listener, and that
+    // listener is the slot (it owns the port's QueueReader pairing). This private interface is
+    // the slot's channel back up to the facade - it carries the slot index, keeps the producer
+    // path bounded (slotPacketReceived touches atomics and schedules the coalesced evaluation,
+    // taking no facade lock), and serializes external-listener forwarding so user callbacks
+    // never run under the state mutex. The facade itself is deliberately NOT an
+    // IInputPortNotifications: ports never see the reader directly.
     bool slotAcceptsSignal(SizeT slotIndex, const SignalPtr& signal) override;
     void slotConnected(SizeT slotIndex) override;
     void slotDisconnected(SizeT slotIndex) override;
     void slotPacketReceived(SizeT slotIndex) override;
 
     // --- Construction ---
-    void checkListSizeAndCacheContext(const ListPtr<IComponent>& list);
-    InputType sourceComponentsType(const ListPtr<IComponent>& sources) const;
+    /// Source normalization (construction and addInput): validates the list (assigned,
+    /// non-empty), caches the context from the first source and narrows typeOfInputs from
+    /// Unknown exactly once. Homogeneity is enforced per element by createOrAdoptPorts.
+    void normalizeSources(const ListPtr<IComponent>& list);
     ListPtr<IInputPortConfig> createOrAdoptPorts(const ListPtr<IComponent>& list) const;
     void createSlots(const ListPtr<IInputPortConfig>& inputPorts);
     void applyConfigToSyncManager();
@@ -164,7 +169,7 @@ private:
                                     std::vector<SizeT> affected);
 
     /// Used inputs in slot order plus their slot indices; main input is the first used slot.
-    std::vector<QueueReader*> collectUsedReaders(std::vector<SizeT>& slotIndices) const;
+    std::vector<multi_reader::QueueReader*> collectUsedReaders(std::vector<SizeT>& slotIndices) const;
 
     /// Scheduler-side entry of the coalesced evaluation (never called with locks held).
     void onCoalescedEvaluation();
@@ -179,7 +184,7 @@ private:
     /// Descriptor-changed packet for the status: main value descriptor + common output domain
     /// descriptor (the domain of the status offset, spec section 8.2)
     EventPacketPtr mainDescriptorPacketLocked();
-    void updateMainDescriptorsLocked();
+    void refreshMainInputDescriptorsLocked();
     std::optional<std::int64_t> currentReadOffsetLocked() const;
 
     SizeT findSlotByIdLocked(const StringPtr& id) const;  // returns slots.size() when not found
@@ -203,10 +208,10 @@ private:
     std::vector<SizeT> stateAffectedInputs;
 
     std::vector<ObjectPtr<IInputPortNotifications>> slotObjects;  // strong refs (ports hold weak listener refs)
-    std::vector<InputSlot*> slots;                                // parallel implementation pointers
+    std::vector<multi_reader::Input*> slots;                                // parallel implementation pointers
 
-    std::unique_ptr<SynchronizationManager> syncManager;
-    std::unique_ptr<ReadCoordinator> readCoordinator;
+    std::unique_ptr<multi_reader::SynchronizationManager> syncManager;
+    std::unique_ptr<multi_reader::ReadCoordinator> readCoordinator;
 
     /// Common-domain tick of the next unread output sample while synchronized (spec section 7.4)
     std::optional<std::int64_t> nextReadTick;
@@ -274,8 +279,8 @@ private:
     // coordinator (whose queued task can do the same) are torn down before any member
     // their callbacks touch - including on the constructor-throw unwinding path where
     // ~MultiReaderImpl never runs
-    std::unique_ptr<NotificationCoordinator> notificationCoordinator;
-    std::unique_ptr<DataLossMonitor> dataLossMonitor;
+    std::unique_ptr<multi_reader::NotificationCoordinator> notificationCoordinator;
+    std::unique_ptr<multi_reader::DataLossMonitor> dataLossMonitor;
 };
 
 END_NAMESPACE_OPENDAQ

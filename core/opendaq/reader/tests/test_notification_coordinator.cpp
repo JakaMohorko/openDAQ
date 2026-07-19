@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 
-#include <opendaq/notification_coordinator.h>
+#include <opendaq/multi_reader/notification_coordinator.h>
 #include "reader_common.h"
+
+using namespace daq::multi_reader;
 
 #include <functional>
 #include <memory>
