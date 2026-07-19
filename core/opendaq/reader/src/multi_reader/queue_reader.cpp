@@ -281,7 +281,6 @@ Int QueueReader::getSampleRate() const
 
 void QueueReader::consumeLeadingEventPackets()
 {
-    invalidateAvailable();
     size_t end = 0;
     for (const auto& packet : packets)
     {
@@ -296,7 +295,14 @@ void QueueReader::consumeLeadingEventPackets()
 
         ++end;
     }
-    packets.erase(packets.begin(), packets.begin() + end);
+    // Removing leading events can expose a new leading data run behind them, changing the
+    // available count; when nothing is removed (front is already data) the count is unchanged,
+    // so the incrementally maintained cache stays valid (steady-stream fast path).
+    if (end > 0)
+    {
+        packets.erase(packets.begin(), packets.begin() + end);
+        invalidateAvailable();
+    }
 }
 
 void QueueReader::checkConnection() const
@@ -521,7 +527,10 @@ AdvanceResult QueueReader::read(void* valueBuffer, void* domainBuffer, SizeT* co
 
 AdvanceResult QueueReader::readNative(void* valueBuffer, void* domainBuffer, SizeT* count)
 {
-    invalidateAvailable();
+    // Availability is maintained incrementally, not invalidated: this read consumes exactly the
+    // samples it copies (decremented below), and consumeLeadingEventPackets invalidates only if
+    // it crosses an event boundary. This keeps the count O(1) on the steady read path instead of
+    // an O(buffered-packets) rescan after every read (main gets it O(1) from the connection).
     if (count == nullptr)
         return AdvanceResult::Error;
 
@@ -636,6 +645,12 @@ AdvanceResult QueueReader::readNative(void* valueBuffer, void* domainBuffer, Siz
     }
     packets.erase(packets.begin(), packets.begin() + end);
     *count = requested - remainingToRead;
+
+    // Maintain the native available-count cache: exactly *count native samples were consumed from
+    // the leading data run. Guarded on validity so a lazy/invalid cache stays invalid (recomputed
+    // on the next query). consumeLeadingEventPackets below re-invalidates if it crosses an event.
+    if (availableNativeValid)
+        availableNativeCache -= *count;
 
     if (returnError)
         return AdvanceResult::Error;
