@@ -254,6 +254,12 @@ private:
     std::vector<void*> readScratchValueBuffers;
     std::vector<void*> readScratchDomainBuffers;
 
+    /// Availability-query scratch (getAvailableCount and the read timeout predicate), reused to
+    /// avoid a per-call heap allocation. Kept separate from the read scratch above so the two
+    /// never alias, though both are only ever live under the mutex within one call.
+    std::vector<multi_reader::QueueReader*> availScratchUsed;
+    std::vector<SizeT> availScratchSlotIndices;
+
     /// Common-domain tick of the next unread output sample while synchronized (spec section 7.4)
     std::optional<std::int64_t> nextReadTick;
 

@@ -1358,10 +1358,9 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
                                      if (state != ReaderState::Synchronized)
                                          return false;
 
-                                     std::vector<SizeT> slotIndices;
-                                     const auto used = collectUsedReaders(slotIndices);
+                                     collectUsedReadersInto(availScratchUsed, availScratchSlotIndices);
                                      const auto available =
-                                         readCoordinator->getAvailableCount(used, syncManager->getModel(), minReadCount);
+                                         readCoordinator->getAvailableCount(availScratchUsed, syncManager->getModel(), minReadCount);
                                      const SizeT block = syncManager->getModel().blockLcm;
                                      const SizeT alignedRequest = requested / block * block;
                                      return alignedRequest > 0 && available >= alignedRequest;
@@ -1518,9 +1517,8 @@ ErrCode MultiReaderImpl::getAvailableCount(SizeT* count)
     refreshDataPlaneLocked();
     if (state == ReaderState::Synchronized)
     {
-        std::vector<SizeT> slotIndices;
-        const auto used = collectUsedReaders(slotIndices);
-        *count = readCoordinator->getAvailableCount(used, syncManager->getModel(), minReadCount);
+        collectUsedReadersInto(availScratchUsed, availScratchSlotIndices);
+        *count = readCoordinator->getAvailableCount(availScratchUsed, syncManager->getModel(), minReadCount);
     }
     return OPENDAQ_SUCCESS;
 }
