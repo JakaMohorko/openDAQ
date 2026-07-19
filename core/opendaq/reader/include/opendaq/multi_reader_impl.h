@@ -197,6 +197,9 @@ private:
 
     /// Used inputs in slot order plus their slot indices; main input is the first used slot.
     std::vector<multi_reader::QueueReader*> collectUsedReaders(std::vector<SizeT>& slotIndices) const;
+    /// Same, but fills caller-owned vectors (reusing their capacity) instead of allocating -
+    /// used by the read hot path to avoid per-read heap allocation.
+    void collectUsedReadersInto(std::vector<multi_reader::QueueReader*>& readers, std::vector<SizeT>& slotIndices) const;
 
     /// Scheduler-side entry of the coalesced evaluation (never called with locks held).
     void onCoalescedEvaluation();
@@ -241,6 +244,13 @@ private:
 
     std::unique_ptr<multi_reader::SynchronizationManager> syncManager;
     std::unique_ptr<multi_reader::ReadCoordinator> readCoordinator;
+
+    /// Read-path scratch, reused across reads to avoid per-read heap allocation. Only ever live
+    /// within a single readInternal call (which holds the mutex; no reentrancy), never aliased.
+    std::vector<multi_reader::QueueReader*> readScratchUsed;
+    std::vector<SizeT> readScratchSlotIndices;
+    std::vector<void*> readScratchValueBuffers;
+    std::vector<void*> readScratchDomainBuffers;
 
     /// Common-domain tick of the next unread output sample while synchronized (spec section 7.4)
     std::optional<std::int64_t> nextReadTick;
