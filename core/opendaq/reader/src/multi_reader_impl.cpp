@@ -549,6 +549,15 @@ void MultiReaderImpl::refreshDataPlaneLocked()
         return;
     }
 
+    // Nothing to do if nothing changed since the last pass: no packet arrived (dataPlaneDirty)
+    // and no read consumed (dataPlaneConsumed), and no deadline is pending. A buried event can
+    // only surface through an arrival or a consumption, so there is nothing to re-check - this
+    // collapses the repeated refreshes of a poll-then-read loop to one real pass.
+    const bool arrived = dataPlaneDirty.exchange(false, std::memory_order_acquire);
+    if (!arrived && !dataPlaneConsumed && !dataLossMonitor->hasLostSlots())
+        return;
+    dataPlaneConsumed = false;
+
     bool escalate = false;
     for (auto* slot : slots)
     {
@@ -1036,6 +1045,8 @@ void MultiReaderImpl::slotDisconnected(SizeT slotIndex)
 void MultiReaderImpl::slotPacketReceived(SizeT slotIndex)
 {
     // Bounded producer path: no state mutex, no queue access (spec section 9)
+    // Mark the data plane changed before the notify below, so a consumer woken by it sees it.
+    dataPlaneDirty.store(true, std::memory_order_release);
     dataLossMonitor->onPacket(slotIndex);
     notificationCoordinator->requestEvaluation();
     notifyCondition.notify_all();
@@ -1443,6 +1454,10 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
         const auto block = model.blockLcm;
         for (SizeT position = 0; position < used.size(); ++position)
             notificationCoordinator->setReady(slotIndices[position], used[position]->getAvailableSamplesUntilEvent() >= block);
+
+        // A read advanced the frontier, so a previously buried event may now be leading: force the
+        // next data-plane refresh to run its full pass rather than skip (see refreshDataPlaneLocked).
+        dataPlaneConsumed = true;
     }
 
     NumberPtr offsetNumber = offsetTick.has_value() ? NumberPtr(*offsetTick) : NumberPtr(0);

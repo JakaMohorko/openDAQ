@@ -27,6 +27,7 @@
 #include <opendaq/reader_status_impl.h>
 #include <opendaq/multi_reader/synchronization_manager.h>
 
+#include <atomic>
 #include <condition_variable>
 #include <memory>
 #include <mutex>
@@ -259,6 +260,15 @@ private:
     /// never alias, though both are only ever live under the mutex within one call.
     std::vector<multi_reader::QueueReader*> availScratchUsed;
     std::vector<SizeT> availScratchSlotIndices;
+
+    /// Data-plane change tracking for the synchronized fast path. refreshDataPlaneLocked can skip
+    /// its whole per-slot pass when nothing has changed since the last one: no packet has arrived
+    /// (dataPlaneDirty, set on the producer path) and no read has consumed (dataPlaneConsumed, set
+    /// under the mutex) - a buried event can only surface through an arrival or a consumption, so
+    /// there is nothing to re-check. This collapses the repeated getAvailableCount/read refreshes
+    /// of a poll-then-read loop to one real pass. Any full evaluateStateLocked re-arms dataPlaneDirty.
+    std::atomic_bool dataPlaneDirty{true};
+    bool dataPlaneConsumed{false};
 
     /// Common-domain tick of the next unread output sample while synchronized (spec section 7.4)
     std::optional<std::int64_t> nextReadTick;
