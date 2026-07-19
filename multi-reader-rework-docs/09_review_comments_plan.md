@@ -1,13 +1,15 @@
 # Multi Reader Rework — Review Comments: Evaluation and Action Plan
 
-**Status: DRAFT — covers the initial comment set (commit `343fe1ae`), the accompanying notes, and
-the design discussion of 2026-07-19 (Q1–Q5 resolved — §4; the `stateDirty` draft superseded by
-per-slot `HasData`/`HasEvent` — §2.1; data loss made in-band — §2.6). More comments are expected;
-no code changes are made until the full set is in.** Architecture background and the verified
-facts referenced here live in `08_internal_architecture.md` (§6 "Known hot spots" in particular).
+**Status: DRAFT — covers the comment sets (commits `343fe1ae` and `a6f14914`), the accompanying
+notes, and the design discussion of 2026-07-19 (Q1–Q5 resolved — §4; the `stateDirty` draft
+superseded by per-slot `HasData`/`HasEvent` — §2.1; data loss made in-band — §2.6). More comments
+are expected; no code changes are made until the full set is in.** Architecture background and the
+verified facts referenced here live in `08_internal_architecture.md` (§6 "Known hot spots" in
+particular).
 
-Numbering: C1–C12 are the inline `// COMMENT:` markers in commit order; N1–N7 are the notes from
-the accompanying message; S1 is the slot-reconstruction note.
+Numbering: C1–C12 are the inline `// COMMENT:` markers from `343fe1ae`; C13–C15 are the markers
+from `a6f14914`; N1–N7 are the notes from the accompanying message; S1 is the slot-reconstruction
+note.
 
 ---
 
@@ -193,6 +195,75 @@ only when something actually happened.
   messages must stop mixing the words. Doc/comment sweep plus a naming pass over the affected
   helpers.
 
+### C13 — `InputSlot` is too generic; rename (`a6f14914`)
+
+**Agree.** `InputSlot` sits directly in the `daq` namespace with the generic header path
+`opendaq/input_slot.h` — clash-prone on both axes. The rename is fully internal (plain C++ class,
+no RTGen interface, no bindings); verified scope: ~87 occurrences in 11 files (impl, header,
+tests, CMakeLists, docs).
+
+Preferred target: **`MultiReaderInput`** (over `MultiReaderInputSlot`) — the public API already
+speaks "input" (`addInput`, `setInputUsed`, `getInputStates`, `InputState`), and S1 moves consumer
+identity away from positional slots, so "slot" is the wrong mental model to bake into the name.
+Along with it: `IInputSlotListener` → `IMultiReaderInputListener`; files →
+`multi_reader_input.h/.cpp`, `test_multi_reader_input.cpp`.
+
+Decision point for Batch A: the same generic-name argument applies to the other five internals —
+`QueueReader`, `SynchronizationManager`, `ReadCoordinator`, `NotificationCoordinator`,
+`DataLossMonitor` (all in `daq`, all with generic headers like `synchronization_manager.h`).
+Options: (a) prefix them all (`MultiReaderSynchronizationManager` — unambiguous but long), or
+(b) move the multi reader internals into a nested `daq::multi_reader` namespace (repo precedent:
+`daq::details`, `daq::config_protocol`, `daq::modules`), keeping short class names, optionally
+with an `opendaq/multi_reader/` include subdirectory. Under (b) the comment's rename becomes
+`multi_reader::Input`. The plan recommends (b) as the generalized fix; either way C13 is
+satisfied.
+
+### C14 — remove the reference-domain compatibility checks (`a6f14914`)
+
+**Agree.** The check is peripheral to synchronization: it gates `buildCommonModel` but contributes
+nothing to the alignment math (epoch + resolution + tick arithmetic is what sync actually uses).
+It is also weak in its current form — it rejects exactly two narrow cases (two different *known*
+time protocols; distinct assigned ids with no known protocol to relate them) and only debug-logs
+everything else, which is false confidence rather than protection. And it sits at the wrong
+altitude per N4: whether two signals' reference domains can meaningfully be combined is topology
+knowledge that belongs to whoever connects the signals, not to the reader.
+
+Action (deletion only): drop `checkReferenceDomains`, `ReferenceDomainBin`, and
+`SyncSetupIssue::ReferenceDomainIncompatible`; delete the dedicated tests — verified: **43**
+`ReferenceDomain*` tests in `test_multi_reader.cpp` (lines ~2570–3700) plus
+`SyncManagerTest.ModelReferenceDomainIncompatible`.
+
+Behavior change to be aware of: the reader will align signals from different reference domains
+(e.g. different PTP domains) purely on epoch/resolution arithmetic. That is the stated intent
+("handled at a later stage"); when the capability returns, its natural home is a per-input
+`Incompatible` state fed by a dedicated validation step — or topology-level validation outside
+the reader — not a gate inside `buildCommonModel`.
+
+### C15 — `synchronize()` is hard to parse (`a6f14914`)
+
+**Agree on readability; the algorithm itself should stay.** The function is ~215 lines with four
+distinct concerns inlined: collect + convert first samples, the sync-distance guard,
+start-candidate selection (including the main-grid search), and advance-and-verify with the retry
+loop.
+
+Action (no behavioral change):
+
+- Extract the steps as private helpers, each with a plain-English doc comment:
+  `collectFirstSamples`, `checkSynchronizationDistance`, `pickStartCandidate` (owns the grid
+  search), `advanceAllInputs`. The body then reads as a short loop over named steps.
+- Rewrite the comments in plain language ("every input produces samples at regular tick spacing;
+  walk the main input's grid inside one aligned block looking for a tick every input hits
+  exactly; if none is exact, take the first tick where every input's offset is unambiguously
+  attributable — less than half a block; otherwise there is no common tick") and rename the terse
+  locals (`step` → `candidateTick`, `firstsCommon` → `firstSamplesInCommonDomain`, …).
+- Hoist the per-iteration vector allocations out of the retry loop (minor; the loop rarely
+  repeats).
+
+Optimization considered and rejected: replacing the bounded grid scan (≤ 1024 steps, ≤ one
+aligned block) with a generalized-CRT congruence solve — mathematically equivalent, measurably
+irrelevant at these bounds, and strictly harder to parse, which is the opposite of what the
+comment asks for.
+
 ### N1–N7 (message notes) and S1
 
 | Note | Disposition |
@@ -362,7 +433,7 @@ existing numeric values unchanged), which shows up in every reader's docs and in
 
 | Batch | Contents | Risk / notes |
 |---|---|---|
-| **A — construction & dead surface** | C8 single-ctor delegation, C9 source normalization, C3 facade-listener removal, C10 naming/doc pass, C4 rationale comment | mechanical; test sweep only |
+| **A — construction & dead surface** | C8 single-ctor delegation, C9 source normalization, C3 facade-listener removal, C10 naming/doc pass, C4 rationale comment, C13 `InputSlot` rename + internals-naming decision, C14 reference-domain check removal (43 + 1 tests deleted), C15 `synchronize()` readability pass | mechanical / deletion-only / naming; test sweep only |
 | **B — builder-only config** | C1/C2 removal, test migration to builder config, sum FB rebuild-on-property-write, spec + error-contract updates | small; touches 13 test sites + FB |
 | **C — status & state machine** | C5 compact states, C6 per-input states + removals, C7 status builder, C11 event-driven maintenance + fast read path, C12 unused-event surfacing + terminology, S1 stable slots | the substantive batch; large test triage (state-name assertions across `test_multi_reader.cpp`), FB adaptation, `IgnoreFaultyInputs` property; bindings regeneration afterwards |
 
