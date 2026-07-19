@@ -21,6 +21,9 @@
 #include <opendaq/multi_reader_status.h>
 #include <opendaq/event_packet_ptr.h>
 
+#include <utility>
+#include <vector>
+
 BEGIN_NAMESPACE_OPENDAQ
 
 template <class MainInterface, class ... Interfaces>
@@ -88,6 +91,17 @@ public:
                                    const StringPtr& stateMessage,
                                    const DictPtr<IString, IInteger>& inputStates);
 
+    /// Lazy constructor (multi reader read path). Holds a self-contained snapshot of the
+    /// per-input states (input id + InputState as int, in slot order) captured at read time and
+    /// boxes the IDict only on the first getInputStates() call - most reads never inspect it.
+    /// The snapshot is fully owned; the status never calls back into the reader.
+    explicit MultiReaderStatusImpl(const EventPacketPtr& mainDescriptor,
+                                   const DictPtr<IString, IEventPacket>& eventPackets,
+                                   const NumberPtr& offset,
+                                   ReadStatus readStatus,
+                                   const StringPtr& stateMessage,
+                                   std::vector<std::pair<StringPtr, Int>> inputStateSnapshot);
+
     ErrCode INTERFACE_FUNC getReadStatus(ReadStatus* status) override;
 
     ErrCode INTERFACE_FUNC getEventPackets(IDict** events) override;
@@ -104,7 +118,11 @@ private:
     DictPtr<IString, IEventPacket> eventPackets;
     ReadStatus readStatus;
     StringPtr stateMessage;
+    /// Boxed per-input states. Assigned eagerly by the dict constructor; left null by the lazy
+    /// constructor and built on demand from inputStateSnapshot on the first getInputStates().
     DictPtr<IString, IInteger> inputStates;
+    /// Lazy source for inputStates (empty when a dict was supplied directly).
+    std::vector<std::pair<StringPtr, Int>> inputStateSnapshot;
 };
 
 END_NAMESPACE_OPENDAQ

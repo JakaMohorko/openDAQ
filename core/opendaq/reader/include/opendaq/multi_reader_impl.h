@@ -209,10 +209,11 @@ private:
     MultiReaderStatusPtr readEventsLocked();
     MultiReaderStatusPtr createStatusLocked(const DictPtr<IString, IEventPacket>& eventPackets = nullptr,
                                             const NumberPtr& offset = nullptr);
-    /// Per-input states for the status (C6): keyed by input id, derived from the used/connected
-    /// flags, pending events and the current failure state's affected set. Optionally also fills
-    /// the fingerprint snapshot (same content, comparable cheaply).
-    DictPtr<IString, IInteger> inputStatesLocked(std::vector<std::pair<std::string, int>>* fingerprint = nullptr) const;
+    /// Per-input state snapshot for the status (C6), in slot order: input id + InputState as int,
+    /// derived from the used/connected flags, pending events and the current failure state's
+    /// affected set. This is the self-contained snapshot the status boxes lazily and the cache
+    /// fingerprint compares - no boxed dict is built on the read path.
+    void buildInputStateSnapshotLocked(std::vector<std::pair<StringPtr, Int>>& out) const;
     /// Descriptor-changed packet for the status: main value descriptor + common output domain
     /// descriptor (the domain of the status offset, spec section 8.2)
     EventPacketPtr mainDescriptorPacketLocked();
@@ -270,8 +271,9 @@ private:
         std::string message;
         std::vector<SizeT> affectedInputs;
         /// Snapshot of the per-input states (input id, InputState as int) in slot order -
-        /// they can move without a state change (e.g. an unused input gaining events)
-        std::vector<std::pair<std::string, int>> inputStates;
+        /// they can move without a state change (e.g. an unused input gaining events). The id is
+        /// held as a StringPtr (a refbump of the slot's cached id, no per-read allocation).
+        std::vector<std::pair<StringPtr, Int>> inputStates;
         std::int64_t offset{};
         // Identity only; safe because the cache is dropped on every model invalidation,
         // which every descriptor change triggers before a new descriptor can be adopted

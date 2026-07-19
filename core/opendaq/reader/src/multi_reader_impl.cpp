@@ -9,6 +9,7 @@
 #include <opendaq/multi_reader_impl.h>
 #include <opendaq/packet_factory.h>
 #include <opendaq/reader_errors.h>
+#include <opendaq/reader_status_impl.h>
 #include <opendaq/reader_utils.h>
 #include <opendaq/tags_private_ptr.h>
 
@@ -1115,8 +1116,11 @@ ReadStatus toReadStatus(ReaderState state, bool hasEvents)
 
 }  // namespace
 
-DictPtr<IString, IInteger> MultiReaderImpl::inputStatesLocked(std::vector<std::pair<std::string, int>>* fingerprint) const
+void MultiReaderImpl::buildInputStateSnapshotLocked(std::vector<std::pair<StringPtr, Int>>& out) const
 {
+    out.clear();
+    out.reserve(slots.size());
+
     // Failure states name their affected inputs; everything else is derived per slot
     InputState failureState = InputState::Ok;
     switch (state)
@@ -1134,7 +1138,6 @@ DictPtr<IString, IInteger> MultiReaderImpl::inputStatesLocked(std::vector<std::p
             break;
     }
 
-    auto result = Dict<IString, IInteger>();
     for (auto* slot : slots)
     {
         InputState inputState;
@@ -1162,12 +1165,9 @@ DictPtr<IString, IInteger> MultiReaderImpl::inputStatesLocked(std::vector<std::p
             inputState = InputState::Pending;
         }
 
-        const auto id = slot->getInputId();
-        result.set(id, static_cast<Int>(inputState));
-        if (fingerprint != nullptr)
-            fingerprint->emplace_back(id.toStdString(), static_cast<int>(inputState));
+        // getInputId() returns the slot's cached id, so this is a refbump - no per-read allocation
+        out.emplace_back(slot->getInputId(), static_cast<Int>(inputState));
     }
-    return result;
 }
 
 MultiReaderStatusPtr MultiReaderImpl::createStatusLocked(const DictPtr<IString, IEventPacket>& eventPackets,
@@ -1185,7 +1185,7 @@ MultiReaderStatusPtr MultiReaderImpl::createStatusLocked(const DictPtr<IString, 
     fingerprint.state = effectiveState;
     fingerprint.message = stateMessage;
     fingerprint.affectedInputs = stateAffectedInputs;
-    const auto inputStates = inputStatesLocked(&fingerprint.inputStates);
+    buildInputStateSnapshotLocked(fingerprint.inputStates);
     fingerprint.offset = offset.assigned() ? static_cast<std::int64_t>(offset.getIntValue()) : 0;
     fingerprint.mainValue = mainValueDescriptor.getObject();
     fingerprint.mainDomain = mainDomainDescriptor.getObject();
@@ -1193,14 +1193,17 @@ MultiReaderStatusPtr MultiReaderImpl::createStatusLocked(const DictPtr<IString, 
     if (!hasEvents && cachedStatus.assigned() && fingerprint == cachedStatusFingerprint)
         return cachedStatus;
 
-    auto status = MultiReaderStatusBuilder()
-                      .setReadStatus(toReadStatus(effectiveState, hasEvents))
-                      .setMainDescriptor(mainDescriptorPacketLocked())
-                      .setEventPackets(eventPackets)
-                      .setOffset(offset)
-                      .setStateMessage(String(stateMessage))
-                      .setInputStates(inputStates)
-                      .build();
+    // Construct directly (not via MultiReaderStatusBuilder): the read path hands the status a
+    // self-contained snapshot copy that it boxes into the IDict only if getInputStates() is
+    // called, so a steady read never builds the dict. The builder's eager-dict path stays for
+    // external callers.
+    MultiReaderStatusPtr status = createWithImplementation<IMultiReaderStatus, MultiReaderStatusImpl>(
+        mainDescriptorPacketLocked(),
+        eventPackets,
+        offset,
+        toReadStatus(effectiveState, hasEvents),
+        String(stateMessage),
+        fingerprint.inputStates);
     if (!hasEvents)
     {
         cachedStatus = status;
