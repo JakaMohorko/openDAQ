@@ -683,4 +683,20 @@ ErrCode TypedReadingUtils::readData(SampleType in,
                                });
 }
 
+TypedReadingUtils::ReadDataFn TypedReadingUtils::resolveReadData(SampleType in, SampleType out, bool isDomain)
+{
+    // Same validation and (input, output) selection as readData above, resolved once so callers
+    // can invoke the specialization per packet without re-dispatching. The default transform
+    // argument of detail::readData does not affect the function-pointer type.
+    return visitTwoSampleTypes(in,
+                               out,
+                               isDomain,
+                               [](auto inputTag, auto outputTag) -> ReadDataFn
+                               {
+                                   using InputT = typename decltype(inputTag)::Type;
+                                   using OutputT = typename decltype(outputTag)::Type;
+                                   return &detail::readData<InputT, OutputT>;
+                               });
+}
+
 END_NAMESPACE_OPENDAQ

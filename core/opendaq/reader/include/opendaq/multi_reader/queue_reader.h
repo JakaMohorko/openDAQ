@@ -291,11 +291,17 @@ private:
         ReadLayout domainLayout;
         DomainInfo domainInfo;
         FunctionPtr domainTransform = nullptr;
-        
+
         SampleType valueIn;
         SampleType valueOut;
         ReadLayout valueLayout;
         FunctionPtr valueTransform = nullptr;
+
+        // Copy/convert specializations resolved once per descriptor (parseValue/parseDomain), so
+        // the per-packet read is a single indirect call instead of a runtime double type-switch.
+        // Null until a compatible descriptor is parsed - the owner never reads an incompatible input.
+        TypedReadingUtils::ReadDataFn valueReadFn = nullptr;
+        TypedReadingUtils::ReadDataFn domainReadFn = nullptr;
     };
     TypedReadingContext typeCtx;
 

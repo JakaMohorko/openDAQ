@@ -60,6 +60,20 @@ public:
                             void** outputBuffer,
                             SizeT count,
                             const FunctionPtr transform = nullptr);
+
+    /// Concrete (input-type, output-type)-specialized copy/convert routine. Resolving the two
+    /// sample types once and caching this pointer replaces the per-packet double type-switch and
+    /// revalidation with a single indirect call.
+    using ReadDataFn = ErrCode (*)(const ReadLayout& readLayout,
+                                   void* inputBuffer,
+                                   SizeT offset,
+                                   void** outputBuffer,
+                                   SizeT toRead,
+                                   const FunctionPtr& transformFunction);
+
+    /// Resolve the specialization for (in, out) once (validating the pair, as readData does), so
+    /// the caller can call it per packet without re-dispatching. Throws if the pair is unsupported.
+    static ReadDataFn resolveReadData(SampleType in, SampleType out, bool isDomain);
 };
 
 END_NAMESPACE_OPENDAQ

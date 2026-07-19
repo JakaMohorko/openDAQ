@@ -594,15 +594,11 @@ AdvanceResult QueueReader::readNative(void* valueBuffer, void* domainBuffer, Siz
                     break;
             }
 
-            ErrCode errCode = TypedReadingUtils::readData(typeCtx.valueIn,
-                                                          typeCtx.valueOut,
-                                                          false,
-                                                          typeCtx.valueLayout,
-                                                          valueData,
-                                                          readingPosition,
-                                                          &valuePtr,
-                                                          toRead,
-                                                          typeCtx.valueTransform);
+            // Pre-resolved specialization (parseValueDescriptor); no per-packet type dispatch.
+            // The owner only reads compatible inputs, so the fn is always resolved here.
+            assert(typeCtx.valueReadFn && "value read fn resolved before any read");
+            ErrCode errCode = typeCtx.valueReadFn(
+                typeCtx.valueLayout, valueData, readingPosition, &valuePtr, toRead, typeCtx.valueTransform);
             if (!OPENDAQ_SUCCEEDED(errCode))
                 throwExceptionFromErrorCode(errCode, getErrorInfoMessage(errCode, true));
         }
@@ -613,15 +609,10 @@ AdvanceResult QueueReader::readNative(void* valueBuffer, void* domainBuffer, Siz
             if (!domainPacket.assigned())
                 DAQ_THROW_EXCEPTION(NotSupportedException, "Domain packet must be assigned.");
 
-            ErrCode errCode = TypedReadingUtils::readData(typeCtx.domainIn,
-                                                          typeCtx.domainOut,
-                                                          true,
-                                                          typeCtx.domainLayout,
-                                                          domainPacket.getData(),
-                                                          readingPosition,
-                                                          &domainPtr,
-                                                          toRead,
-                                                          typeCtx.domainTransform);
+            // Pre-resolved specialization (parseDomainDescriptor); no per-packet type dispatch.
+            assert(typeCtx.domainReadFn && "domain read fn resolved before any read");
+            ErrCode errCode = typeCtx.domainReadFn(
+                typeCtx.domainLayout, domainPacket.getData(), readingPosition, &domainPtr, toRead, typeCtx.domainTransform);
 
             if (!OPENDAQ_SUCCEEDED(errCode))
                 throwExceptionFromErrorCode(errCode, getErrorInfoMessage(errCode, true));
@@ -774,6 +765,9 @@ void QueueReader::parseDomainDescriptor()
 
     bool domainTypesConvertible = TypedReadingUtils::isSampleTypeConvertible(typeCtx.domainIn, typeCtx.domainOut, true);
     issues.set(QueueReaderIssue::DomainTypesNotConvertible, !domainTypesConvertible);
+
+    // Resolve the domain copy/convert specialization once (see parseValueDescriptor).
+    typeCtx.domainReadFn = domainTypesConvertible ? TypedReadingUtils::resolveReadData(typeCtx.domainIn, typeCtx.domainOut, true) : nullptr;
     // END Type Conversion
 
     // Resolution and origin
@@ -902,6 +896,10 @@ void QueueReader::parseValueDescriptor()
 
     bool valueTypesConvertible = TypedReadingUtils::isSampleTypeConvertible(typeCtx.valueIn, typeCtx.valueOut, false);
     issues.set(QueueReaderIssue::ValueTypesNotConvertible, !valueTypesConvertible);
+
+    // Resolve the copy/convert specialization once here (only when convertible - an incompatible
+    // input is never read), so readNative is a single indirect call per packet.
+    typeCtx.valueReadFn = valueTypesConvertible ? TypedReadingUtils::resolveReadData(typeCtx.valueIn, typeCtx.valueOut, false) : nullptr;
 }
 
 void QueueReader::parseCachedDescriptors()
