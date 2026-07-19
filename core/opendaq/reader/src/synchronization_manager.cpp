@@ -14,6 +14,8 @@ BEGIN_NAMESPACE_OPENDAQ
 namespace
 {
 
+// COMMENT: The reference domain compatibility checks should be removed and handled at a later stage.
+//          Currently it just pollutes the code and is not really useful.
 struct ReferenceDomainBin
 {
     StringPtr id;
@@ -285,6 +287,10 @@ const CommonModel& SynchronizationManager::getModel() const
     return model;
 }
 
+
+// COMMENT: The synchronization function is really hard to parse. The comments should use more plain english indicating what
+//          exactly is happening. The function should be re-checked if there are any possible optimizations/clarifications
+//          and whether it can somehow be simplified/shortened.
 SyncResult SynchronizationManager::synchronize(const std::vector<QueueReader*>& inputs, const std::vector<SizeT>& slotIndices)
 {
     if (!modelValid || inputs.empty() || inputs.size() != slotIndices.size())
