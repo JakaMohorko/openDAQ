@@ -689,6 +689,9 @@ void MultiReaderImpl::evaluateStateLocked()
         for (SizeT position = 0; position < inactiveReaders.size(); ++position)
         {
             const auto slotIndex = inactiveSlotIndices[position];
+            // Clear-then-drain (see step 3): clear before syncConnection so a concurrent
+            // lock-free arrival re-arms the flag instead of being stranded.
+            slots[slotIndex]->clearPacketPending();
             slots[slotIndex]->syncConnection();
             if (!slots[slotIndex]->isConnected())
             {
@@ -696,7 +699,6 @@ void MultiReaderImpl::evaluateStateLocked()
                 continue;
             }
 
-            slots[slotIndex]->clearPacketPending();
             const bool hasEvents = inactiveReaders[position]->hasPendingEvents();
             notificationCoordinator->setEvent(slotIndex, hasEvents);
             if (hasEvents)
@@ -748,6 +750,12 @@ void MultiReaderImpl::evaluateStateLocked()
         std::vector<SizeT> unconnected;
         for (const auto index : slotIndices)
         {
+            // Clear the arrival flag BEFORE syncConnection drains (clear-then-drain). The
+            // producer path is lock-free, so a packet enqueued after this clear re-arms the flag
+            // and is caught by the next pass; clearing AFTER the drain would instead wipe the
+            // flag of a packet enqueued in the drain->clear window without ever adopting it,
+            // stranding it on the connection (the availability-undercount race).
+            slots[index]->clearPacketPending();
             slots[index]->syncConnection();
             if (!slots[index]->isConnected())
                 unconnected.push_back(index);
@@ -785,7 +793,9 @@ void MultiReaderImpl::evaluateStateLocked()
         bool handshakeInFlight = false;
         for (SizeT position = 0; position < usedReaders.size(); ++position)
         {
-            slots[slotIndices[position]]->clearPacketPending();
+            // packetPending was already cleared before the step-3 drain (clear-then-drain);
+            // clearing again here would re-open the drain->clear race, so it is intentionally
+            // not cleared in this pass.
             const bool hasEvents = usedReaders[position]->hasPendingEvents();
             if (hasEvents)
                 eventInputs.push_back(slotIndices[position]);
