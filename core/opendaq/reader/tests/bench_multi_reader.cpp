@@ -398,6 +398,98 @@ void scenarioMicro()
     }
 }
 
+// Admin-free differential profile of the READER (send is excluded from every timed region), for
+// the four operating points the profiling task calls out. Splits the per-call cost into phases:
+//   profile_avail       - getAvailableCount()            : state-eval + availability (poll fixed cost)
+//   profile_statusbuild - read(nullptr,&0) minus avail   : status construction
+//   profile_read_call   - read(buf,&chunk) per call      : plan + commit + per-sample copy (consuming);
+//   profile_read_samp   - read(buf,&chunk) per sample    :   timed alone, backlog refilled OUTSIDE the
+//                                                            clock so packet send never counts
+//   profile_avail_event - getAvailableCount() with a leading descriptor event pending (event detection)
+// Running this on both branches attributes the dev-vs-main crossover to a specific phase.
+void scenarioProfile()
+{
+    struct Cfg { const char* name; SizeT inputs; SizeT packet; };
+    const std::vector<Cfg> cfgs = {
+        {"standard_4x2048", 4,  2048},
+        {"small_4x8",       4,  8},
+        {"many_16x1024",    16, 1024},
+        {"many_64x1024",    64, 1024},
+    };
+
+    for (const auto& c : cfgs)
+    {
+        Bench b;
+        b.build(c.inputs, SampleType::Float64, {1});
+        for (int i = 0; i < 400; ++i)
+            b.sendAll(c.packet);
+        b.reader.getAvailableCount();  // adopt + synchronize once
+
+        const SizeT K = 100000;
+        auto t0 = Clock::now();
+        volatile SizeT sink = 0;
+        for (SizeT i = 0; i < K; ++i)
+            sink += b.reader.getAvailableCount();
+        const double avail = std::chrono::duration<double, std::nano>(Clock::now() - t0).count() / K;
+        emit("profile_avail", c.name, "ns_per_call", avail);
+
+        t0 = Clock::now();
+        for (SizeT i = 0; i < K; ++i)
+        {
+            SizeT zero = 0;
+            b.reader.read(nullptr, &zero);
+        }
+        const double status0 = std::chrono::duration<double, std::nano>(Clock::now() - t0).count() / K;
+        emit("profile_statusbuild", c.name, "ns_per_call", status0 - avail);
+
+        // Consuming read cost, send excluded: read a fixed chunk, refill the backlog OUTSIDE the clock.
+        const SizeT chunk = 256;
+        std::vector<std::vector<double>> bufs(c.inputs, std::vector<double>(chunk));
+        std::vector<void*> ptrs(c.inputs);
+        for (SizeT i = 0; i < c.inputs; ++i)
+            ptrs[i] = bufs[i].data();
+
+        double readNs = 0.0;
+        SizeT reads = 0, samples = 0;
+        for (SizeT rep = 0; rep < 4000; ++rep)
+        {
+            if (b.reader.getAvailableCount() < chunk)
+                for (int i = 0; i < 40; ++i)
+                    b.sendAll(c.packet);
+            SizeT cnt = chunk;
+            const auto r0 = Clock::now();
+            b.reader.read(ptrs.data(), &cnt);
+            readNs += std::chrono::duration<double, std::nano>(Clock::now() - r0).count();
+            ++reads;
+            samples += cnt;
+        }
+        emit("profile_read_call", c.name, "ns_per_call", reads ? readNs / reads : 0.0);
+        emit("profile_read_samp", c.name, "ns_per_common_sample", samples ? readNs / samples : 0.0);
+        (void) sink;
+    }
+
+    // Event-detection overhead in the poll path: a leading descriptor event pending on a used input
+    // makes getAvailableCount hit the leading-event zero-guard on every (non-consuming) call.
+    {
+        Bench b;
+        b.build(4, SampleType::Float64, {1});
+        for (int i = 0; i < 50; ++i)
+            b.sendAll(1024);
+        b.reader.getAvailableCount();
+        b.signals[0].setDescriptor(valueDescriptor(SampleType::Float64));  // event stays leading/pending
+        b.sendAll(1024);
+
+        const SizeT K = 100000;
+        const auto t0 = Clock::now();
+        volatile SizeT sink = 0;
+        for (SizeT i = 0; i < K; ++i)
+            sink += b.reader.getAvailableCount();
+        const double availEvent = std::chrono::duration<double, std::nano>(Clock::now() - t0).count() / K;
+        emit("profile_avail_event", "4x1024", "ns_per_call", availEvent);
+        (void) sink;
+    }
+}
+
 }  // namespace
 
 int main(int argc, char** argv)
@@ -414,6 +506,7 @@ int main(int argc, char** argv)
     if (only.empty() || only == "resync")       scenarioResync();
     if (only.empty() || only == "convert")      scenarioConvert();
     if (only.empty() || only == "micro")        scenarioMicro();
+    if (only == "profile")                      scenarioProfile();  // opt-in only (dev-vs-main phase attribution)
 
     return 0;
 }
