@@ -1630,19 +1630,38 @@ ErrCode MultiReaderImpl::getAvailableCount(SizeT* count)
     if (invalid)
         return OPENDAQ_SUCCESS;
 
-    refreshDataPlaneLocked(true);
+    // The query does not run the state ladder for events (escalateOnEvent = false); it drains,
+    // maintains the callback bits, and lets the read path surface any event.
+    refreshDataPlaneLocked(false);
     if (state == ReaderState::Synchronized)
     {
-        // The refresh above published availability on the fast path; reuse it rather than
-        // walking every input again. Fall back to a direct count only when it is not valid.
-        if (dataPlaneAvailableValid)
+        // A leading pending event on any used input blocks a synchronized data read until it is
+        // handled, and getAvailableSamplesUntilEvent cannot see it (it lives in a separate queue),
+        // so report nothing available. Buried events need no guard here - the count naturally
+        // stops at them.
+        bool leadingEvent = false;
+        for (auto* slot : slots)
         {
-            *count = ReadCoordinator::alignAvailable(dataPlaneAvailableCommon, syncManager->getModel(), minReadCount);
+            if (slot->isUsed() && slot->getQueueReader().hasPendingEvents())
+            {
+                leadingEvent = true;
+                break;
+            }
         }
-        else
+
+        if (!leadingEvent)
         {
-            collectUsedReadersInto(availScratchUsed, availScratchSlotIndices);
-            *count = readCoordinator->getAvailableCount(availScratchUsed, syncManager->getModel(), minReadCount);
+            // The refresh above published availability on the fast path; reuse it rather than
+            // walking every input again. Fall back to a direct count only when it is not valid.
+            if (dataPlaneAvailableValid)
+            {
+                *count = ReadCoordinator::alignAvailable(dataPlaneAvailableCommon, syncManager->getModel(), minReadCount);
+            }
+            else
+            {
+                collectUsedReadersInto(availScratchUsed, availScratchSlotIndices);
+                *count = readCoordinator->getAvailableCount(availScratchUsed, syncManager->getModel(), minReadCount);
+            }
         }
     }
     return OPENDAQ_SUCCESS;
