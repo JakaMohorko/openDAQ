@@ -25,11 +25,23 @@ BEGIN_NAMESPACE_OPENDAQ
  * @{
  */
 
+/*!
+ * @brief Outcome of a read call. `Ok`, `Event`, `Fail` and `Unknown` apply to every reader;
+ * `Preparing`, `Inactive` and `InputsFailed` are reported by the multi reader (values are
+ * appended so existing numeric values are stable).
+ *
+ * `Event` is transient - it describes what this read encountered, and any data preceding the
+ * event was returned in the same call. The remaining values are persistent snapshots of the
+ * reader's condition at the time of the read.
+ */
 enum class ReadStatus : EnumType
 {
-    Ok = 0,
-    Event,
-    Fail,
+    Ok = 0,        ///< Data delivered (or deliverable) normally
+    Event,         ///< This read hit an event; consult the status details, react, read again
+    Fail,          ///< Unrecoverable - recreate the reader
+    Preparing,     ///< Nothing is wrong, but no data should be expected yet (waiting for connections/descriptors/data/sync)
+    Inactive,      ///< Deliberately deactivated (setActive(false)); no data until reactivated
+    InputsFailed,  ///< One or more used inputs failed - persistent until acted on (see per-input states)
     Unknown = 0xFFFF
 };
 

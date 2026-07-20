@@ -2,6 +2,8 @@
 #include <coretypes/validation.h>
 #include <coretypes/common.h>
 
+#include <algorithm>
+
 BEGIN_NAMESPACE_OPENDAQ
 
 template <class MainInterface, class ... Interfaces>
@@ -87,31 +89,82 @@ ErrCode TailReaderStatusImpl::getSufficientHistory(Bool* status)
     return OPENDAQ_SUCCESS;
 }
 
+namespace
+{
+
+// The compatibility factory carries no explicit read status - derive the closest one from
+// what it does carry, so getValid() keeps reporting exactly what the factory was given.
+ReadStatus deriveCompatReadStatus(const DictPtr<IString, IEventPacket>& eventPackets, Bool valid)
+{
+    if (!valid)
+        return ReadStatus::Fail;
+    if (eventPackets.assigned() && eventPackets.getCount() > 0)
+        return ReadStatus::Event;
+    return ReadStatus::Ok;
+}
+
+}  // namespace
+
 MultiReaderStatusImpl::MultiReaderStatusImpl(const EventPacketPtr& mainDescriptor, const DictPtr<IString, IEventPacket>& eventPackets, Bool valid, const NumberPtr& offset)
-    : Super(mainDescriptor, valid, offset)
+    // Explicit dict type disambiguates the delegated constructor from the snapshot overload
+    : MultiReaderStatusImpl(mainDescriptor,
+                            eventPackets,
+                            offset,
+                            deriveCompatReadStatus(eventPackets, valid),
+                            String(""),
+                            DictPtr<IString, IInteger>())
+{
+}
+
+MultiReaderStatusImpl::MultiReaderStatusImpl(const EventPacketPtr& mainDescriptor,
+                                             const DictPtr<IString, IEventPacket>& eventPackets,
+                                             const NumberPtr& offset,
+                                             ReadStatus readStatus,
+                                             const StringPtr& stateMessage,
+                                             const DictPtr<IString, IInteger>& inputStates)
+    // Only Fail is unrecoverable, so only Fail reads as invalid (review decision C5/Q1)
+    : Super(mainDescriptor, readStatus != ReadStatus::Fail, offset)
     , eventPackets(eventPackets.assigned() ? eventPackets : Dict<IString, IEventPacket>())
+    , readStatus(readStatus)
+    , stateMessage(stateMessage.assigned() ? stateMessage : String(""))
+    , inputStates(inputStates.assigned() ? inputStates : Dict<IString, IInteger>())
+{
+}
+
+MultiReaderStatusImpl::MultiReaderStatusImpl(const EventPacketPtr& mainDescriptor,
+                                             const DictPtr<IString, IEventPacket>& eventPackets,
+                                             const NumberPtr& offset,
+                                             ReadStatus readStatus,
+                                             const StringPtr& stateMessage,
+                                             InputStateSnapshotPtr inputStateSnapshot)
+    // Only Fail is unrecoverable, so only Fail reads as invalid (review decision C5/Q1)
+    : Super(mainDescriptor, readStatus != ReadStatus::Fail, offset)
+    , eventPackets(eventPackets.assigned() ? eventPackets : Dict<IString, IEventPacket>())
+    , readStatus(readStatus)
+    , stateMessage(stateMessage.assigned() ? stateMessage : String(""))
+    // inputStates left null - boxed lazily from the shared snapshot on the first getInputStates()
+    , inputStateSnapshot(std::move(inputStateSnapshot))
 {
 }
 
 ErrCode MultiReaderStatusImpl::getReadStatus(ReadStatus* status)
 {
     OPENDAQ_PARAM_NOT_NULL(status);
-    Bool valid;
-    Super::getValid(&valid);
-
-    if (valid && (eventPackets.getCount() == 0))
-        *status = ReadStatus::Ok;
-    else if (eventPackets.getCount())
-        *status = ReadStatus::Event;
-    else
-        *status = ReadStatus::Fail;
-
+    *status = readStatus;
     return OPENDAQ_SUCCESS;
 }
 
-ErrCode MultiReaderStatusImpl::getEventPacket(IEventPacket** packet) 
+ErrCode MultiReaderStatusImpl::getEventPacket(IEventPacket** packet)
 {
-    return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_NOTIMPLEMENTED);
+    OPENDAQ_PARAM_NOT_NULL(packet);
+
+    // Compatibility accessor: the first entry of the event dictionary, so the accessor
+    // still reports an event whenever getReadStatus() does
+    if (eventPackets.getCount() > 0)
+        *packet = eventPackets.getValueList()[0].asPtr<IEventPacket>().addRefAndReturn();
+    else
+        *packet = nullptr;
+    return OPENDAQ_SUCCESS;
 }
 
 ErrCode MultiReaderStatusImpl::getMainDescriptor(IEventPacket** descriptor)
@@ -123,6 +176,30 @@ ErrCode MultiReaderStatusImpl::getEventPackets(IDict** events)
 {
     OPENDAQ_PARAM_NOT_NULL(events);
     *events = eventPackets.addRefAndReturn();
+    return OPENDAQ_SUCCESS;
+}
+
+ErrCode MultiReaderStatusImpl::getInputStates(IDict** inputStates)
+{
+    OPENDAQ_PARAM_NOT_NULL(inputStates);
+    // Lazy path: box the shared snapshot into the dict on first access and reuse it. The dict
+    // constructor assigns this->inputStates eagerly, so this only ever runs for the read path.
+    if (!this->inputStates.assigned())
+    {
+        auto states = Dict<IString, IInteger>();
+        if (inputStateSnapshot)
+            for (const auto& [id, inputState] : *inputStateSnapshot)
+                states.set(id, inputState);
+        this->inputStates = states;
+    }
+    *inputStates = this->inputStates.addRefAndReturn();
+    return OPENDAQ_SUCCESS;
+}
+
+ErrCode MultiReaderStatusImpl::getStateMessage(IString** message)
+{
+    OPENDAQ_PARAM_NOT_NULL(message);
+    *message = stateMessage.addRefAndReturn();
     return OPENDAQ_SUCCESS;
 }
 

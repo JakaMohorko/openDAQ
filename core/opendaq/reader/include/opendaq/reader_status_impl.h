@@ -21,7 +21,16 @@
 #include <opendaq/multi_reader_status.h>
 #include <opendaq/event_packet_ptr.h>
 
+#include <memory>
+#include <utility>
+#include <vector>
+
 BEGIN_NAMESPACE_OPENDAQ
+
+/// Self-contained per-input state snapshot (input id + InputState as int, in slot order). Held
+/// by shared_ptr so the multi reader's status cache and every status it hands out can share the
+/// same snapshot - an offset-only restamp of a cached status is then O(1), with no copy.
+using InputStateSnapshotPtr = std::shared_ptr<const std::vector<std::pair<StringPtr, Int>>>;
 
 template <class MainInterface, class ... Interfaces>
 class GenericReaderStatusImpl : public ImplementationOf<MainInterface, Interfaces...>
@@ -74,7 +83,30 @@ class MultiReaderStatusImpl final : public GenericReaderStatusImpl<IMultiReaderS
 {
 public:
     using Super = GenericReaderStatusImpl<IMultiReaderStatus>;
+
+    /// Compatibility constructor: the read status is derived from the events and the valid flag.
     explicit MultiReaderStatusImpl(const EventPacketPtr& mainDescriptor, const DictPtr<IString, IEventPacket>& eventPackets, Bool valid, const NumberPtr& offset);
+
+    /// Full constructor (creation goes through MultiReaderStatusBuilder). The validity is
+    /// derived from the read status: false only for ReadStatus::Fail - every other condition
+    /// is recoverable in the same reader instance.
+    explicit MultiReaderStatusImpl(const EventPacketPtr& mainDescriptor,
+                                   const DictPtr<IString, IEventPacket>& eventPackets,
+                                   const NumberPtr& offset,
+                                   ReadStatus readStatus,
+                                   const StringPtr& stateMessage,
+                                   const DictPtr<IString, IInteger>& inputStates);
+
+    /// Lazy constructor (multi reader read path). Holds a shared self-contained snapshot of the
+    /// per-input states (input id + InputState as int, in slot order) captured at read time and
+    /// boxes the IDict only on the first getInputStates() call - most reads never inspect it.
+    /// The snapshot is shared, not owned; the status never calls back into the reader.
+    explicit MultiReaderStatusImpl(const EventPacketPtr& mainDescriptor,
+                                   const DictPtr<IString, IEventPacket>& eventPackets,
+                                   const NumberPtr& offset,
+                                   ReadStatus readStatus,
+                                   const StringPtr& stateMessage,
+                                   InputStateSnapshotPtr inputStateSnapshot);
 
     ErrCode INTERFACE_FUNC getReadStatus(ReadStatus* status) override;
 
@@ -84,8 +116,19 @@ public:
 
     ErrCode INTERFACE_FUNC getMainDescriptor(IEventPacket** descriptor) override;
 
+    ErrCode INTERFACE_FUNC getInputStates(IDict** inputStates) override;
+
+    ErrCode INTERFACE_FUNC getStateMessage(IString** message) override;
+
 private:
     DictPtr<IString, IEventPacket> eventPackets;
+    ReadStatus readStatus;
+    StringPtr stateMessage;
+    /// Boxed per-input states. Assigned eagerly by the dict constructor; left null by the lazy
+    /// constructor and built on demand from inputStateSnapshot on the first getInputStates().
+    DictPtr<IString, IInteger> inputStates;
+    /// Lazy source for inputStates (null when a dict was supplied directly).
+    InputStateSnapshotPtr inputStateSnapshot;
 };
 
 END_NAMESPACE_OPENDAQ

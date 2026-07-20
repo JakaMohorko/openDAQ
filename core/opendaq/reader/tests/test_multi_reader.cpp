@@ -1,12 +1,11 @@
 #include <opendaq/custom_log.h>
 #include <opendaq/event_packet_params.h>
 #include <opendaq/input_port_factory.h>
+#include <opendaq/multi_reader_impl.h>
 #include <opendaq/reader_config_ptr.h>
-#include <opendaq/reader_domain_info.h>
 #include <opendaq/reader_exceptions.h>
 #include <opendaq/reader_factory.h>
 #include <opendaq/time_reader.h>
-#include <opendaq/typed_reader.h>
 #include "reader_common.h"
 
 #include <gmock/gmock-matchers.h>
@@ -423,7 +422,11 @@ TEST_F(MultiReaderTest, IsSynchronized)
     sig1.createAndSendPacket(2);
     sig2.createAndSendPacket(2);
 
-    ASSERT_FALSE(multi.getIsSynchronized());
+    // Behavior change (spec 6.2): the reader synchronizes eagerly when data arrives - the
+    // coalesced evaluation runs on the scheduler, so wait for it instead of calling an
+    // accessor that would evaluate lazily (getIsSynchronized only inspects the state)
+    context.getScheduler().waitAll();
+    ASSERT_TRUE(multi.getIsSynchronized());
 
     available = multi.getAvailableCount();
     ASSERT_EQ(available, 446u);
@@ -1365,8 +1368,10 @@ TEST_F(MultiReaderTest, EpochChangedBeforeFirstData)
     ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
     ASSERT_TRUE(status.getEventPackets().assigned());
     ASSERT_EQ(status.getEventPackets().getCount(), 1u);
-    ASSERT_TRUE(status.getEventPackets().hasKey("/multi_reader_signal_sig1"));
-    ASSERT_NE(status.getEventPackets().get("/multi_reader_signal_sig1"), nullptr);
+    // Event dict is keyed by the input id (C6): for a signal-built reader that is the signal's
+    // global id, not the synthetic internal port's - the same id getInputStates/setInputUsed use
+    ASSERT_TRUE(status.getEventPackets().hasKey("/sig1"));
+    ASSERT_NE(status.getEventPackets().get("/sig1"), nullptr);
 
     available = multi.getAvailableCount();
     ASSERT_EQ(available, 458u);
@@ -1442,7 +1447,9 @@ TEST_F(MultiReaderTest, Signal2Invalidated)
     ASSERT_EQ(count, SIG2_PACKET_SIZE);
 
     auto status = multi.readWithDomain(valuesPerSignal, domainPerSignal, &count);
-    ASSERT_FALSE(status.getValid());
+    // The read runs into the descriptor-change event; validity stays true - only
+    // ReadStatus::Fail is unrecoverable (C5/Q1)
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
 
     printData(SAMPLES, time, values);
     roundData<std::chrono::microseconds>(SAMPLES, time);
@@ -1587,8 +1594,14 @@ TEST_F(MultiReaderTest, SampleRateChanged)
     multi.readWithDomain(valuesPerSignal, domainPerSignal, &count);
     ASSERT_EQ(count, 632u);
 
+    // Behavior change (spec 6.1/8.5): a sample-rate change is a recoverable event, not a
+    // sticky invalidation - the next read returns the descriptor-change event and the
+    // reader resynchronizes with the new dividers
+    count = SAMPLES;
     auto status = multi.readWithDomain(valuesPerSignal, domainPerSignal, &count);
-    ASSERT_FALSE(status.getValid());
+    ASSERT_TRUE(status.getValid());
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+    ASSERT_EQ(count, 0u);
 
     printData(SAMPLES, time, values);
     roundData<std::chrono::microseconds>(SAMPLES, time);
@@ -1597,90 +1610,8 @@ TEST_F(MultiReaderTest, SampleRateChanged)
     ASSERT_THAT(time[1], ElementsAreArray(time[0]));
 }
 
-TEST_F(MultiReaderTest, ReuseReader)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    constexpr const auto SIG2_PACKET_SIZE = 843u;
-
-    // prevent vector from re-allocating, so we have "stable" pointers
-    readSignals.reserve(3);
-
-    auto& sig0 = addSignal(123, 523, createDomainSignal("2022-09-27T00:02:03+00:00"));
-    auto& sig1 = addSignal(134, 732, createDomainSignal("2022-09-27T00:02:04+00:00"));
-    auto& sig2 = addSignal(111, SIG2_PACKET_SIZE, createDomainSignal("2022-09-27T00:02:04.123+00:00"));
-
-    std::array<ComplexFloat64, NUM_SIGNALS> oldReaderNextValues{};
-
-    auto multi = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    {
-        TimeReader timeReader(multi);
-
-        {
-            SizeT count{0};
-            auto status = multi.read(nullptr, &count);
-            ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
-        }
-
-        auto available = multi.getAvailableCount();
-        ASSERT_EQ(available, 0u);
-
-        sig0.createAndSendPacket(0);
-        sig1.createAndSendPacket(0);
-        sig2.createAndSendPacket(0);
-
-        sig2.setValueDescriptor(setupDescriptor(SampleType::ComplexFloat64));
-
-        sig0.createAndSendPacket(1);
-        sig1.createAndSendPacket(1);
-        sig2.createAndSendPacket<ComplexFloat64>(1);
-
-        sig0.createAndSendPacket(2);
-        sig1.createAndSendPacket(2);
-        sig2.createAndSendPacket<ComplexFloat64>(2);
-
-        sig0.createAndSendPacket(3);
-
-        available = multi.getAvailableCount();
-        // 843 - 0 needed to synchronize until next descriptor
-        ASSERT_EQ(available, SIG2_PACKET_SIZE);
-
-        // Read over the signal-descriptor change
-        constexpr const SizeT SAMPLES = SIG2_PACKET_SIZE + 1;
-
-        std::array<double[SAMPLES], NUM_SIGNALS> values{};
-        std::array<std::chrono::system_clock::time_point[SAMPLES], NUM_SIGNALS> time{};
-
-        void* valuesPerSignal[NUM_SIGNALS]{values[0], values[1], values[2]};
-        void* domainPerSignal[NUM_SIGNALS]{time[0], time[1], time[2]};
-
-        SizeT count{SAMPLES};
-        multi.readWithDomain(valuesPerSignal, domainPerSignal, &count);
-        ASSERT_EQ(count, SIG2_PACKET_SIZE);
-
-        auto status = multi.readWithDomain(valuesPerSignal, domainPerSignal, &count);
-        ASSERT_FALSE(status.getValid());
-
-        roundData<std::chrono::microseconds>(SAMPLES, time);
-        ASSERT_THAT(time[1], ElementsAreArray(time[0]));
-        ASSERT_THAT(time[2], ElementsAreArray(time[0]));
-
-        for (int i = 0; i < NUM_SIGNALS; ++i)
-        {
-            oldReaderNextValues[i] = values[i][SIG2_PACKET_SIZE - 1] + 1;
-        }
-    }
-
-    auto reused = MultiReaderFromExisting<ComplexFloat64>(multi);
-
-    std::array<ComplexFloat64, NUM_SIGNALS> values{};
-    void* valuesPerSignal[NUM_SIGNALS]{&values[0], &values[1], &values[2]};
-
-    SizeT samples{1u};
-    reused.read(valuesPerSignal, &samples);
-
-    ASSERT_EQ(samples, 1u);
-    ASSERT_THAT(values, ElementsAreArray(oldReaderNextValues));
-}
+// The ReuseReader test was deleted (test plan Part C): MultiReaderFromExisting is removed by
+// the rework (spec 8.4) - recovery happens in the same reader instance via the state machine.
 
 TEST_F(MultiReaderTest, MultiReaderWithInputPort)
 {
@@ -2492,16 +2423,17 @@ TEST_F(MultiReaderTest, ReadWhenOnePortIsNotConnected)
     std::array<double[SAMPLES], NUM_SIGNALS> values{};
     void* valuesPerSignal[NUM_SIGNALS]{values[0], values[1], values[2]};
 
-    // check that we read 0 samples as one of the ports is not connected
+    // check that we read 0 samples as one of the ports is not connected (Preparing: nothing
+    // is wrong, but no data can be expected until the port connects)
     SizeT count{SAMPLES};
     MultiReaderStatusPtr status = multi.read(valuesPerSignal, &count);
-    ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Preparing);
     ASSERT_EQ(count, 0u);
 
     // check reading with timeout
     count = SAMPLES;
     status = multi.read(valuesPerSignal, &count, 100u);
-    ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Preparing);
     ASSERT_EQ(count, 0u);
 
     // connect signal to the port
@@ -2514,10 +2446,12 @@ TEST_F(MultiReaderTest, ReadWhenOnePortIsNotConnected)
     ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
     ASSERT_EQ(status.getEventPackets().getCount(), 3u);
 
+    // Behavior change (spec 6.2/8.5): data queued before/alongside the events is preserved
+    // and readable right after the events are consumed - the old reader silently dropped it
     count = SAMPLES;
     status = multi.read(valuesPerSignal, &count);
     ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
-    ASSERT_EQ(count, 0u);
+    ASSERT_EQ(count, 10u);
 
     count = SAMPLES;
     sig0.createAndSendPacket(0);
@@ -2638,1368 +2572,6 @@ TEST_F_UNSTABLE_SKIPPED(MultiReaderTest, ReconnectWhileReading)
     ASSERT_TRUE(status.getEventPackets().hasKey("/readsig0"));
 }
 
-TEST_F(MultiReaderTest, ReferenceDomainIdEquality01)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(0, 113, createDomainSignal("1993"));
-    addSignal(0, 113, createDomainSignal("1993"));
-    addSignal(0, 133, createDomainSignal("1993"));
-
-    ASSERT_NO_THROW(MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build());
-
-#if !defined(_DEBUG)
-    return;
-#endif
-
-    auto received = privateSink.waitForMessage(9001);
-    ASSERT_TRUE(received);
-    auto str = privateSink.getLastMessage();
-    ASSERT_EQ(str, R"(Domain signal "time" Reference Domain Info is not assigned.)");
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdEquality02)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId("A").build()));
-    addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId("A").build()));
-    addSignal(0, 133, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId("A").build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_TRUE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdEquality03)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId(nullptr).build()));
-    addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId("A").build()));
-    addSignal(0, 133, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId("A").build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_TRUE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdEquality04)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId("A").build()));
-    addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId(nullptr).build()));
-    addSignal(0, 133, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId("A").build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_TRUE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdEquality05)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId("A").build()));
-    addSignal(0, 133, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId("A").build()));
-    addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId(nullptr).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_TRUE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdInequality01)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId("B").build()));
-    addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId("A").build()));
-    addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId("A").build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdInequality02)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId("A").build()));
-    addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId("B").build()));
-    addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId("A").build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdInequality03)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId("A").build()));
-    addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId("A").build()));
-    addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId("B").build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdInequality04)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId("A").build()));
-    addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId(nullptr).build()));
-    addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId("B").build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdInequality05)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId("B").build()));
-    addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId("A").build()));
-    addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId(nullptr).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdInequality06)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId(nullptr).build()));
-    addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId("B").build()));
-    addSignal(0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceDomainId("A").build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolEquality01)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(
-        0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-    addSignal(
-        0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-    addSignal(
-        0, 113, createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-
-    ASSERT_NO_THROW(MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build());
-
-#if !defined(_DEBUG)
-    return;
-#endif
-
-    auto received = privateSink.waitForMessage(9001);
-    ASSERT_TRUE(received);
-    auto str = privateSink.getLastMessage();
-    ASSERT_EQ(str, R"(Domain signal "time" Reference Domain ID not assigned.)");
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolEquality02)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993", nullptr, nullptr, ReferenceDomainInfoBuilder().setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    ASSERT_NO_THROW(MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build());
-
-#if !defined(_DEBUG)
-    return;
-#endif
-
-    auto received = privateSink.waitForMessage(9001);
-    ASSERT_TRUE(received);
-    auto str = privateSink.getLastMessage();
-    ASSERT_EQ(str, R"(Domain signal "time" Reference Time Source is Unknown.)");
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolEquality03)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_TRUE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolEquality04)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_TRUE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality01)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality02)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality03)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality04)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality05)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality06)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality07)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_TRUE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality08)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_TRUE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality09)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality10)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality11)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId(nullptr).setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_TRUE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality12)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId(nullptr).setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality13)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId(nullptr).setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_TRUE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdInequalityReferenceTimeProtocolInequality01)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdInequalityReferenceTimeProtocolInequality02)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_TRUE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdInequalityReferenceTimeProtocolInequality03)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdInequalityReferenceTimeProtocolInequality04)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_TRUE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdInequalityReferenceTimeProtocolInequality05)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId(nullptr).setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdInequalityReferenceTimeProtocolInequality06)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId(nullptr).setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdInequalityReferenceTimeProtocolInequality07)
-{
-    constexpr const auto NUM_SIGNALS = 3;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId(nullptr).setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdInequalityReferenceTimeProtocolInequality08)
-{
-    constexpr const auto NUM_SIGNALS = 4;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_TRUE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdInequalityReferenceTimeProtocolInequality09)
-{
-    constexpr const auto NUM_SIGNALS = 4;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_TRUE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdInequalityReferenceTimeProtocolInequality10)
-{
-    constexpr const auto NUM_SIGNALS = 6;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_TRUE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdInequalityReferenceTimeProtocolInequality11)
-{
-    constexpr const auto NUM_SIGNALS = 6;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_TRUE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdInequalityReferenceTimeProtocolInequality12)
-{
-    constexpr const auto NUM_SIGNALS = 12;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId(nullptr).setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId(nullptr).setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId(nullptr).setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_TRUE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdInequalityReferenceTimeProtocolInequality13)
-{
-    constexpr const auto NUM_SIGNALS = 12;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId(nullptr).setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId(nullptr).setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId(nullptr).setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_TRUE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdInequalityReferenceTimeProtocolInequality14)
-{
-    constexpr const auto NUM_SIGNALS = 12;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId(nullptr).setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId(nullptr).setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("B").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId(nullptr).setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
-}
-
-TEST_F(MultiReaderTest, ReferenceDomainIdEqualityReferenceTimeProtocolInequality15)
-{
-    constexpr const auto NUM_SIGNALS = 5;
-    readSignals.reserve(NUM_SIGNALS);
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Tai).build()));
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    addSignal(
-        0,
-        113,
-        createDomainSignal("1993",
-                           nullptr,
-                           nullptr,
-                           ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Unknown).build()));
-
-    addSignal(0,
-              113,
-              createDomainSignal("1993",
-                                 nullptr,
-                                 nullptr,
-                                 ReferenceDomainInfoBuilder().setReferenceDomainId("A").setReferenceTimeProtocol(TimeProtocol::Gps).build()));
-
-    ReaderConfigPtr reader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
-    ASSERT_FALSE(reader.getIsValid());
-}
-
 class MockSignal
 {
 public:
@@ -4094,12 +2666,12 @@ TEST_F(MultiReaderTest, MultiReaderActive)
 
     multiReader.setActive(false);
 
-    // send packets to inactive reader
+    // send packets to inactive reader: the deliberate deactivation is reported as Inactive
     sendPackets(packetIndex++);  // 1
     count = NUM_SAMPLES;
     status = multiReader.readWithDomain(valuesPerSignal, domainValuesPerSignal, &count);
 
-    ASSERT_EQ(status.getReadStatus(), daq::ReadStatus::Ok);
+    ASSERT_EQ(status.getReadStatus(), daq::ReadStatus::Inactive);
     ASSERT_EQ(count, 0u);
 
     // send packets to inactive reader
@@ -4107,7 +2679,7 @@ TEST_F(MultiReaderTest, MultiReaderActive)
     count = NUM_SAMPLES;
     status = multiReader.readWithDomain(valuesPerSignal, domainValuesPerSignal, &count);
 
-    ASSERT_EQ(status.getReadStatus(), daq::ReadStatus::Ok);
+    ASSERT_EQ(status.getReadStatus(), daq::ReadStatus::Inactive);
     ASSERT_EQ(count, 0u);
 
     // send event packet
@@ -4140,75 +2712,8 @@ TEST_F(MultiReaderTest, MultiReaderActive)
     ASSERT_EQ(count, NUM_SAMPLES);
 }
 
-TEST_F(MultiReaderTest, MultiReaderActiveCopyInactive)
-{
-    using namespace std::chrono_literals;
-
-    constexpr auto NUM_SIGNALS = SizeT{3};
-    constexpr auto NUM_SAMPLES = SizeT{10};
-    double values[NUM_SIGNALS][NUM_SAMPLES] = {};
-    double* valuesPerSignal[NUM_SIGNALS] = {values[0], values[1], values[2]};
-    int64_t domainValues[NUM_SIGNALS][NUM_SAMPLES] = {};
-    int64_t* domainValuesPerSignal[NUM_SIGNALS] = {domainValues[0], domainValues[1], domainValues[2]};
-    auto count = SizeT{0};
-
-    readSignals.reserve(NUM_SIGNALS);
-
-    auto signalReader = addSignal(0, NUM_SAMPLES, createDomainSignal());
-    addSignal(0, NUM_SAMPLES, createDomainSignal());
-    addSignal(0, NUM_SAMPLES, createDomainSignal());
-
-    auto portList = portsList();
-    auto multiReader = MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addInputPorts(portList).build();
-    auto status = daq::MultiReaderStatusPtr();
-
-    for (size_t i = 0; i < NUM_SIGNALS; i++)
-        portList[i].connect(readSignals[i].signal);
-
-    // send packets to active reader
-    SizeT packetIndex = 0;
-    sendPackets(packetIndex++);  // 0
-
-    // receive event packets
-    count = NUM_SAMPLES;
-    status = multiReader.readWithDomain(valuesPerSignal, domainValuesPerSignal, &count);
-
-    ASSERT_EQ(status.getReadStatus(), daq::ReadStatus::Event);
-    ASSERT_EQ(count, 0u);
-
-    // set inactive, try read and copy reader
-    multiReader.setActive(false);
-
-    count = NUM_SAMPLES;
-    status = multiReader.readWithDomain(valuesPerSignal, domainValuesPerSignal, &count);
-
-    ASSERT_EQ(status.getReadStatus(), daq::ReadStatus::Ok);
-    ASSERT_EQ(count, 0u);
-
-    auto multiReaderNew = MultiReaderFromExisting(multiReader);
-
-    ASSERT_FALSE(multiReaderNew.getActive());
-
-    // send packets to inactive copy of multireader
-    sendPackets(packetIndex++);  // 1
-
-    count = NUM_SAMPLES;
-    status = multiReaderNew.readWithDomain(valuesPerSignal, domainValuesPerSignal, &count);
-
-    ASSERT_EQ(status.getReadStatus(), daq::ReadStatus::Ok);
-    ASSERT_EQ(count, 0u);
-
-    // set new multireader active and try to read samples
-    multiReaderNew.setActive(true);
-
-    sendPackets(packetIndex++);  // 1
-
-    count = NUM_SAMPLES;
-    status = multiReaderNew.readWithDomain(valuesPerSignal, domainValuesPerSignal, &count);
-
-    ASSERT_EQ(status.getReadStatus(), daq::ReadStatus::Ok);
-    ASSERT_EQ(count, NUM_SAMPLES);
-}
+// The MultiReaderActiveCopyInactive test was deleted (test plan Part C): MultiReaderFromExisting
+// is removed by the rework (spec 8.4) - recovery happens in the same reader instance.
 
 TEST_F(MultiReaderTest, MultiReaderActiveFromPorts)
 {
@@ -4293,10 +2798,10 @@ TEST_F(MultiReaderTest, MultiReaderActiveGapPacket)
 
     ASSERT_EQ(multiReader.getAvailableCount(), 0u);
 
-    // read nothing, gap packet was dropped
+    // read nothing, gap packet was dropped; the deactivated reader reports Inactive
     count = NUM_SAMPLES;
     status = multiReader.readWithDomain(valuesPerSignal, domainValuesPerSignal, &count);
-    ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Inactive);
     ASSERT_EQ(count, 0u);
 
     // change descriptor
@@ -4605,7 +3110,10 @@ TEST_F(MultiReaderTest, ExpectSR)
 
     count = 0;
     status = reader.read(nullptr, &count, 0);
-    ASSERT_EQ(status.getReadStatus(), ReadStatus::Fail);
+    // A required-rate mismatch is a recoverable per-input failure, not a reader failure
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::InputsFailed);
+    ASSERT_EQ(static_cast<InputState>(static_cast<Int>(status.getInputStates().get(valueSignal.getGlobalId()))),
+              InputState::Incompatible);
 }
 
 TEST_F(MultiReaderTest, TestReaderWithConnectedPortConnectionEmpty)
@@ -4821,14 +3329,18 @@ TEST_P(MinReadCountTest, MinReadCount)
 
     ASSERT_EQ(multi.getAvailableCount(), 0u);
 
+    // Behavior change (spec 6.2/3.1): the leftover segment shorter than minReadCount is
+    // discarded during evaluation, so the descriptor event surfaces on the first read;
+    // the old reader needed one extra read to drop the segment first
     count = 0;
     status = multi.read(nullptr, &count, timeoutMs);
     ASSERT_EQ(count, 0u);
-    ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
 
     count = 0;
     status = multi.read(nullptr, &count, timeoutMs);
-    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+    // The event consumed the buffered data with it - the reader is waiting for fresh data
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Preparing);
     ASSERT_EQ(count, 0u);
 }
 
@@ -4883,11 +3395,14 @@ TEST_F(MultiReaderTest, TestTickOffsetExceeded)
     auto status = multiReader.read(nullptr, &count);
     ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
 
+    // Behavior change (spec 8.4/8.5): tickOffsetTolerance is deprecated and ignored - the
+    // sub-tick epoch offsets no longer fail synchronization, and a sync failure would no
+    // longer deactivate the reader either. The read succeeds and the reader stays active.
     count = 10;
     status = multiReader.readWithDomain(dataBuffers.data(), domainBuffers.data(), &count);
     ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
-    ASSERT_EQ(count, 0u);
-    ASSERT_FALSE(multiReader.getActive());
+    ASSERT_EQ(count, 10u);
+    ASSERT_TRUE(multiReader.getActive());
 
     for (SizeT i = 0; i < kSignalCount; ++i)
     {
@@ -4945,11 +3460,14 @@ TEST_F(MultiReaderTest, TestTickOffsetExceededByOffset)
     auto status = multiReader.read(nullptr, &count);
     ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
 
+    // Behavior change (spec 5.7/8.4/8.5): tickOffsetTolerance is deprecated and ignored.
+    // These delta-2 grids are phase-shifted by one tick and share no common grid point, so
+    // the reader never synchronizes and returns no data - but a synchronization failure no
+    // longer deactivates the reader.
     count = 10;
     status = multiReader.readWithDomain(dataBuffers.data(), domainBuffers.data(), &count);
-    ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
     ASSERT_EQ(count, 0u);
-    ASSERT_EQ(multiReader.getActive(), false);
+    ASSERT_EQ(multiReader.getActive(), true);
 
     for (SizeT i = 0; i < kSignalCount; ++i)
     {
@@ -5357,9 +3875,13 @@ TEST_F(MultiReaderTest, CheckSpecificCase)
         auto available = multiReader.getAvailableCount();
         ASSERT_EQ(available, 0);
 
+        // Behavior change (spec 7.2/8.5): the two samples left in front of the descriptor
+        // change are less than one aligned block and are silently discarded, so the pending
+        // event surfaces on this read instead of staying buried behind an unreadable segment
         SizeT count{2};
         auto status = multiReader.read(data, &count);
-        ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
+        ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+        ASSERT_EQ(count, 0u);
     }
 
     {
@@ -5368,6 +3890,510 @@ TEST_F(MultiReaderTest, CheckSpecificCase)
 
         SizeT count{0};
         auto status = multiReader.read(data, &count);
+        // Data past the event keeps the reader synchronized (a full block just is not
+        // available yet), so this reports Ok rather than Preparing
         ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
     }
+}
+
+// --- IMultiReaderStatus state and diagnostics extension (spec 8.2, test plan ST rows) ---
+
+TEST_F(MultiReaderTest, StatusStateWaitingForConnections)
+{
+    // ST-3/ST-4/ST-5: an unconnected used input is reported with its construction-order index
+    readSignals.reserve(3);
+    addSignal(0, 10, createDomainSignal());
+    addSignal(0, 10, createDomainSignal());
+    addSignal(0, 10, createDomainSignal());
+
+    auto ports = portsList();
+    auto multi =
+        MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addInputPorts(ports).build();
+    ports[0].connect(readSignals[0].signal);
+    ports[2].connect(readSignals[2].signal);
+    // port 1 stays unconnected
+
+    SizeT count{0};
+    MultiReaderStatusPtr status = multi.read(nullptr, &count);
+    // Waiting for a connection is not an error - nothing is wrong, no data is expected yet
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Preparing);
+    auto states = status.getInputStates();
+    ASSERT_EQ(states.getCount(), 3u);
+    ASSERT_EQ(static_cast<InputState>(static_cast<Int>(states.get(ports[1].getGlobalId()))), InputState::Pending);
+    ASSERT_EQ(status.getStateMessage().toStdString(), "Inputs [1] have no signal connected");
+}
+
+TEST_F(MultiReaderTest, StatusEventDictAndInputStates)
+{
+    // ST-1/ST-6/ST-8: the event dict carries one event per input per read, the compat
+    // first-event accessor returns one of them, and the per-input states reflect the
+    // post-consumption condition
+    readSignals.reserve(2);
+    addSignal(0, 10, createDomainSignal());
+    addSignal(0, 10, createDomainSignal());
+
+    auto multi =
+        MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
+
+    SizeT count{0};
+    MultiReaderStatusPtr status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+
+    // The dict carries the events keyed by port global id (ST-1)
+    auto dict = status.getEventPackets();
+    ASSERT_EQ(dict.getCount(), 2u);
+
+    // IReaderStatus::getEventPacket returns one of the returned events (ST-8)
+    auto firstEvent = status.asPtr<IReaderStatus>().getEventPacket();
+    ASSERT_TRUE(firstEvent.assigned());
+    ASSERT_EQ(firstEvent.getEventId(), event_packet_id::DATA_DESCRIPTOR_CHANGED);
+
+    // The initial events were consumed by this read - every input is now waiting for data
+    auto states = status.getInputStates();
+    ASSERT_EQ(states.getCount(), 2u);
+    for (const auto& signal : readSignals)
+    {
+        ASSERT_EQ(static_cast<InputState>(static_cast<Int>(states.get(signal.signal.getGlobalId()))), InputState::Pending);
+    }
+}
+
+TEST_F(MultiReaderTest, StatusMainDescriptorCommonDomain)
+{
+    // ST-2: the domain part of getMainDescriptor is the common output domain - earliest
+    // epoch as origin, rational-GCD resolution and one output sample per linear-rule delta
+    readSignals.reserve(2);
+    addSignal(0, 10, createDomainSignal("2022-09-27T00:02:04+00:00"));
+    addSignal(0, 10, createDomainSignal("2022-09-27T00:02:03+00:00", Ratio(1, 10000), LinearDataRule(10, 0)));
+
+    auto multi =
+        MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
+
+    SizeT count{0};
+    MultiReaderStatusPtr status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+
+    count = 0;
+    status = multi.read(nullptr, &count);
+
+    auto mainDescriptor = status.getMainDescriptor();
+    ASSERT_TRUE(mainDescriptor.assigned());
+    ASSERT_EQ(mainDescriptor.getEventId(), event_packet_id::DATA_DESCRIPTOR_CHANGED);
+
+    DataDescriptorPtr domainDescriptor =
+        mainDescriptor.getParameters().get(event_packet_param::DOMAIN_DATA_DESCRIPTOR).asPtrOrNull<IDataDescriptor>();
+    ASSERT_TRUE(domainDescriptor.assigned());
+
+    // Origin and resolution equal the reader's common-domain accessors
+    ASSERT_EQ(domainDescriptor.getOrigin(), multi.getOrigin());
+    ASSERT_EQ(domainDescriptor.getTickResolution(), multi.getTickResolution());
+    ASSERT_EQ(domainDescriptor.getTickResolution(), Ratio(1, 10000));
+
+    // One 1000 Hz output sample spans ten 1/10000 s common ticks
+    const auto rule = domainDescriptor.getRule();
+    ASSERT_EQ(rule.getType(), DataRuleType::Linear);
+    ASSERT_EQ(static_cast<Int>(rule.getParameters().get("delta")), 10);
+}
+
+TEST_F(MultiReaderTest, StatusCachedWhileUnchangedNewOnChange)
+{
+    // ST-7: the status instance is re-issued while its visible content is unchanged and
+    // replaced when the state changes
+    readSignals.reserve(2);
+    addSignal(0, 10, createDomainSignal());
+    addSignal(0, 10, createDomainSignal());
+
+    auto multi =
+        MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
+
+    SizeT count{0};
+    MultiReaderStatusPtr eventStatus = multi.read(nullptr, &count);
+    ASSERT_EQ(eventStatus.getReadStatus(), ReadStatus::Event);
+
+    count = 0;
+    MultiReaderStatusPtr first = multi.read(nullptr, &count);
+    count = 0;
+    MultiReaderStatusPtr second = multi.read(nullptr, &count);
+
+    ASSERT_EQ(first.getReadStatus(), ReadStatus::Preparing);
+    ASSERT_EQ(first.getObject(), second.getObject());
+
+    sendPackets(0);
+
+    count = 0;
+    MultiReaderStatusPtr third = multi.read(nullptr, &count);
+    ASSERT_EQ(third.getReadStatus(), ReadStatus::Ok);
+    ASSERT_NE(third.getObject(), second.getObject());
+}
+
+TEST_F(MultiReaderTest, StatusStateIncompatibleRecoverable)
+{
+    // ST-3 + LC-10: a non-convertible value descriptor reports a recoverable Incompatible
+    // state naming the input; a later convertible descriptor recovers in the same instance
+    readSignals.reserve(2);
+    addSignal(0, 10, createDomainSignal());
+    addSignal(0, 10, createDomainSignal());
+
+    auto multi =
+        MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
+
+    SizeT count{0};
+    MultiReaderStatusPtr status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+
+    // Complex values cannot be converted to the double read type
+    readSignals[0].setValueDescriptor(setupDescriptor(SampleType::ComplexFloat64));
+
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+    ASSERT_EQ(static_cast<InputState>(static_cast<Int>(status.getInputStates().get(readSignals[0].signal.getGlobalId()))),
+              InputState::Incompatible);
+    // Recoverable - only ReadStatus::Fail reads as invalid (C5/Q1)
+    ASSERT_TRUE(status.getValid());
+
+    // A follow-up read with no events left reports the persistent condition
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::InputsFailed);
+    ASSERT_TRUE(status.getValid());
+
+    // The reader itself stays valid - the condition is recoverable (spec 6.1/8.5)
+    ASSERT_TRUE(multi.asPtr<IReaderConfig>().getIsValid());
+
+    readSignals[0].setValueDescriptor(setupDescriptor(SampleType::Float64));
+
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+    ASSERT_TRUE(status.getValid());
+
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Preparing);
+}
+
+// --- Phase 4: main-input selection, synchronization distance, data-loss monitoring ---
+
+TEST_F(MultiReaderTest, MainInputAccessors)
+{
+    readSignals.reserve(2);
+    addSignal(0, 10, createDomainSignal());
+    addSignal(0, 10, createDomainSignal());
+
+    auto multi =
+        MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
+
+    // Empty string means automatic selection (error contract 3.3)
+    ASSERT_EQ(multi.getMainInput().getLength(), 0u);
+    ASSERT_THROW(multi.setMainInput("no-such-input"), NotFoundException);
+
+    const auto mainId = readSignals[1].signal.getGlobalId();
+    multi.setMainInput(mainId);
+    ASSERT_EQ(multi.getMainInput(), mainId);
+
+    // An empty id reverts to the default (first used input)
+    multi.setMainInput("");
+    ASSERT_EQ(multi.getMainInput().getLength(), 0u);
+
+    // Selecting an unused input is rejected (error contract 3.3)
+    multi.setInputUsed(mainId, false);
+    ASSERT_THROW(multi.setMainInput(mainId), InvalidParameterException);
+}
+
+TEST_F(MultiReaderTest, MainInputSelectionGrid)
+{
+    // SY-14: the main input defines the grid phase, and alignment only tolerates other
+    // inputs starting a small FORWARD offset after it. Input 1's grid trails input 0's by
+    // nine of ten ticks - unacceptable with input 0 as main (nine-tick offsets are
+    // ambiguous), but with input 1 as main input 0 leads by just one tick and the pair
+    // synchronizes on input 1's grid.
+    readSignals.reserve(2);
+    auto& sig0 = addSignal(500, 30, createDomainSignal("2022-09-27T00:02:03+00:00", Ratio(1, 1000), LinearDataRule(10, 0)));
+    auto& sig1 = addSignal(509, 30, createDomainSignal("2022-09-27T00:02:03+00:00", Ratio(1, 1000), LinearDataRule(10, 0)));
+
+    auto multi =
+        MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
+
+    SizeT count{0};
+    auto status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+
+    sig0.createAndSendPacket(0);
+    sig1.createAndSendPacket(0);
+
+    ASSERT_EQ(multi.getAvailableCount(), 0u);
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::InputsFailed);
+
+    multi.setMainInput(readSignals[1].signal.getGlobalId());
+    ASSERT_GT(multi.getAvailableCount(), 0u);
+    ASSERT_TRUE(multi.getIsSynchronized());
+}
+
+TEST_F(MultiReaderTest, MainInputDisconnectedWaits)
+{
+    // SY-15: a disconnected selected main input is never silently replaced - the reader
+    // waits for its connection instead of re-anchoring on the remaining inputs
+    readSignals.reserve(2);
+    auto& sig0 = addSignal(0, 10, createDomainSignal());
+    auto& sig1 = addSignal(0, 10, createDomainSignal());
+
+    auto ports = portsList();
+    auto multi =
+        MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addInputPorts(ports).build();
+    ports[0].connect(sig0.signal);
+    ports[1].connect(sig1.signal);
+
+    multi.setMainInput(ports[0].getGlobalId());
+
+    SizeT count{0};
+    auto status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+
+    sendPackets(0);
+    ASSERT_GT(multi.getAvailableCount(), 0u);
+
+    ports[0].disconnect();
+
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Preparing);
+    ASSERT_EQ(multi.getAvailableCount(), 0u);
+    ASSERT_EQ(multi.getMainInput(), ports[0].getGlobalId());
+}
+
+TEST_F(MultiReaderTest, MaxSyncDistanceFailsWithDiagnostics)
+{
+    // SY-11: inputs starting 10 s apart with a 5 s threshold fail the synchronization with
+    // the early input named; the reader stays active (spec 8.5)
+    readSignals.reserve(2);
+    addSignal(0, 12000, createDomainSignal());
+    addSignal(10000, 2000, createDomainSignal());
+
+    auto multi = MultiReaderBuilder()
+                     .setInputPortNotificationMethod(PacketReadyNotification::SameThread)
+                     .addSignals(signalsToList())
+                     .setMaxSynchronizationDistance(Ratio(5, 1))
+                     .build();
+
+    SizeT count{0};
+    auto status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+
+    sendPackets(0);
+
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::InputsFailed);
+    // Recoverable - only ReadStatus::Fail reads as invalid (C5/Q1)
+    ASSERT_TRUE(status.getValid());
+    ASSERT_EQ(static_cast<InputState>(static_cast<Int>(status.getInputStates().get(readSignals[0].signal.getGlobalId()))),
+              InputState::SynchronizationFailed);
+    ASSERT_NE(status.getStateMessage().toStdString().find("maximum synchronization distance"), std::string::npos);
+    ASSERT_TRUE(multi.getActive());
+}
+
+TEST_F(MultiReaderTest, MaxSyncDistanceZeroDisables)
+{
+    // SY-12: with the default (zero) threshold the same 10 s stagger synchronizes
+    readSignals.reserve(2);
+    addSignal(0, 12000, createDomainSignal());
+    addSignal(10000, 2000, createDomainSignal());
+
+    auto multi =
+        MultiReaderBuilder().setInputPortNotificationMethod(PacketReadyNotification::SameThread).addSignals(signalsToList()).build();
+
+    SizeT count{0};
+    auto status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+
+    sendPackets(0);
+
+    ASSERT_EQ(multi.getAvailableCount(), 2000u);
+    ASSERT_TRUE(multi.getIsSynchronized());
+}
+
+TEST_F(MultiReaderTest, Phase4BuilderAccessors)
+{
+    auto builder = MultiReaderBuilder();
+
+    ASSERT_FALSE(builder.getMainInput().assigned());
+    // Zero means disabled (the default)
+    ASSERT_EQ(builder.getMaxSynchronizationDistance(), Ratio(0, 1));
+    ASSERT_EQ(builder.getDataLossTimeout(), Ratio(0, 1));
+
+    ASSERT_THROW(builder.setMaxSynchronizationDistance(Ratio(-1, 1)), InvalidParameterException);
+    ASSERT_THROW(builder.setDataLossTimeout(Ratio(-1, 1)), InvalidParameterException);
+    ASSERT_THROW(builder.setMaxSynchronizationDistance(nullptr), ArgumentNullException);
+    ASSERT_THROW(builder.setDataLossTimeout(nullptr), ArgumentNullException);
+
+    builder.setMaxSynchronizationDistance(Ratio(5, 1));
+    builder.setDataLossTimeout(Ratio(1, 2));
+    ASSERT_EQ(builder.getMaxSynchronizationDistance(), Ratio(5, 1));
+    ASSERT_EQ(builder.getDataLossTimeout(), Ratio(1, 2));
+
+    // The built reader reflects the builder configuration
+    readSignals.reserve(2);
+    addSignal(0, 10, createDomainSignal());
+    addSignal(0, 10, createDomainSignal());
+    const auto mainId = readSignals[1].signal.getGlobalId();
+
+    auto multi = builder.setInputPortNotificationMethod(PacketReadyNotification::SameThread)
+                     .addSignals(signalsToList())
+                     .setMainInput(mainId)
+                     .build();
+
+    ASSERT_EQ(multi.getMainInput(), mainId);
+    // C1/C2: the sync distance and data-loss timeout are builder-only configuration;
+    // the reader exposes no accessors for them
+}
+
+TEST_F(MultiReaderTest, DataLossVirtualClock)
+{
+    // DL-1/DL-2/DL-3 through the public API on virtual time (test scaffolding 2.7)
+    readSignals.reserve(2);
+    auto& sig0 = addSignal(0, 10, createDomainSignal());
+    auto& sig1 = addSignal(0, 10, createDomainSignal());
+
+    auto multi = MultiReaderBuilder()
+                     .setInputPortNotificationMethod(PacketReadyNotification::SameThread)
+                     .addSignals(signalsToList())
+                     .setDataLossTimeout(Ratio(10, 1))  // ten virtual seconds
+                     .build();
+
+    auto* impl = dynamic_cast<MultiReaderImpl*>(multi.asPtr<IReaderConfig>().getObject());
+    ASSERT_NE(impl, nullptr);
+    auto virtualNow = std::chrono::steady_clock::now();
+    impl->setDataLossClockForTest([&virtualNow] { return virtualNow; });
+
+    SizeT count{0};
+    auto status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+
+    sendPackets(0);
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
+
+    // Drain the buffered data: with in-band data loss (review 2.6) buffered pre-loss
+    // samples stay readable, so the loss only surfaces once the queue runs dry
+    {
+        double values0[10]{};
+        double values1[10]{};
+        void* buffers[2]{values0, values1};
+        count = 10;
+        status = multi.read(buffers, &count);
+        ASSERT_EQ(count, 10u);
+    }
+
+    // Input 1 goes stale while input 0 keeps delivering (DL-2)
+    virtualNow += std::chrono::seconds(6);
+    sig0.createAndSendPacket(1);
+    virtualNow += std::chrono::seconds(6);
+
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::InputsFailed);
+    // Recoverable - only ReadStatus::Fail reads as invalid (C5/Q1)
+    ASSERT_TRUE(status.getValid());
+    ASSERT_EQ(static_cast<InputState>(static_cast<Int>(status.getInputStates().get(sig1.signal.getGlobalId()))),
+              InputState::DataLost);
+
+    // The stale input recovers on its next packet (DL-3)
+    sig1.createAndSendPacket(1);
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_NE(status.getReadStatus(), ReadStatus::InputsFailed);
+    ASSERT_TRUE(status.getValid());
+}
+
+TEST_F(MultiReaderTest, DataLossInactiveAndUnusedNotMonitored)
+{
+    // DL-5: inactive readers and unused inputs never trip the deadline
+    readSignals.reserve(2);
+    addSignal(0, 10, createDomainSignal());
+    addSignal(0, 10, createDomainSignal());
+
+    auto multi = MultiReaderBuilder()
+                     .setInputPortNotificationMethod(PacketReadyNotification::SameThread)
+                     .addSignals(signalsToList())
+                     .setDataLossTimeout(Ratio(10, 1))
+                     .build();
+
+    auto* impl = dynamic_cast<MultiReaderImpl*>(multi.asPtr<IReaderConfig>().getObject());
+    ASSERT_NE(impl, nullptr);
+    auto virtualNow = std::chrono::steady_clock::now();
+    impl->setDataLossClockForTest([&virtualNow] { return virtualNow; });
+
+    SizeT count{0};
+    auto status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+    sendPackets(0);
+
+    // An unused input is not monitored even when stale
+    multi.setInputUsed(readSignals[1].signal.getGlobalId(), false);
+    virtualNow += std::chrono::seconds(60);
+    readSignals[0].createAndSendPacket(1);  // input 0 stays fresh
+
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_NE(status.getReadStatus(), ReadStatus::InputsFailed);
+
+    // An inactive reader is not monitored at all
+    multi.setInputUsed(readSignals[1].signal.getGlobalId(), true);
+    multi.setActive(false);
+    virtualNow += std::chrono::seconds(60);
+
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Inactive);
+}
+
+TEST_F(MultiReaderTest, DataLossDeadlineFiresWithoutReads)
+{
+    // DL-1 smoke test on real time: the deadline transitions the reader out of the
+    // synchronized state autonomously - getIsSynchronized only inspects the state and
+    // never re-evaluates, so observing the flip proves the waiter-driven path
+    readSignals.reserve(2);
+    addSignal(0, 10, createDomainSignal());
+    addSignal(0, 10, createDomainSignal());
+
+    auto multi = MultiReaderBuilder()
+                     .setInputPortNotificationMethod(PacketReadyNotification::SameThread)
+                     .addSignals(signalsToList())
+                     .setDataLossTimeout(Ratio(1, 20))  // 50 ms
+                     .build();
+
+    SizeT count{0};
+    auto status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+    sendPackets(0);
+
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
+    ASSERT_TRUE(multi.getIsSynchronized());
+
+    // Drain the buffered data: with in-band data loss (review 2.6) buffered pre-loss
+    // samples keep the reader synchronized until they are read
+    {
+        double values0[10]{};
+        double values1[10]{};
+        void* buffers[2]{values0, values1};
+        count = 10;
+        status = multi.read(buffers, &count);
+        ASSERT_EQ(count, 10u);
+        ASSERT_TRUE(multi.getIsSynchronized());
+    }
+
+    const auto start = std::chrono::steady_clock::now();
+    while (multi.getIsSynchronized() && std::chrono::steady_clock::now() - start < std::chrono::seconds(5))
+        std::this_thread::yield();
+
+    ASSERT_FALSE(multi.getIsSynchronized());
+
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::InputsFailed);
 }

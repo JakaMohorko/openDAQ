@@ -59,12 +59,41 @@ namespace reader
         return ss.str();
     }
 
+    /// ISO 8601 UTC string of an epoch time point, as reported by the multi reader's
+    /// getOrigin and the common-output-domain descriptor origin.
+    inline std::string isoEpochString(std::chrono::system_clock::time_point epoch)
+    {
+        return date::format("%FT%TZ", epoch);
+    }
+
     /*!
      * @brief Parser expects the string in "YYYY-mm-ddTHH:MM:SS+HH:MM" so coerce
      * other valid options to this format.
      */
     inline std::string fixupIso8601(std::string epoch)
     {
+        // Reduced-precision ISO 8601 origins are legal: a bare year ("1993") or
+        // year-month ("1993-05") means the start of that period
+        const auto allDigits = [](const std::string& s, size_t from, size_t count)
+        {
+            if (s.size() < from + count)
+                return false;
+            for (size_t i = from; i < from + count; ++i)
+            {
+                if (!std::isdigit(static_cast<unsigned char>(s[i])))
+                    return false;
+            }
+            return true;
+        };
+        if (epoch.size() == 4 && allDigits(epoch, 0, 4))
+        {
+            epoch += "-01-01";
+        }
+        else if (epoch.size() == 7 && allDigits(epoch, 0, 4) && epoch[4] == '-' && allDigits(epoch, 5, 2))
+        {
+            epoch += "-01";
+        }
+
         if (epoch.find('T') == std::string::npos)
         {
             // If no time, assume Midnight UTC

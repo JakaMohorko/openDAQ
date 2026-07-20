@@ -2,6 +2,7 @@
 #include <coretypes/customalloc.h>
 #include <mutex>
 #include <cstring>
+#include <vector>
 #include <fmt/core.h>
 
 using namespace daq;
@@ -66,8 +67,15 @@ extern "C"
 PUBLIC_EXPORT void daqPrintTrackedObjects()
 {
 #ifndef NDEBUG
-    std::lock_guard<std::mutex> lock(getObjectsMutex());
-    for (auto obj : getObjects())
+    // objectToString runs object code that may itself create tracked objects (and with it
+    // re-enter the tracker mutex, which is fatal on this thread) - snapshot the set under
+    // the lock and print outside of it
+    std::vector<IBaseObject*> snapshot;
+    {
+        std::lock_guard<std::mutex> lock(getObjectsMutex());
+        snapshot.assign(getObjects().begin(), getObjects().end());
+    }
+    for (auto obj : snapshot)
     {
         assert(obj != nullptr);
         fmt::print("{:p}: {}\n", (void*) obj, objectToString(obj));

@@ -7,6 +7,10 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// COMMENT: This document feels really hard to parse and understand. It's clear on what the purpose of it is,
+//          But actually understanding what is does is difficult and will be hard to fix. Is there a way to simplify this?
+//          Not only code-wise, but to remove cases that are not allowed by the multi reader? If not, it's also okay.
+
 namespace
 {
 
@@ -345,9 +349,12 @@ std::unique_ptr<DomainValue> readDomainValue(const ReadLayout& readLayout,
                                              SizeT index,
                                              const DomainInfo& domainInfo)
 {
-    if constexpr (std::is_same_v<void*, OutputT>)
+    // The gate keeps DomainValueImpl from being instantiated for sample types that make no
+    // sense as domain values (#15) - the runtime dispatch still covers every SampleType,
+    // but unsupported ones fail here instead of in throwing template specializations
+    if constexpr (std::is_same_v<void*, OutputT> || !isDomainValueType<OutputT>)
     {
-        DAQ_THROW_EXCEPTION(NotSupportedException, "ReadDomainValueLinear not supported for the void output type.");
+        DAQ_THROW_EXCEPTION(NotSupportedException, "The selected output type cannot represent a domain value.");
         return {};
     }
     else
@@ -462,7 +469,8 @@ SizeT findDomainValue(const ReadLayout& readLayout,
     if (!inputBuffer)
         DAQ_THROW_EXCEPTION(ArgumentNullException, "Packet with null data buffer");
 
-    if constexpr (std::is_convertible_v<InputT, OutputT> && !std::is_same_v<void*, OutputT> && !std::is_same_v<void*, InputT>)
+    if constexpr (std::is_convertible_v<InputT, OutputT> && !std::is_same_v<void*, OutputT> && !std::is_same_v<void*, InputT> &&
+                  isDomainValueType<OutputT>)
     {
         InputT* domainBuffer = static_cast<InputT*>(inputBuffer);
 
@@ -525,11 +533,13 @@ ReadLayout TypedReadingUtils::createReadLayout(const DataDescriptorPtr& descript
         DAQ_THROW_EXCEPTION(ArgumentNullException, "Descriptor must be assigned!");
 
     const SizeT rawSampleSize = descriptor.getRawSampleSize();
+    // One sample is a fixed-size block of product-of-dimensions values, whatever the rank
     SizeT valuesPerSample = 1;
     auto dimensions = descriptor.getDimensions();
-    if (dimensions.assigned() && dimensions.getCount() == 1)
+    if (dimensions.assigned())
     {
-        valuesPerSample = dimensions[0].getSize();
+        for (const auto& dimension : dimensions)
+            valuesPerSample *= static_cast<SizeT>(dimension.getSize());
     }
 
     return {descriptor, rawSampleSize, valuesPerSample};
@@ -540,11 +550,15 @@ bool TypedReadingUtils::isSampleTypeConvertible(SampleType in, SampleType out, b
     // TODO: Detais about limiting allowed types (not throwing unless necessary)
     switch (in)
     {
-        case SampleType::Struct:
         case SampleType::Invalid:
         case SampleType::Null:
         case SampleType::_count:
             return false;
+        case SampleType::Struct:
+            // Struct values are readable as raw fixed-size blocks (void output); a struct domain has no meaning
+            if (isDomain)
+                return false;
+            break;
         default:
             break;
     }
@@ -577,6 +591,7 @@ bool TypedReadingUtils::isSampleTypeConvertible(SampleType in, SampleType out, b
                                });
 }
 
+// COMMENT: Is this needed? Do we really need to convert the domain values?
 std::unique_ptr<DomainValue> TypedReadingUtils::readDomainValue(SampleType in,
                                                                 SampleType out,
                                                                 const ReadLayout& readLayout,
@@ -665,6 +680,22 @@ ErrCode TypedReadingUtils::readData(SampleType in,
                                    using OutputT = typename decltype(outputTag)::Type;
                                    return detail::readData<InputT, OutputT>(
                                        readLayout, inputBuffer, offset, outputBuffer, count, transform);
+                               });
+}
+
+TypedReadingUtils::ReadDataFn TypedReadingUtils::resolveReadData(SampleType in, SampleType out, bool isDomain)
+{
+    // Same validation and (input, output) selection as readData above, resolved once so callers
+    // can invoke the specialization per packet without re-dispatching. The default transform
+    // argument of detail::readData does not affect the function-pointer type.
+    return visitTwoSampleTypes(in,
+                               out,
+                               isDomain,
+                               [](auto inputTag, auto outputTag) -> ReadDataFn
+                               {
+                                   using InputT = typename decltype(inputTag)::Type;
+                                   using OutputT = typename decltype(outputTag)::Type;
+                                   return &detail::readData<InputT, OutputT>;
                                });
 }
 

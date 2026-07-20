@@ -1,9 +1,16 @@
-#include <opendaq/queue_reader.h>
+#include <opendaq/multi_reader/queue_reader.h>
 
 #include <opendaq/custom_log.h>
 #include <opendaq/event_packet_utils.h>
 
+#include <algorithm>
+#include <cassert>
+#include <limits>
+
 BEGIN_NAMESPACE_OPENDAQ
+
+namespace multi_reader
+{
 
 SignalEvent::SignalEvent(const EventPacketPtr& packet)
     : eventType(SignalEventType::NoChange)
@@ -18,24 +25,15 @@ SignalEvent::SignalEvent(const EventPacketPtr& packet)
     }
     else
     {
+        // The parse distinguishes "changed to null" (explicit null marker) from "unchanged"
+        // (parameter absent) - a removed descriptor must not be mistaken for no change.
         const auto [valueDescChanged, domainDescChanged, newValueDescriptor, newDomainDescriptor] = parseDataDescriptorEventPacket(packet);
+        valueDescriptorChanged = valueDescChanged;
+        domainDescriptorChanged = domainDescChanged;
         domainDescriptor = newDomainDescriptor;
         valueDescriptor = newValueDescriptor;
         updateType();
     }
-}
-
-SignalEvent::SignalEvent(Int gapDiff)
-    : eventType(SignalEventType::Gap)
-    , domainDescriptor(nullptr)
-    , valueDescriptor(nullptr)
-    , gapDiff(gapDiff)
-{
-}
-
-SignalEvent SignalEvent::syncGapEvent(Int gapDiff)
-{
-    return SignalEvent(gapDiff);
 }
 
 void SignalEvent::updateType()
@@ -43,15 +41,15 @@ void SignalEvent::updateType()
     if (eventType == SignalEventType::Gap)
         return;
 
-    if (domainDescriptor.assigned() and valueDescriptor.assigned())
+    if (domainDescriptorChanged && valueDescriptorChanged)
     {
         eventType = SignalEventType::DomainAndValueChanged;
     }
-    else if (domainDescriptor.assigned())
+    else if (domainDescriptorChanged)
     {
         eventType = SignalEventType::DomainChanged;
     }
-    else if (valueDescriptor.assigned())
+    else if (valueDescriptorChanged)
     {
         eventType = SignalEventType::ValueChanged;
     }
@@ -63,15 +61,20 @@ void SignalEvent::updateType()
 
 bool SignalEvent::merge(const SignalEvent& other)
 {
-    if (this->eventType != SignalEventType::Gap && other.eventType == SignalEventType::Gap)
-        return false;
-    if (this->eventType == SignalEventType::Gap && other.eventType != SignalEventType::Gap)
+    // Gap events never merge with anything, including other gaps - each gap is reported individually
+    if (this->eventType == SignalEventType::Gap || other.eventType == SignalEventType::Gap)
         return false;
 
-    if (other.domainDescriptor.assigned())
+    if (other.domainDescriptorChanged)
+    {
+        domainDescriptorChanged = true;
         domainDescriptor = other.domainDescriptor;
-    if (other.valueDescriptor.assigned())
+    }
+    if (other.valueDescriptorChanged)
+    {
+        valueDescriptorChanged = true;
         valueDescriptor = other.valueDescriptor;
+    }
     updateType();
     return true;
 }
@@ -99,51 +102,105 @@ EventPacketPtr SignalEvent::toEventPacket() const
     }
     else
     {
-        return DataDescriptorChangedEventPacket(descriptorToEventPacketParam(valueDescriptor), descriptorToEventPacketParam(domainDescriptor));
+        // Unchanged descriptors stay absent (null parameter); a changed descriptor uses the
+        // explicit null marker when removed, so consumers can tell "removed" from "unchanged".
+        return DataDescriptorChangedEventPacket(
+            valueDescriptorChanged ? descriptorToEventPacketParam(valueDescriptor) : nullptr,
+            domainDescriptorChanged ? descriptorToEventPacketParam(domainDescriptor) : nullptr);
     }
 }
 
-QueueReader::QueueReader(const InputPortConfigPtr& port,  // Consider using Connection instead
+QueueReader::QueueReader(const InputPortConfigPtr& port,
                          SampleType valueReadType,
                          SampleType domainReadType,
                          ReadMode mode,
                          const LoggerComponentPtr& logger,
-                         bool globalIdFromSignal)  // TODO
+                         bool globalIdFromSignal)
+    // Init order matches the member declaration order in the header (avoids C5038)
     : port(port)
     , connection(port.getConnection())
-    , readMode(mode)
     , loggerComponent(logger)
+    , readMode(mode)
 {
     typeCtx.domainIn = SampleType::Undefined;
     typeCtx.domainOut = domainReadType;
     typeCtx.valueIn = SampleType::Undefined;
     typeCtx.valueOut = mode == ReadMode::RawValue ? SampleType::Undefined : valueReadType;
+    refreshConnectionInternal();
+}
+
+void QueueReader::refreshConnectionInternal()
+{
+    connectionInternal = connection.assigned() ? connection.asPtrOrNull<IConnectionInternal>() : nullptr;
 }
 
 void QueueReader::adoptPackets()
 {
-    // Take ownership of all packets
+    invalidateAvailable();
+
+    // Batch path: dequeueUpTo detaches many packets under a single connection lock, instead of
+    // one lock (and one counter update) per packet. Falls back below if the connection does not
+    // implement IConnectionInternal.
+    if (connectionInternal.assigned())
+    {
+        constexpr SizeT batchSize = 64;
+        if (adoptBuffer.size() < batchSize)
+            adoptBuffer.resize(batchSize);
+
+        SizeT dequeued;
+        do
+        {
+            dequeued = batchSize;
+            connectionInternal->dequeueUpTo(adoptBuffer.data(), &dequeued);
+            for (SizeT i = 0; i < dequeued; ++i)
+            {
+                // dequeueUpTo detached each packet (ownership transferred); Adopt takes that
+                // reference without an extra AddRef.
+                PacketPtr packet = PacketPtr::Adopt(adoptBuffer[i]);
+                // Sticky marker for hasQueuedEventPackets: the fast read path (owner's steady
+                // state) must learn about adopted events without scanning the queue per read
+                if (packet.getType() == PacketType::Event)
+                    eventPacketAdopted = true;
+                packets.push_back(std::move(packet));
+            }
+        } while (dequeued == batchSize);  // buffer was filled - the connection may hold more
+        return;
+    }
+
+    // Fallback: take ownership one packet at a time
     PacketPtr packet = connection.dequeue();
     while (packet.assigned())
     {
+        if (packet.getType() == PacketType::Event)
+            eventPacketAdopted = true;
         packets.push_back(std::move(packet));
         packet = connection.dequeue();
     }
 }
 
-DomainInfo QueueReader::getDomainInfo()
+bool QueueReader::hasQueuedEventPackets()
+{
+    // Conservative: set on adoption, re-verified (and cleared) by a scan only while set -
+    // the no-events steady state costs a single bool check per call
+    if (!eventPacketAdopted)
+        return false;
+    eventPacketAdopted = getNumberOfEventPacketsInQueue() != 0;
+    return eventPacketAdopted;
+}
+
+void QueueReader::drain()
 {
     checkConnection();
-
     drainConnection();
+}
+
+DomainInfo QueueReader::getDomainInfo() const
+{
     return typeCtx.domainInfo;
 }
 
-std::unique_ptr<DomainValue> QueueReader::getFirstSampleDomainValue()
+std::unique_ptr<DomainValue> QueueReader::getFirstSampleDomainValue() const
 {
-    checkConnection();
-    drainConnection();
-
     if (packets.empty() || packets.front().getType() != PacketType::Data)
     {
         return nullptr;
@@ -159,11 +216,13 @@ std::unique_ptr<DomainValue> QueueReader::getFirstSampleDomainValue()
         typeCtx.domainIn, typeCtx.domainOut, typeCtx.domainLayout, domainPacket, readingPosition, typeCtx.domainInfo);
 }
 
-AdvanceResult QueueReader::advanceToDomainValue(const DomainValue* domainValue)
+AdvanceOutcome QueueReader::advanceToDomainValue(const DomainValue* domainValue)
 {
-    // TODO: Add first timestamp mechanism for sync tolerance checking
-    checkConnection();
-    drainConnection();
+    invalidateAvailable();
+    // Pending events must be popped before advancing - the owner would otherwise
+    // step over a reportable event boundary without handling it.
+    if (!events.empty())
+        return {AdvanceResult::Error, nullptr};
 
     SignalEventType signalChange = SignalEventType::NoChange;
 
@@ -176,13 +235,13 @@ AdvanceResult QueueReader::advanceToDomainValue(const DomainValue* domainValue)
             DataPacketPtr domainPacket = packet.asPtr<IDataPacket>(true).getDomainPacket();
 
             SizeT index = TypedReadingUtils::findDomainValue(
-                typeCtx.domainIn, typeCtx.domainOut, typeCtx.domainLayout, domainPacket, domainValue, nullptr /*TODO*/);
+                typeCtx.domainIn, typeCtx.domainOut, typeCtx.domainLayout, domainPacket, domainValue, nullptr);
 
             if (index != static_cast<SizeT>(-1))
             {
                 if (index < readingPosition)
                 {
-                    return AdvanceResult::OvershotError;
+                    return {AdvanceResult::OvershotError, nullptr};
                 }
                 readingPosition = index;
                 found = true;
@@ -223,19 +282,30 @@ AdvanceResult QueueReader::advanceToDomainValue(const DomainValue* domainValue)
         case SignalEventType::DomainChanged:
         case SignalEventType::DomainAndValueChanged:
         case SignalEventType::Gap:
-            return AdvanceResult::DomainChanged;
+            return {AdvanceResult::DomainChanged, nullptr};
         default:
             break;
     }
 
-    return found ? AdvanceResult::Success : AdvanceResult::NeedMoreData;
+    if (found)
+    {
+        // Report the first-sample value actually reached so the owner can verify it
+        // against the requested target after converting to the common domain.
+        return {AdvanceResult::Success, getFirstSampleDomainValue()};
+    }
+    return {AdvanceResult::NeedMoreData, nullptr};
 }
 
-Int QueueReader::getSampleRate()
+std::optional<std::chrono::system_clock::time_point> QueueReader::getFirstSampleAbsoluteTime() const
 {
-    checkConnection();
-    drainConnection();
+    const auto firstSample = getFirstSampleDomainValue();
+    if (!firstSample)
+        return std::nullopt;
+    return firstSample->toAbsoluteTime();
+}
 
+Int QueueReader::getSampleRate() const
+{
     return sampleRate;
 }
 
@@ -255,7 +325,14 @@ void QueueReader::consumeLeadingEventPackets()
 
         ++end;
     }
-    packets.erase(packets.begin(), packets.begin() + end);
+    // Removing leading events can expose a new leading data run behind them, changing the
+    // available count; when nothing is removed (front is already data) the count is unchanged,
+    // so the incrementally maintained cache stays valid (steady-stream fast path).
+    if (end > 0)
+    {
+        packets.erase(packets.begin(), packets.begin() + end);
+        invalidateAvailable();
+    }
 }
 
 void QueueReader::checkConnection() const
@@ -264,14 +341,40 @@ void QueueReader::checkConnection() const
         DAQ_THROW_EXCEPTION(InvalidOperationException, "Connection must be assigned for this operation.");
 }
 
+void QueueReader::dropForInactive()
+{
+    invalidateAvailable();
+    if (connection.assigned())
+        drainConnection();
+
+    // Pending gap events are meaningless once the data flow is suspended
+    events.erase(std::remove_if(events.begin(),
+                                events.end(),
+                                [](const SignalEvent& event) { return event.getType() == SignalEventType::Gap; }),
+                 events.end());
+
+    // Drop data packets and gap events up to the first descriptor event, which stays -
+    // the reader's type state must not silently diverge from the signal's
+    while (!packets.empty())
+    {
+        const auto& front = packets.front();
+        if (front.getType() == PacketType::Event)
+        {
+            const EventPacketPtr eventPacket = front.asPtr<IEventPacket>(true);
+            if (eventPacket.getEventId() != event_packet_id::IMPLICIT_DOMAIN_GAP_DETECTED)
+                break;
+        }
+        packets.pop_front();
+        readingPosition = 0;
+    }
+    consumeLeadingEventPackets();
+}
+
 void QueueReader::dropOutdatedPacketSegments()
 {
-    checkConnection();
-    drainConnection();
-
     while (getNumberOfEventPacketsInQueue() >= 2)
     {
-        auto foundEvent = dropUntilEvent();
+        [[maybe_unused]] auto foundEvent = dropUntilEvent();  // asserted only; NDEBUG drops the use
         assert(foundEvent && "Event should have been found.");
         consumeLeadingEventPackets();
     }
@@ -279,11 +382,22 @@ void QueueReader::dropOutdatedPacketSegments()
     consumeLeadingEventPackets();
 }
 
-SizeT QueueReader::getAvailableSamplesNative()
+SizeT QueueReader::getAvailableSamplesNative() const
 {
-    checkConnection();
-    drainConnection();
+    if (availableNativeValid)
+    {
+        // Debug cross-check: any queue mutation that forgot to invalidateAvailable() would
+        // leave a stale cache here, which the test suite then catches immediately.
+        assert(availableNativeCache == recomputeAvailableNative() && "stale available-count cache");
+        return availableNativeCache;
+    }
+    availableNativeCache = recomputeAvailableNative();
+    availableNativeValid = true;
+    return availableNativeCache;
+}
 
+SizeT QueueReader::recomputeAvailableNative() const
+{
     SizeT count = 0;
     SizeT packetReadingPosition = readingPosition;
     for (const auto& packet : packets)
@@ -300,22 +414,26 @@ SizeT QueueReader::getAvailableSamplesNative()
     return count;
 }
 
-SizeT QueueReader::getAvailableSamples()
+SizeT QueueReader::getAvailableSamples() const
 {
     return getAvailableSamplesNative() * sampleRateDivider;
 }
 
-bool QueueReader::hasPendingEvents()
+SizeT QueueReader::getAvailableSamplesUntilEvent() const
 {
-    checkConnection();
-    drainConnection();
+    // The native counter stops at the first non-data packet, so the available count
+    // already ends at the next event boundary; this alias makes that contract explicit.
+    // Counts are in the common-rate equivalent: the owner-facing unit.
+    return getAvailableSamplesNative() * sampleRateDivider;
+}
+
+bool QueueReader::hasPendingEvents() const
+{
     return !events.empty();
 }
 
 EventPacketPtr QueueReader::popFrontEvent()
 {
-    checkConnection();
-    drainConnection();
     if (events.empty())
         return nullptr;
 
@@ -324,13 +442,11 @@ EventPacketPtr QueueReader::popFrontEvent()
     return eventPacket;
 }
 
-bool QueueReader::isValid()
+bool QueueReader::isValid() const
 {
-    if (!connection.assigned())
-        return false;
-
-    drainConnection();
-    return issues.empty();
+    // A convenience over the issue flags: connected and free of descriptor issues -
+    // the owner consumes the per-slot issues for its Incompatible diagnostics
+    return connection.assigned() && issues.empty();
 }
 
 void QueueReader::domainChangeHandled()
@@ -338,10 +454,76 @@ void QueueReader::domainChangeHandled()
     domainChanged = false;
 }
 
+const DataDescriptorPtr& QueueReader::getValueDescriptor() const
+{
+    return typeCtx.valueLayout.descriptor;
+}
+
+const DataDescriptorPtr& QueueReader::getDomainDescriptor() const
+{
+    return typeCtx.domainLayout.descriptor;
+}
+
+void QueueReader::seedDescriptors(const DataDescriptorPtr& valueDescriptor, const DataDescriptorPtr& domainDescriptor)
+{
+    if (valueDescriptor.assigned())
+        typeCtx.valueLayout.descriptor = valueDescriptor;
+    if (domainDescriptor.assigned())
+        typeCtx.domainLayout.descriptor = domainDescriptor;
+    if (typeCtx.valueLayout.descriptor.assigned() || typeCtx.domainLayout.descriptor.assigned())
+        parseCachedDescriptors();
+}
+
+SampleType QueueReader::getValueReadType() const
+{
+    return typeCtx.valueOut;
+}
+
+SampleType QueueReader::getDomainReadType() const
+{
+    return typeCtx.domainOut;
+}
+
+void QueueReader::setValueTransformFunction(const FunctionPtr& transform)
+{
+    typeCtx.valueTransform = transform;
+}
+
+void QueueReader::setDomainTransformFunction(const FunctionPtr& transform)
+{
+    typeCtx.domainTransform = transform;
+}
+
+const FunctionPtr& QueueReader::getValueTransformFunction() const
+{
+    return typeCtx.valueTransform;
+}
+
+const FunctionPtr& QueueReader::getDomainTransformFunction() const
+{
+    return typeCtx.domainTransform;
+}
+
 void QueueReader::updateConnection()
 {
     connection = port.getConnection();
+    refreshConnectionInternal();
     drainConnection();
+}
+
+bool QueueReader::refreshConnection()
+{
+    // The port can hold a connection whose notifications have not reached the owner yet -
+    // initial event packets are enqueued while the connection is still being constructed,
+    // before the connected() notification fires.
+    auto current = port.getConnection();
+    if (current == connection)
+        return false;
+
+    connection = std::move(current);
+    refreshConnectionInternal();
+    drainConnection();
+    return true;
 }
 
 void QueueReader::setSampleRateDivider(SizeT divider)
@@ -377,12 +559,17 @@ AdvanceResult QueueReader::read(void* valueBuffer, void* domainBuffer, SizeT* co
 
 AdvanceResult QueueReader::readNative(void* valueBuffer, void* domainBuffer, SizeT* count)
 {
+    // Availability is maintained incrementally, not invalidated: this read consumes exactly the
+    // samples it copies (decremented below), and consumeLeadingEventPackets invalidates only if
+    // it crosses an event boundary. This keeps the count O(1) on the steady read path instead of
+    // an O(buffered-packets) rescan after every read.
     if (count == nullptr)
         return AdvanceResult::Error;
 
     if (*count == 0)
         return AdvanceResult::Success;
 
+    // The owner drains at its evaluation points; pending events block data operations
     if (hasPendingEvents())
     {
         *count = 0;
@@ -439,15 +626,11 @@ AdvanceResult QueueReader::readNative(void* valueBuffer, void* domainBuffer, Siz
                     break;
             }
 
-            ErrCode errCode = TypedReadingUtils::readData(typeCtx.valueIn,
-                                                          typeCtx.valueOut,
-                                                          false,
-                                                          typeCtx.valueLayout,
-                                                          valueData,
-                                                          readingPosition,
-                                                          &valuePtr,
-                                                          toRead,
-                                                          typeCtx.valueTransform);
+            // Pre-resolved specialization (parseValueDescriptor); no per-packet type dispatch.
+            // The owner only reads compatible inputs, so the fn is always resolved here.
+            assert(typeCtx.valueReadFn && "value read fn resolved before any read");
+            ErrCode errCode = typeCtx.valueReadFn(
+                typeCtx.valueLayout, valueData, readingPosition, &valuePtr, toRead, typeCtx.valueTransform);
             if (!OPENDAQ_SUCCEEDED(errCode))
                 throwExceptionFromErrorCode(errCode, getErrorInfoMessage(errCode, true));
         }
@@ -458,15 +641,10 @@ AdvanceResult QueueReader::readNative(void* valueBuffer, void* domainBuffer, Siz
             if (!domainPacket.assigned())
                 DAQ_THROW_EXCEPTION(NotSupportedException, "Domain packet must be assigned.");
 
-            ErrCode errCode = TypedReadingUtils::readData(typeCtx.domainIn,
-                                                          typeCtx.domainOut,
-                                                          true,
-                                                          typeCtx.domainLayout,
-                                                          domainPacket.getData(),
-                                                          readingPosition,
-                                                          &domainPtr,
-                                                          toRead,
-                                                          typeCtx.domainTransform);
+            // Pre-resolved specialization (parseDomainDescriptor); no per-packet type dispatch.
+            assert(typeCtx.domainReadFn && "domain read fn resolved before any read");
+            ErrCode errCode = typeCtx.domainReadFn(
+                typeCtx.domainLayout, domainPacket.getData(), readingPosition, &domainPtr, toRead, typeCtx.domainTransform);
 
             if (!OPENDAQ_SUCCEEDED(errCode))
                 throwExceptionFromErrorCode(errCode, getErrorInfoMessage(errCode, true));
@@ -490,6 +668,12 @@ AdvanceResult QueueReader::readNative(void* valueBuffer, void* domainBuffer, Siz
     }
     packets.erase(packets.begin(), packets.begin() + end);
     *count = requested - remainingToRead;
+
+    // Maintain the native available-count cache: exactly *count native samples were consumed from
+    // the leading data run. Guarded on validity so a lazy/invalid cache stays invalid (recomputed
+    // on the next query). consumeLeadingEventPackets below re-invalidates if it crosses an event.
+    if (availableNativeValid)
+        availableNativeCache -= *count;
 
     if (returnError)
         return AdvanceResult::Error;
@@ -518,31 +702,31 @@ void QueueReader::drainConnection()
     consumeLeadingEventPackets();
 }
 
-bool QueueReader::dropLeftoverSegment(SizeT samplesInBlock)
+bool QueueReader::discardLeftoverSegment(SizeT samplesInBlock)
 {
     if (samplesInBlock % sampleRateDivider != 0)
     {
         DAQ_THROW_EXCEPTION(InvalidStateException, "Aligned block size must be divisible by all signal dividers.");
     }
-    
+
     if (hasPendingEvents())
     {
-        DAQ_THROW_EXCEPTION(InvalidStateException, "Events must be handled before dropping leftover segments.");
+        DAQ_THROW_EXCEPTION(InvalidStateException, "Events must be handled before discarding leftover segments.");
     }
 
-    // No events in the queue, this segment has not been ended - mustn't drop
+    // No events in the queue, this segment has not been ended - mustn't discard
     if (getNumberOfEventPacketsInQueue() == 0)
         return false;
 
-
     const SizeT requiredNativeSamples = samplesInBlock / sampleRateDivider;
-    size_t availableNativeSamples = getAvailableSamplesNative();
+    const size_t availableNativeSamples = getAvailableSamplesNative();
 
     if (availableNativeSamples >= requiredNativeSamples)
         return false;
-    
+
+    // Silent discard: the trailing partial block is dropped without a synthetic event or
+    // dropped-sample count; the original event packets ending the segment become pending.
     dropUntilEvent();
-    addToEventQueue(SignalEvent::syncGapEvent(availableNativeSamples));
     consumeLeadingEventPackets(); // Transition to new segment
     return true;
 }
@@ -601,17 +785,21 @@ void QueueReader::parseDomainDescriptor()
         typeCtx.domainIn = postScaling.getInputSampleType();
     }
 
-    typeCtx.domainLayout.rawSampleSize = descriptor.getRawSampleSize();
-    auto dimensions = descriptor.getDimensions();
-    if (dimensions.assigned() && dimensions.getCount() == 1)
+    // One layout builder for every reader; the scalar check stays here because it is
+    // a domain-specific constraint, not a layout property
+    typeCtx.domainLayout = TypedReadingUtils::createReadLayout(descriptor);
     {
-        typeCtx.domainLayout.valuesPerSample = dimensions[0].getSize();
+        const auto dimensions = descriptor.getDimensions();
+        issues.set(QueueReaderIssue::DomainNotScalar, dimensions.assigned() && dimensions.getCount() != 0);
     }
 
     typeCtx.domainInfo = DomainInfo::fromDescriptor(descriptor);
 
     bool domainTypesConvertible = TypedReadingUtils::isSampleTypeConvertible(typeCtx.domainIn, typeCtx.domainOut, true);
     issues.set(QueueReaderIssue::DomainTypesNotConvertible, !domainTypesConvertible);
+
+    // Resolve the domain copy/convert specialization once (see parseValueDescriptor).
+    typeCtx.domainReadFn = domainTypesConvertible ? TypedReadingUtils::resolveReadData(typeCtx.domainIn, typeCtx.domainOut, true) : nullptr;
     // END Type Conversion
 
     // Resolution and origin
@@ -623,7 +811,11 @@ void QueueReader::parseDomainDescriptor()
     }
 
     std::string origin = descriptor.getOrigin();
-    auto newOrigin = reader::tryParseEpoch(origin);
+    // A blank origin is a legitimate relative domain: samples count from the epoch zero point.
+    // Only a non-blank origin that fails to parse is an issue.
+    const bool originBlank = origin.find_first_not_of(" \t") == std::string::npos;
+    auto newOrigin = originBlank ? std::optional<std::chrono::system_clock::time_point>(std::chrono::system_clock::time_point{})
+                                 : reader::tryParseEpoch(origin);
     if (newOrigin.has_value() && typeCtx.domainInfo.epoch != newOrigin.value())
     {
         typeCtx.domainInfo.epoch = newOrigin.value();
@@ -645,13 +837,28 @@ void QueueReader::parseDomainDescriptor()
             delta = rule.getParameters()["delta"];
         }
 
-        double sr = static_cast<double>(typeCtx.domainInfo.resolution.getDenominator()) /
-                    (static_cast<double>(typeCtx.domainInfo.resolution.getNumerator()) * delta.getFloatValue());
+        const bool resolutionValid =
+            typeCtx.domainInfo.resolution.assigned() &&
+            typeCtx.domainInfo.resolution.getNumerator() > 0 &&
+            typeCtx.domainInfo.resolution.getDenominator() > 0;
+        const bool deltaPositive = delta.getFloatValue() > 0.0;
+
+        double sr = 0.0;
+        if (resolutionValid && deltaPositive)
+        {
+            sr = static_cast<double>(typeCtx.domainInfo.resolution.getDenominator()) /
+                 (static_cast<double>(typeCtx.domainInfo.resolution.getNumerator()) * delta.getFloatValue());
+        }
 
         const bool deltaIsInteger = (delta.getFloatValue() == static_cast<double>(delta.getIntValue()));
-        const bool sampleRateIsInteger = (sr == static_cast<double>(static_cast<std::int64_t>(sr)));
+        // A valid rate is a positive integer within the representable range - anything else
+        // (fractional, zero, negative or overflowing) marks the domain rule unsupported.
+        const bool sampleRateRepresentable =
+            sr >= 1.0 && sr <= static_cast<double>(std::numeric_limits<std::int64_t>::max());
+        const bool sampleRateIsInteger =
+            sampleRateRepresentable && (sr == static_cast<double>(static_cast<std::int64_t>(sr)));
 
-        newSampleRate = static_cast<std::int64_t>(sr);
+        newSampleRate = sampleRateIsInteger ? static_cast<std::int64_t>(sr) : -1;
 
         if (sampleRate != newSampleRate)
         {
@@ -665,7 +872,8 @@ void QueueReader::parseDomainDescriptor()
             domainChanged = true;
         }
 
-        issues.set(QueueReaderIssue::UnsupportedDomainRule, !ruleIsLinear || !deltaIsInteger || !sampleRateIsInteger);
+        issues.set(QueueReaderIssue::UnsupportedDomainRule,
+                   !ruleIsLinear || !deltaIsInteger || !resolutionValid || !deltaPositive || !sampleRateIsInteger);
     }
     // END Sample rate and delta
 
@@ -696,6 +904,8 @@ void QueueReader::parseDomainDescriptor()
 void QueueReader::parseValueDescriptor()
 {
     auto& descriptor = typeCtx.valueLayout.descriptor;
+    if (!descriptor.assigned())
+        return;
 
     auto postScaling = descriptor.getPostScaling();
     if (!postScaling.assigned() || readMode == ReadMode::Scaled)
@@ -707,14 +917,9 @@ void QueueReader::parseValueDescriptor()
         typeCtx.valueIn = postScaling.getInputSampleType();
     }
 
-    {
-        typeCtx.valueLayout.rawSampleSize = descriptor.getRawSampleSize();
-        auto dimensions = descriptor.getDimensions();
-        if (dimensions.assigned() && dimensions.getCount() == 1)
-        {
-            typeCtx.valueLayout.valuesPerSample = dimensions[0].getSize();
-        }
-    }
+    // Values of any rank are readable - one sample is a fixed-size block of
+    // product-of-dimensions values (the one layout builder computes that)
+    typeCtx.valueLayout = TypedReadingUtils::createReadLayout(descriptor);
 
     if (typeCtx.valueOut == SampleType::Undefined)  // Dynamically determine output type
     {
@@ -723,6 +928,10 @@ void QueueReader::parseValueDescriptor()
 
     bool valueTypesConvertible = TypedReadingUtils::isSampleTypeConvertible(typeCtx.valueIn, typeCtx.valueOut, false);
     issues.set(QueueReaderIssue::ValueTypesNotConvertible, !valueTypesConvertible);
+
+    // Resolve the copy/convert specialization once here (only when convertible - an incompatible
+    // input is never read), so readNative is a single indirect call per packet.
+    typeCtx.valueReadFn = valueTypesConvertible ? TypedReadingUtils::resolveReadData(typeCtx.valueIn, typeCtx.valueOut, false) : nullptr;
 }
 
 void QueueReader::parseCachedDescriptors()
@@ -744,6 +953,7 @@ size_t QueueReader::getNumberOfEventPacketsInQueue()
 
 bool QueueReader::dropUntilEvent()
 {
+    invalidateAvailable();
     // Queue: d1 d2 E d3 -> E d3
     bool foundEvent = false;
     size_t end = 0;
@@ -763,5 +973,7 @@ bool QueueReader::dropUntilEvent()
     }
     return foundEvent;
 }
+
+}  // namespace multi_reader
 
 END_NAMESPACE_OPENDAQ

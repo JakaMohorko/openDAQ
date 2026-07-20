@@ -70,6 +70,35 @@ inline std::ostream& operator<<(std::ostream& os, const DomainInfo& info)
     return os;
 }
 
+namespace domain_conversion
+{
+    /// Epoch difference (from - to) expressed in ticks of @p resolution, truncated toward
+    /// zero (the sub-tick remainder of an epoch is not representable on the tick grid).
+    inline Int epochOffsetTicks(const std::chrono::system_clock::time_point& from,
+                                const std::chrono::system_clock::time_point& to,
+                                const RatioPtr& resolution)
+    {
+        using SysPeriod = std::chrono::system_clock::period;
+        const Int epochDiff = from.time_since_epoch().count() - to.time_since_epoch().count();
+        const Int scaleNumerator = SysPeriod::num * resolution.getDenominator();
+        const Int scaleDenominator = SysPeriod::den * resolution.getNumerator();
+        return epochDiff * scaleNumerator / scaleDenominator;
+    }
+
+    /// tick_target = tick_source * numerator / denominator
+    struct TickMultiplier
+    {
+        Int numerator;
+        Int denominator;
+    };
+
+    inline TickMultiplier tickMultiplier(const RatioPtr& sourceResolution, const RatioPtr& targetResolution)
+    {
+        return {sourceResolution.getNumerator() * targetResolution.getDenominator(),
+                sourceResolution.getDenominator() * targetResolution.getNumerator()};
+    }
+}  // namespace domain_conversion
+
 class DomainValue
 {
 public:
@@ -84,10 +113,33 @@ public:
         return domain;
     }
 
-    virtual std::unique_ptr<DomainValue> toCommonDomain(const DomainInfo& commonDomain) = 0;
-    virtual std::unique_ptr<DomainValue> fromCommonDomain(const DomainInfo& regularDomain) = 0;
+    /**
+     * @brief This value re-expressed in @p targetDomain, rounding the scaled tick to the
+     * nearest target tick and truncating the epoch offset in target ticks. Entering a
+     * common domain whose resolution folds this one is exact (spec section 4.1).
+     */
+    virtual std::unique_ptr<DomainValue> toDomain(const DomainInfo& targetDomain) = 0;
+
+    /**
+     * @brief The inverse pairing of toDomain: this value re-expressed in @p targetDomain,
+     * with the epoch offset truncated in THIS domain's ticks before scaling. The alignment
+     * loop uses it to map a common-domain candidate back onto an input's grid; the two
+     * directions keep their historical rounding order, so round trips through sub-tick
+     * epoch remainders stay bit-identical to the original implementation.
+     */
+    virtual std::unique_ptr<DomainValue> fromDomain(const DomainInfo& targetDomain) = 0;
 
     virtual void roundUpOnDomainInterval(const RatioPtr& interval) = 0;
+
+    /// Shift the value by a whole number of ticks of its own domain (used to anchor
+    /// grid rounding at an arbitrary phase, spec section 5).
+    virtual void shiftTicks(std::int64_t delta) = 0;
+
+    /**
+     * @brief System-clock time this value represents (epoch + tick * resolution).
+     * Used for synchronization-distance diagnostics; not for tick-exact comparisons.
+     */
+    virtual std::chrono::system_clock::time_point toAbsoluteTime() const = 0;
 
 #if !defined(NDEBUG)
     virtual std::string asTime() const = 0;
@@ -111,6 +163,9 @@ public:
     }
 
 protected:
+    /// A domain value is only meaningful relative to an epoch and resolution; carrying the
+    /// DomainInfo keeps values self-describing so compare/toDomain need no external
+    /// bookkeeping (#12)
     DomainInfo domain;
 
 private:
@@ -125,76 +180,53 @@ public:
         : DomainValue(info)
         , value(value)
     {
-#if !defined(NDEBUG)
-        if constexpr (std::is_integral_v<Type>)
-        {
-            std::cout << "DomainValueImpl(value=" << value << ", domain=" << info << ")" << std::endl;
-        }
-#endif
     }
 
     ~DomainValueImpl() override = default;
 
-    std::unique_ptr<DomainValue> toCommonDomain(const DomainInfo& commonDomain) override
+    std::unique_ptr<DomainValue> toDomain(const DomainInfo& targetDomain) override
     {
-        // Offset of current domain in common domain ticks
-        Int epochOffset = domain.epoch.time_since_epoch().count() - commonDomain.epoch.time_since_epoch().count();
+        const Int offsetTicks = domain_conversion::epochOffsetTicks(domain.epoch, targetDomain.epoch, targetDomain.resolution);
+        const auto multiplier = domain_conversion::tickMultiplier(domain.resolution, targetDomain.resolution);
 
-        using SysPeriod = std::chrono::system_clock::period;
-        Int scaleNumerator = SysPeriod::num * commonDomain.resolution.getDenominator();
-        Int scaleDenominator = SysPeriod::den * commonDomain.resolution.getNumerator();
-        Int offsetFromCommon = epochOffset * scaleNumerator / scaleDenominator;
-
-        // tick_common = tick * multiplier
-        Int multiplierNumerator = domain.resolution.getNumerator() * commonDomain.resolution.getDenominator();
-        Int multiplierDenominator = domain.resolution.getDenominator() * commonDomain.resolution.getNumerator();
-
-        Type valueScaledToCommon = 0;
+        Type valueScaled = 0;
         if constexpr (std::is_integral_v<Type>)
         {
             // Round to the closest tick
-            valueScaledToCommon = static_cast<Type>((value / multiplierDenominator) * multiplierNumerator +
-                                                    (2 * (value % multiplierDenominator) * multiplierNumerator + multiplierDenominator) / (2 * multiplierDenominator));
+            valueScaled = static_cast<Type>((value / multiplier.denominator) * multiplier.numerator +
+                                            (2 * (value % multiplier.denominator) * multiplier.numerator + multiplier.denominator) /
+                                                (2 * multiplier.denominator));
         }
         else
         {
-            valueScaledToCommon = static_cast<Type>(value * multiplierNumerator / static_cast<double>(multiplierDenominator));
+            valueScaled = static_cast<Type>(value * multiplier.numerator / static_cast<double>(multiplier.denominator));
         }
-        Type valueInCommon = offsetFromCommon + valueScaledToCommon;
 
-        return std::make_unique<DomainValueImpl<Type>>(commonDomain, valueInCommon);
+        return std::make_unique<DomainValueImpl<Type>>(targetDomain, static_cast<Type>(offsetTicks + valueScaled));
     }
 
-    std::unique_ptr<DomainValue> fromCommonDomain(const DomainInfo& regularDomain) override
+    std::unique_ptr<DomainValue> fromDomain(const DomainInfo& targetDomain) override
     {
-        const auto& commonDomain = this->domain;
-        const auto& valueInCommon = this->value;
+        // Epoch offset truncated in THIS domain's ticks, subtracted before scaling - see
+        // the base-class contract for why the two directions round differently
+        const Int offsetTicks = domain_conversion::epochOffsetTicks(targetDomain.epoch, domain.epoch, domain.resolution);
+        const auto multiplier = domain_conversion::tickMultiplier(targetDomain.resolution, domain.resolution);
 
-        // Offset of regularDomain domain in common domain ticks
-        Int epochOffset = regularDomain.epoch.time_since_epoch().count() - commonDomain.epoch.time_since_epoch().count();
-
-        using SysPeriod = std::chrono::system_clock::period;
-        Int scaleNumerator = SysPeriod::num * commonDomain.resolution.getDenominator();
-        Int scaleDenominator = SysPeriod::den * commonDomain.resolution.getNumerator();
-        Int offsetFromCommon = epochOffset * scaleNumerator / scaleDenominator;
-        Type valueScaledToCommon = valueInCommon - offsetFromCommon;
-
-        Int multiplierNumerator = regularDomain.resolution.getNumerator() * commonDomain.resolution.getDenominator();
-        Int multiplierDenominator = regularDomain.resolution.getDenominator() * commonDomain.resolution.getNumerator();
-
-        Type regularValue = 0;
+        const Type valueShifted = static_cast<Type>(value - offsetTicks);
+        Type targetValue = 0;
         if constexpr (std::is_integral_v<Type>)
         {
             // Round to the closest tick
-            regularValue = static_cast<Type>((valueScaledToCommon / multiplierNumerator) * multiplierDenominator +
-                                             (2 * (valueScaledToCommon % multiplierNumerator) * multiplierDenominator + multiplierNumerator) / (2 * multiplierNumerator));
+            targetValue = static_cast<Type>((valueShifted / multiplier.numerator) * multiplier.denominator +
+                                            (2 * (valueShifted % multiplier.numerator) * multiplier.denominator + multiplier.numerator) /
+                                                (2 * multiplier.numerator));
         }
         else
         {
-            regularValue = static_cast<Type>(valueScaledToCommon * multiplierDenominator / static_cast<double>(multiplierNumerator));
+            targetValue = static_cast<Type>(valueShifted * multiplier.denominator / static_cast<double>(multiplier.numerator));
         }
 
-        return std::make_unique<DomainValueImpl<Type>>(regularDomain, regularValue);
+        return std::make_unique<DomainValueImpl<Type>>(targetDomain, targetValue);
     }
 
     void roundUpOnDomainInterval(const RatioPtr& interval) override
@@ -210,6 +242,16 @@ public:
             DAQ_THROW_EXCEPTION(NotSupportedException, "Resolution must be aligned on full unit of domain");
 
         value = static_cast<Type>((((value * num + den - 1) / den) * den) / num);
+    }
+
+    void shiftTicks(std::int64_t delta) override
+    {
+        value = static_cast<Type>(value + delta);
+    }
+
+    std::chrono::system_clock::time_point toAbsoluteTime() const override
+    {
+        return reader::toSysTime(value, domain.epoch, domain.resolution);
     }
 
     Type getValue() const
@@ -261,69 +303,56 @@ public:
         : DomainValue(info)
         , value(value)
     {
-        std::cout << "DomainValueImpl(value=" << value.start << ", domain=" << info << ")" << std::endl;
+    }
+    std::unique_ptr<DomainValue> toDomain(const DomainInfo& targetDomain) override
+    {
+        const Int offsetTicks = domain_conversion::epochOffsetTicks(domain.epoch, targetDomain.epoch, targetDomain.resolution);
+        const auto multiplier = domain_conversion::tickMultiplier(domain.resolution, targetDomain.resolution);
+
+        const auto scale = [&multiplier](RangeValue tick)
+        {
+            return static_cast<RangeValue>((tick / multiplier.denominator) * multiplier.numerator +
+                                           (tick % multiplier.denominator) * multiplier.numerator / multiplier.denominator);
+        };
+
+        const RangeValue start = offsetTicks + scale(value.start);
+        const RangeValue end = value.end == -1 ? static_cast<RangeValue>(-1) : offsetTicks + scale(value.end);
+
+        return std::make_unique<DomainValueImpl<RangeType64>>(targetDomain, RangeType64{start, end});
     }
 
-    std::unique_ptr<DomainValue> toCommonDomain(const DomainInfo& commonDomain) override
+    std::unique_ptr<DomainValue> fromDomain(const DomainInfo& targetDomain) override
     {
-        // Offset of current domain in common domain ticks
-        Int epochOffset = domain.epoch.time_since_epoch().count() - commonDomain.epoch.time_since_epoch().count();
+        const Int offsetTicks = domain_conversion::epochOffsetTicks(targetDomain.epoch, domain.epoch, domain.resolution);
+        const auto multiplier = domain_conversion::tickMultiplier(targetDomain.resolution, domain.resolution);
 
-        using SysPeriod = std::chrono::system_clock::period;
-        Int scaleNumerator = SysPeriod::num * commonDomain.resolution.getDenominator();
-        Int scaleDenominator = SysPeriod::den * commonDomain.resolution.getNumerator();
-        RangeValue offsetFromCommon = static_cast<RangeValue>(epochOffset * scaleNumerator / scaleDenominator);
+        const auto scale = [&multiplier](RangeValue tick)
+        {
+            return static_cast<RangeValue>((tick / multiplier.numerator) * multiplier.denominator +
+                                           (tick % multiplier.numerator) * multiplier.denominator / multiplier.numerator);
+        };
 
-        // tick_common = tick * multiplier
-        Int multiplierNumerator = domain.resolution.getNumerator() * commonDomain.resolution.getDenominator();
-        Int multiplierDenominator = domain.resolution.getDenominator() * commonDomain.resolution.getNumerator();
-        RangeValue startScaledToCommon =
-            static_cast<RangeValue>((value.start / multiplierDenominator) * multiplierNumerator +
-                                    (value.start % multiplierDenominator) * multiplierNumerator / multiplierDenominator);
-        RangeValue endScaledToCommon =
-            static_cast<RangeValue>((value.end / multiplierDenominator) * multiplierNumerator +
-                                    (value.end % multiplierDenominator) * multiplierNumerator / multiplierDenominator);
+        const RangeValue start = scale(value.start - offsetTicks);
+        const RangeValue end = value.end == -1 ? static_cast<RangeValue>(-1) : scale(value.end - offsetTicks);
 
-        RangeValue startInCommon = offsetFromCommon + startScaledToCommon;
-        RangeValue endInCommon = value.end == -1 ? static_cast<RangeValue>(-1) : offsetFromCommon + endScaledToCommon;
-
-        return std::make_unique<DomainValueImpl<RangeType64>>(commonDomain, RangeType64{startInCommon, endInCommon});
-    }
-
-    std::unique_ptr<DomainValue> fromCommonDomain(const DomainInfo& regularDomain) override
-    {
-        const auto& commonDomain = this->domain;
-        const auto& valueInCommon = this->value;
-
-        // Offset of regularDomain domain in common domain ticks
-        Int epochOffset = regularDomain.epoch.time_since_epoch().count() - commonDomain.epoch.time_since_epoch().count();
-
-        using SysPeriod = std::chrono::system_clock::period;
-        Int scaleNumerator = SysPeriod::num * commonDomain.resolution.getDenominator();
-        Int scaleDenominator = SysPeriod::den * commonDomain.resolution.getNumerator();
-        Int offsetFromCommon = epochOffset * scaleNumerator / scaleDenominator;
-
-        RangeValue startScaledToCommon = valueInCommon.start - offsetFromCommon;
-        RangeValue endScaledToCommon = valueInCommon.end - offsetFromCommon;
-
-        // tick_common = tick * multiplier
-        Int multiplierNumerator = regularDomain.resolution.getNumerator() * commonDomain.resolution.getDenominator();
-        Int multiplierDenominator = regularDomain.resolution.getDenominator() * commonDomain.resolution.getNumerator();
-        RangeValue startValue =
-            static_cast<RangeValue>((startScaledToCommon / multiplierNumerator) * multiplierDenominator +
-                                    (startScaledToCommon % multiplierNumerator) * multiplierDenominator / multiplierNumerator);
-        RangeValue endValue =
-            valueInCommon.end == -1
-                ? static_cast<RangeValue>(-1)
-                : static_cast<RangeValue>((endScaledToCommon / multiplierNumerator) * multiplierDenominator +
-                                          (endScaledToCommon % multiplierNumerator) * multiplierDenominator / multiplierNumerator);
-
-        return std::make_unique<DomainValueImpl<RangeType64>>(regularDomain, RangeType64{startValue, endValue});
+        return std::make_unique<DomainValueImpl<RangeType64>>(targetDomain, RangeType64{start, end});
     }
 
     void roundUpOnDomainInterval(const RatioPtr& interval) override
     {
         DAQ_THROW_EXCEPTION(NotSupportedException);
+    }
+
+    void shiftTicks(std::int64_t delta) override
+    {
+        value.start += delta;
+        if (value.end != -1)
+            value.end += delta;
+    }
+
+    std::chrono::system_clock::time_point toAbsoluteTime() const override
+    {
+        return reader::toSysTime(value.start, domain.epoch, domain.resolution);
     }
 
     RangeType64 getValue() const
@@ -365,88 +394,11 @@ private:
     RangeType64 value;
 };
 
-template <>
-class DomainValueImpl<ComplexFloat32> final : public DomainValue
-{
-public:
-    explicit DomainValueImpl(const DomainInfo& info, ComplexFloat32 value)
-        : DomainValue(info)
-    {
-    }
-
-    std::unique_ptr<DomainValue> toCommonDomain(const DomainInfo& commonDomain) override
-    {
-        DAQ_THROW_EXCEPTION(NotSupportedException);
-    }
-
-    std::unique_ptr<DomainValue> fromCommonDomain(const DomainInfo& regularDomain) override
-    {
-        DAQ_THROW_EXCEPTION(NotSupportedException);
-    }
-
-    void roundUpOnDomainInterval(const RatioPtr& interval) override
-    {
-        DAQ_THROW_EXCEPTION(NotSupportedException);
-    }
-
-    ComplexFloat32 getValue() const
-    {
-        DAQ_THROW_EXCEPTION(NotSupportedException);
-    }
-
-#if !defined(NDEBUG)
-    virtual std::string asTime() const override
-    {
-        DAQ_THROW_EXCEPTION(NotSupportedException);
-    }
-#endif
-
-    int compare(const DomainValue& other) const override
-    {
-        DAQ_THROW_EXCEPTION(NotSupportedException);
-    }
-};
-
-template <>
-class DomainValueImpl<ComplexFloat64> final : public DomainValue
-{
-public:
-    explicit DomainValueImpl(const DomainInfo& info, ComplexFloat64 value)
-        : DomainValue(info)
-    {
-    }
-
-    std::unique_ptr<DomainValue> toCommonDomain(const DomainInfo& commonDomain) override
-    {
-        DAQ_THROW_EXCEPTION(NotSupportedException);
-    }
-
-    std::unique_ptr<DomainValue> fromCommonDomain(const DomainInfo& regularDomain) override
-    {
-        DAQ_THROW_EXCEPTION(NotSupportedException);
-    }
-
-    void roundUpOnDomainInterval(const RatioPtr& interval) override
-    {
-        DAQ_THROW_EXCEPTION(NotSupportedException);
-    }
-
-    ComplexFloat64 getValue() const
-    {
-        DAQ_THROW_EXCEPTION(NotSupportedException);
-    }
-
-#if !defined(NDEBUG)
-    virtual std::string asTime() const override
-    {
-        DAQ_THROW_EXCEPTION(NotSupportedException);
-    }
-#endif
-
-    int compare(const DomainValue& other) const override
-    {
-        DAQ_THROW_EXCEPTION(NotSupportedException);
-    }
-};
+/// Only integral scalars and RangeType64 make sense as domain values; the reading
+/// utilities reject every other sample type before instantiating DomainValueImpl (#15),
+/// so no throwing specializations are needed.
+template <typename Type>
+inline constexpr bool isDomainValueType =
+    std::is_integral_v<Type> || std::is_same_v<Type, RangeType64> || std::is_floating_point_v<Type>;
 
 END_NAMESPACE_OPENDAQ

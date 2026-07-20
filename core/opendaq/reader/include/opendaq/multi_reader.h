@@ -193,6 +193,26 @@ DECLARE_OPENDAQ_INTERFACE(IMultiReader, ISampleReader)
      * @param unused Output parameter
      */
     virtual ErrCode INTERFACE_FUNC getInputUsed(IString* id, Bool* isUsed) = 0;
+
+    /*!
+     * @brief Selects the main input - the input supplying the output grid identity (domain phase
+     * and default rate). Changing it at runtime invalidates the synchronization; the next read
+     * realigns on the new grid. A disconnected selected main input puts the reader into the
+     * WaitingForConnections state - it is never silently replaced.
+     * @param id Global ID of a component previously added into the MultiReader; empty or null
+     * selects the default (the first used input in construction order).
+     */
+    virtual ErrCode INTERFACE_FUNC setMainInput(IString* id) = 0;
+
+    /*!
+     * @brief Gets the global ID of the explicitly selected main input.
+     * @param[out] id The selected main input id; null when the default (first used input) applies.
+     */
+    virtual ErrCode INTERFACE_FUNC getMainInput(IString** id) = 0;
+
+    // The maximum synchronization distance and the data-loss timeout are synchronization-defining
+    // configuration and exist only on IMultiReaderBuilder; changing them at runtime means
+    // rebuilding the reader (the documented dispose-and-rebuild consumer pattern).
 };
 
 /*!@}*/

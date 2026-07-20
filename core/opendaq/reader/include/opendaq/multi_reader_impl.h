@@ -15,20 +15,66 @@
  */
 #pragma once
 #include <opendaq/multi_reader.h>
+#include <opendaq/multi_reader_status.h>
 
-#include <opendaq/read_info.h>
-#include <opendaq/reader_config_ptr.h>
-#include <opendaq/signal_reader.h>
+#include <opendaq/multi_reader/data_loss_monitor.h>
+#include <opendaq/multi_reader/input.h>
 #include <opendaq/multi_reader_builder_ptr.h>
+#include <opendaq/multi_reader/notification_coordinator.h>
+#include <opendaq/multi_reader/read_coordinator.h>
+#include <opendaq/reader_config_ptr.h>
 #include <opendaq/reader_factory.h>
+#include <opendaq/reader_status_impl.h>
+#include <opendaq/multi_reader/synchronization_manager.h>
 
-#include <list>
+#include <atomic>
+#include <condition_variable>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <string>
+#include <vector>
 
 BEGIN_NAMESPACE_OPENDAQ
 
-class MultiReaderImpl : public ImplementationOfWeak<IMultiReader, IReaderConfig, IInputPortNotifications>
+/**
+ * @brief Internal runtime states of the multi reader. The public surface is the extended
+ * ReadStatus plus the per-input InputState dictionary; this enum only drives the internal
+ * state machine and the diagnostic message.
+ */
+enum class ReaderState
+{
+    Inactive = 0,           ///< Disabled via setActive(false)
+    WaitingForConnections,  ///< A used input has no signal connected
+    WaitingForDescriptors,  ///< A used input has not received its descriptors yet
+    Incompatible,           ///< Local or cross-input validation failed (recoverable)
+    WaitingForData,         ///< Valid, but some input has no samples
+    Synchronizing,          ///< Alignment in progress, waiting for data to reach the aligned start
+    Synchronized,           ///< Aligned blocks readable
+    EventPending,           ///< Event(s) must be returned before data
+    SynchronizationFailed,  ///< Span, representability or common-tick failure
+    DataLost,               ///< A used input missed its packet deadline
+    Error                   ///< Internal invariant violated or reader disposed; not recoverable
+};
+
+/**
+ * @brief Public facade of the multi reader: configuration, input order, the runtime state
+ * machine and status creation. All cross-input math lives in the
+ * SynchronizationManager, all queue work in the per-slot QueueReaders, read planning in
+ * the ReadCoordinator and callback coalescing in the NotificationCoordinator.
+ *
+ * Locking: one state mutex; producer threads never take it
+ * (Input::packetReceived only touches atomics and schedules the coalesced
+ * evaluation); user callbacks are invoked with no lock held.
+ *
+ * Naming convention: a "...Locked" suffix means "the caller must already hold `mutex`" -
+ * such a method never takes the lock itself and must only be called from code that does.
+ * Methods without the suffix acquire the lock themselves (or need none).
+ */
+class MultiReaderImpl : public ImplementationOfWeak<IMultiReader, IReaderConfig>, private multi_reader::IInputListener
 {
 public:
+    /// Legacy list factory path; delegates to the builder constructor (the single wiring path).
     MultiReaderImpl(const ListPtr<IComponent>& list,
                     SampleType valueReadType,
                     SampleType domainReadType,
@@ -38,9 +84,9 @@ public:
                     Bool startOnFullUnitOfDomain = false,
                     SizeT minReadCount = 1);
 
-    MultiReaderImpl(MultiReaderImpl* old,
-                    SampleType valueReadType,
-                    SampleType domainReadType);
+    /// Deprecated MultiReaderFromExisting path; scheduled for removal and
+    /// deliberately not migrated to the builder constructor.
+    MultiReaderImpl(MultiReaderImpl* old, SampleType valueReadType, SampleType domainReadType);
 
     MultiReaderImpl(const MultiReaderBuilderPtr& builder);
 
@@ -74,12 +120,16 @@ public:
     ErrCode INTERFACE_FUNC removeInput(IString* id) override;
     ErrCode INTERFACE_FUNC setInputUsed(IString* id, Bool isUsed) override;
     ErrCode INTERFACE_FUNC getInputUsed(IString* id, Bool* isUsed) override;
+    ErrCode INTERFACE_FUNC setMainInput(IString* id) override;
+    ErrCode INTERFACE_FUNC getMainInput(IString** id) override;
 
-    // IInputPortNotifications
-    ErrCode INTERFACE_FUNC acceptsSignal(IInputPort* port, ISignal* signal, Bool* accept) override;
-    ErrCode INTERFACE_FUNC connected(IInputPort* port) override;
-    ErrCode INTERFACE_FUNC disconnected(IInputPort* port) override;
-    ErrCode INTERFACE_FUNC packetReceived(IInputPort* inputPort) override;
+    /// Test hook: replaces the data-loss time source so deadline tests run on virtual time
+    /// with zero real sleeps. Inline so tests can call
+    /// it without the implementation being exported from the library.
+    void setDataLossClockForTest(multi_reader::DataLossMonitor::Clock clock)
+    {
+        dataLossMonitor->setClockForTest(std::move(clock));
+    }
 
     // IReaderConfig
     ErrCode INTERFACE_FUNC getValueTransformFunction(IFunction** transform) override;
@@ -92,139 +142,241 @@ public:
     void internalDispose(bool disposing) override;
 
 private:
-    using Clock = std::chrono::steady_clock;
-    using Duration = Clock::duration;
-
-    // Checks for list size > 0, caches context of 1st component
-    void checkListSizeAndCacheContext(const ListPtr<IComponent>& list);
-    // Returns true if all ports are connected
-    bool allPortsConnected() const;
-    // Sets up port notifications and binds ports
-    void configureAndStorePorts(const ListPtr<IInputPortConfig>& inputPorts, SampleType valueRead, SampleType domainRead, ReadMode mode);
-    // Returns list of ports used by reader; Creates ports when reader is created with signals;
-    ListPtr<IInputPortConfig> createOrAdoptPorts(const ListPtr<IComponent>& list) const;
-
-    // Multi reader signals must have the symbol "s" and quantity "time"
-    static ErrCode checkDomainUnits(const ListPtr<InputPortConfigPtr>& ports);
-    ErrCode checkReferenceDomainInfo(const ListPtr<InputPortConfigPtr>& ports) const;
-    ErrCode isDomainValid(const ListPtr<IInputPortConfig>& list) const;
-
-    ListPtr<ISignal> getSignals() const;
-
-    /**
-     * @brief Find the earliest origin and maximum resolution among signal domain descriptors.
-     *
-     * Set earliest origin and max resolution to all signals (sync signal starts).
-     */
-    void setStartInfo();
-
-    bool eventOrGapInQueue() const;
-    bool dataPacketsOrEventReady();
-    SizeT getMinSamplesAvailable(bool acrossDescriptorChanges = false) const;
-
-    ErrCode synchronize(SizeT& min, SyncStatus& syncStatus);
-    /**
-     * @brief Attempt to sync all SignalReaders to common start.
-     *
-     * Keeps track of absolute time stamps, and if the timestamps differ too much and this check is configured,
-     * it sets SynchronizationFailed state to all signals.
-     *
-     * Note: The sync status is stored exclusively in the SignalReaders.
-     */
-    void sync();
-    SyncStatus getSyncStatus() const;
-
-    void readSamples(SizeT samples);
-    void readSamplesAndSetRemainingSamples(SizeT samples);
-    NumberPtr calculateOffset() const;
-
-    // Check for event packets; Synchronize; Skip if event/packet in queue and available samples < minReadCount
-    MultiReaderStatusPtr readAndSynchronize(bool zeroDataRead, SizeT& availableSamples, SyncStatus& syncStatus);
-    MultiReaderStatusPtr readPackets();
-    DictPtr<IString, IEventPacket> readUntilFirstDataPacketAndGetEvents();
-    void updateCommonSampleRateAndDividers();
-
-    void prepare(void** outValues, SizeT count, std::chrono::milliseconds timeoutTime);
-    void prepareWithDomain(void** outValues, void** domain, SizeT count, std::chrono::milliseconds timeoutTime);
-
-    [[nodiscard]] Duration durationFromStart() const;
-
-    /**
-     * @brief Update commonStart from domain starts of all signals.
-     *
-     * Request domain start from all the signals and set the highest one as the common start. According to
-     * configuration optionally round common start to whole domain unit.
-     */
-    void readDomainStart();
-    void setActiveInternal(Bool isActive);
-    void setPortsActiveState(Bool active);
-
-    MultiReaderStatusPtr createReaderStatus(const DictPtr<IString, IEventPacket>& eventPackets = nullptr, const NumberPtr& offset = nullptr) const;
-
     enum class InputType
     {
         Unknown,
         Signals,
         Ports,
     };
-    InputType sourceComponentsType(const ListPtr<IComponent>& sources) const;
-    std::list<SignalReader>::iterator findByGlobalId(const StringPtr& id);
 
+    // --- IInputListener (semantic port notifications from the slots) ---
+    // Why this second listener surface exists: a port can have exactly one listener, and that
+    // listener is the slot (it owns the port's QueueReader pairing). This private interface is
+    // the slot's channel back up to the facade - it carries the slot index, keeps the producer
+    // path bounded (slotPacketReceived touches atomics and schedules the coalesced evaluation,
+    // taking no facade lock), and serializes external-listener forwarding so user callbacks
+    // never run under the state mutex. The facade itself is deliberately NOT an
+    // IInputPortNotifications: ports never see the reader directly.
+    bool slotAcceptsSignal(SizeT slotIndex, const SignalPtr& signal) override;
+    void slotConnected(SizeT slotIndex) override;
+    void slotDisconnected(SizeT slotIndex) override;
+    void slotPacketReceived(SizeT slotIndex) override;
+
+    // --- Construction ---
+    /// Source normalization (construction and addInput): validates the list (assigned,
+    /// non-empty), caches the context from the first source and narrows typeOfInputs from
+    /// Unknown exactly once. Homogeneity is enforced per element by createOrAdoptPorts.
+    void normalizeSources(const ListPtr<IComponent>& list);
+    ListPtr<IInputPortConfig> createOrAdoptPorts(const ListPtr<IComponent>& list) const;
+    void createSlots(const ListPtr<IInputPortConfig>& inputPorts);
+    void applyConfigToSyncManager();
+
+    // --- State machine (state mutex held) ---
+    /// Full state evaluation - the transition handler run by the paths that change state
+    /// (connect/disconnect, used/active changes, topology, events, deadlines).
+    void evaluateStateLocked();
+    /// Data-plane pass for the read and query paths: while synchronized, drains the slots that
+    /// received packets, publishes the availability cache, and maintains the readiness bits. With
+    /// escalateOnEvent (the read path) it escalates to evaluateStateLocked when an event surfaces so
+    /// the reader transitions to EventPending; without it (the query path) it records the event and
+    /// re-arms dataPlaneDirty so the next read surfaces it. A deadline or a non-synchronized state
+    /// escalates in either mode.
+    void refreshDataPlaneLocked(bool escalateOnEvent);
+    /// Callback pass for the coalesced evaluation: decides only whether onDataAvailable should fire.
+    /// It maintains the event/ready bits but skips any slot that already satisfies the gate (ready
+    /// or event - only a read clears that) and any slot with no pending packet, so it is O(slots
+    /// that changed) rather than O(all used slots). It does not touch the availability cache or
+    /// dataPlaneDirty (the read/query path owns those); a deadline or a non-synchronized state still
+    /// escalates to the full evaluation.
+    void updateCallbackStateLocked();
+    /// Adopts unused inputs' queued event packets so they surface in the per-input
+    /// states and fire the callback gate.
+    void drainUnusedSlotsLocked();
+    /// Failure-state recovery: a failed input with a corrective descriptor change buried
+    /// behind unreadable stale data drops that data (dropForInactive semantics) so the event
+    /// can surface. Returns true when any event became pending.
+    bool exposeBuriedEventsLocked(const std::vector<SizeT>& affected);
+    void invalidateSynchronizationLocked();
+    void invalidateModelLocked();
+    void setStateLocked(ReaderState newState, std::string message = {}, std::vector<SizeT> affected = {});
+    /// Formats "<messagePrefix> [i, j, ...]<messageSuffix>" from the affected indices before
+    /// moving them into the state - never both format and move in one argument list (the
+    /// evaluation order of function arguments is unspecified).
+    void setStateWithAffectedLocked(ReaderState newState,
+                                    const char* messagePrefix,
+                                    const char* messageSuffix,
+                                    std::vector<SizeT> affected);
+
+    /// Used inputs in slot order plus their slot indices; main input is the first used slot.
+    std::vector<multi_reader::QueueReader*> collectUsedReaders(std::vector<SizeT>& slotIndices) const;
+    /// Same, but fills caller-owned vectors (reusing their capacity) instead of allocating -
+    /// used by the read hot path to avoid per-read heap allocation.
+    void collectUsedReadersInto(std::vector<multi_reader::QueueReader*>& readers, std::vector<SizeT>& slotIndices) const;
+
+    /// Scheduler-side entry of the coalesced evaluation (never called with locks held).
+    void onCoalescedEvaluation();
+
+    // --- Read path ---
+    ErrCode readInternal(void** valueBuffers, void** domainBuffers, SizeT* count, SizeT timeoutMs, IMultiReaderStatus** status, bool skip);
+    MultiReaderStatusPtr readEventsLocked();
+    MultiReaderStatusPtr createStatusLocked(const DictPtr<IString, IEventPacket>& eventPackets = nullptr,
+                                            const NumberPtr& offset = nullptr);
+    /// Per-input state snapshot for the status, in slot order: input id + InputState as int,
+    /// derived from the used/connected flags, pending events and the current failure state's
+    /// affected set. This is the self-contained snapshot the status boxes lazily and the cache
+    /// fingerprint compares - no boxed dict is built on the read path.
+    void buildInputStateSnapshotLocked(std::vector<std::pair<StringPtr, Int>>& out) const;
+    /// Descriptor-changed packet for the status: main value descriptor + common output domain
+    /// descriptor (the domain of the status offset).
+    EventPacketPtr mainDescriptorPacketLocked();
+    void refreshMainInputDescriptorsLocked();
+    std::optional<std::int64_t> currentReadOffsetLocked() const;
+
+    SizeT findSlotByIdLocked(const StringPtr& id) const;  // returns slots.size() when not found
+    void reindexSlotsLocked();
+    void setPortsActiveLocked(bool active);
+
+    /// Slot index of the explicitly selected main input; notFound when the default
+    /// (first used input) applies or the selection is dangling.
+    SizeT mainSlotIndexLocked() const;
+    void applyDataLossTimeoutLocked();
+
+    static constexpr SizeT notFound = static_cast<SizeT>(-1);
+
+    // --- State ---
     std::mutex mutex;
-    std::mutex packetReceivedMutex;
-    bool invalid{false};
-    // TODO: Rename this
-    bool nextPacketIsEvent{false};
-    std::string errorMessage;
+    std::condition_variable notifyCondition;
 
-    SizeT remainingSamplesToRead{};
+    bool invalid{false};  // only the Error state and disposal
+    ReaderState state{ReaderState::WaitingForConnections};
+    std::string stateMessage;
+    std::vector<SizeT> stateAffectedInputs;
 
-    void** values{};
-    void** domainValues{};
+    std::vector<ObjectPtr<IInputPortNotifications>> slotObjects;  // strong refs (ports hold weak listener refs)
+    std::vector<multi_reader::Input*> slots;                                // parallel implementation pointers
 
-    Clock::duration timeout{};
-    Clock::time_point startTime;
+    std::unique_ptr<multi_reader::SynchronizationManager> syncManager;
+    std::unique_ptr<multi_reader::ReadCoordinator> readCoordinator;
 
-    DomainInfo commonDomain;
-    StringPtr readOrigin;
-    RatioPtr readResolution;
-    RatioPtr tickOffsetTolerance;
-    // std::unique_ptr<Comparable> commonStart;
-    std::unique_ptr<DomainValue> commonDomainStart;
-    std::int64_t requiredCommonSampleRate = -1;
-    std::int64_t commonSampleRate = -1;
-    std::int32_t sampleRateDividerLcm = 1;
-    bool sameSampleRates = false;
-    Bool allowDifferentRates = true;
+    /// Read-path scratch, reused across reads to avoid per-read heap allocation. Only ever live
+    /// within a single readInternal call (which holds the mutex; no reentrancy), never aliased.
+    std::vector<multi_reader::QueueReader*> readScratchUsed;
+    std::vector<SizeT> readScratchSlotIndices;
+    std::vector<void*> readScratchValueBuffers;
+    std::vector<void*> readScratchDomainBuffers;
 
-    std::list<SignalReader> signals;
+    /// Availability-query scratch (getAvailableCount and the read timeout predicate), reused to
+    /// avoid a per-call heap allocation. Kept separate from the read scratch above so the two
+    /// never alias, though both are only ever live under the mutex within one call.
+    std::vector<multi_reader::QueueReader*> availScratchUsed;
+    std::vector<SizeT> availScratchSlotIndices;
+
+    /// Data-plane change tracking for the synchronized fast path. refreshDataPlaneLocked can skip
+    /// its whole per-slot pass when nothing has changed since the last one: no packet has arrived
+    /// (dataPlaneDirty, set on the producer path) and no read has consumed (dataPlaneConsumed, set
+    /// under the mutex) - a buried event can only surface through an arrival or a consumption, so
+    /// there is nothing to re-check. This collapses the repeated getAvailableCount/read refreshes
+    /// of a poll-then-read loop to one real pass. Any full evaluateStateLocked re-arms dataPlaneDirty.
+    std::atomic_bool dataPlaneDirty{true};
+    bool dataPlaneConsumed{false};
+
+    /// Availability captured by the last non-escalating synchronized fast pass of
+    /// refreshDataPlaneLocked, so the read path can plan and lower readiness without a second
+    /// walk over every input (dedup of the refresh and createPlan availability passes). The
+    /// per-slot counts (common-rate equivalent, until the next event) are indexed by slot-vector
+    /// index; dataPlaneAvailableCommon is their raw minimum over used slots (pre-alignment).
+    /// Valid only while dataPlaneAvailableValid: the fast pass sets it, and any escalation,
+    /// non-synchronized refresh, or consuming read clears it (consumers then fall back to a
+    /// direct getAvailableCount walk).
+    std::vector<SizeT> dataPlaneSlotAvailable;
+    SizeT dataPlaneAvailableCommon{0};
+    bool dataPlaneAvailableValid{false};
+
+    /// Common-domain tick of the next unread output sample while synchronized.
+    std::optional<std::int64_t> nextReadTick;
+
+    DataDescriptorPtr mainValueDescriptor;
+    DataDescriptorPtr mainDomainDescriptor;
+
+    /// Status caching: the last event-less status is re-issued while its
+    /// visible content is unchanged; any content change (or any event) creates a new object.
+    /// The offset is deliberately NOT part of the fingerprint - it advances on every data read,
+    /// while the rest of the status content stays constant in steady synchronized state. When the
+    /// content matches, the cached status is either re-issued as-is (offset unchanged) or its
+    /// offset-independent content is shared into a new status stamped with the advanced offset;
+    /// only a genuine content change rebuilds it. The cache is cleared whenever the cross-input
+    /// model is invalidated - the cached getMainDescriptor packet embeds the common output
+    /// domain, which any input's descriptor change can move.
+    MultiReaderStatusPtr cachedStatus;
+    struct StatusFingerprint
+    {
+        ReaderState state{};
+        std::string message;
+        std::vector<SizeT> affectedInputs;
+        // Identity only; safe because the cache is dropped on every model invalidation,
+        // which every descriptor change triggers before a new descriptor can be adopted
+        IDataDescriptor* mainValue{};
+        IDataDescriptor* mainDomain{};
+
+        bool operator==(const StatusFingerprint& other) const
+        {
+            return state == other.state && message == other.message && affectedInputs == other.affectedInputs &&
+                   mainValue == other.mainValue && mainDomain == other.mainDomain;
+        }
+    };
+    StatusFingerprint cachedStatusFingerprint;
+    /// Offset-independent content shared with (and by) the cached status, so an offset-only
+    /// change restamps a new status without rebuilding any of it. Compared against a freshly
+    /// built snapshot each read (the snapshot can move without a fingerprint change, e.g. an
+    /// unused input gaining events). Valid only while cachedStatus is assigned.
+    InputStateSnapshotPtr cachedInputSnapshot;
+    StringPtr cachedStatusMessage;
+    ReadStatus cachedReadStatus{};
+    std::int64_t cachedStatusOffset{};
+    /// Reused across reads to build the current input-state snapshot for the cache comparison.
+    std::vector<std::pair<StringPtr, Int>> statusSnapshotScratch;
+
+    /// Common-output-domain descriptor for getMainDescriptor, built lazily per model build
+    DataDescriptorPtr cachedCommonDomainDescriptor;
+
+    /// The status main-descriptor event packet, built lazily and reused across reads; cleared
+    /// on model/main-descriptor change (invalidateModelLocked, refreshMainInputDescriptorsLocked)
+    EventPacketPtr cachedMainDescriptorPacket;
 
     PropertyObjectPtr portBinder;
     ProcedurePtr readCallback;
     WeakRefPtr<IInputPortNotifications> externalListener;
 
     LoggerComponentPtr loggerComponent;
-
-    bool startOnFullUnitOfDomain;
-
-    NotifyInfo notify{};
-    bool portsConnected{};
-
-    DataDescriptorPtr mainValueDescriptor;
-    DataDescriptorPtr mainDomainDescriptor;
-
     ContextPtr context;
-    bool isActive{true};
 
-    SizeT minReadCount;
-    PacketReadyNotification notificationMethod;
+    // --- Configuration ---
+    RatioPtr tickOffsetTolerance;  // deprecated; value ignored
+    StringPtr mainInputId;         // explicitly selected main input; null -> first used input
+    RatioPtr maxSynchronizationDistance;  // seconds; null/zero disables
+    RatioPtr dataLossTimeout;             // seconds; null/zero disables
+    std::int64_t requiredCommonSampleRate = -1;
+    Bool allowDifferentRates = true;
+    bool startOnFullUnitOfDomain = false;
+    bool isActive{true};
+    SizeT minReadCount = 1;
+    PacketReadyNotification notificationMethod{PacketReadyNotification::None};
     ListPtr<PacketReadyNotification> notificationMethodsList;
 
-    const SampleType valueReadType;
-    const SampleType domainReadType;
-    const ReadMode readMode;
+    SampleType valueReadType{SampleType::Undefined};
+    SampleType domainReadType{SampleType::Undefined};   // as configured
+    SampleType resolvedDomainReadType{SampleType::Int64};  // integral type driving the QueueReaders
+    ReadMode readMode{ReadMode::Scaled};
 
-    InputType typeOfInputs;
+    InputType typeOfInputs{InputType::Unknown};
+
+    // Declared last on purpose: members destroy in reverse declaration order, so the
+    // monitor (whose waiter thread can trigger an evaluation) and the notification
+    // coordinator (whose queued task can do the same) are torn down before any member
+    // their callbacks touch - including on the constructor-throw unwinding path where
+    // ~MultiReaderImpl never runs
+    std::unique_ptr<multi_reader::NotificationCoordinator> notificationCoordinator;
+    std::unique_ptr<multi_reader::DataLossMonitor> dataLossMonitor;
 };
 
 END_NAMESPACE_OPENDAQ

@@ -17,6 +17,7 @@ function(rtgen_component_${BASE_NAME})
     rtgen(SRC_MultiReader multi_reader.h)
     rtgen(SRC_TailReaderStatus tail_reader_status.h)
     rtgen(SRC_MultiReaderStatus multi_reader_status.h)
+    rtgen(SRC_MultiReaderStatusBuilder multi_reader_status_builder.h INTERNAL)
     
     set(SRC_PublicHeaders_Component_Generated
         ${SRC_ReaderStatus_PublicHeaders}
@@ -35,6 +36,7 @@ function(rtgen_component_${BASE_NAME})
         ${SRC_MultiReaderBuilder_PublicHeaders}
         ${SRC_TailReaderStatus_PublicHeaders}
         ${SRC_MultiReaderStatus_PublicHeaders}
+        ${SRC_MultiReaderStatusBuilder_PublicHeaders}
         PARENT_SCOPE
     )
     
@@ -53,6 +55,7 @@ function(rtgen_component_${BASE_NAME})
         ${SRC_PacketReader_PrivateHeaders}
         ${SRC_MultiReader_PrivateHeaders}
         ${SRC_MultiReaderBuilder_PrivateHeaders}
+        ${SRC_MultiReaderStatusBuilder_PrivateHeaders}
         PARENT_SCOPE
     )
     
@@ -129,20 +132,29 @@ function(create_component_source_groups_${BASE_NAME})
         ${SDK_SRC_DIR}/packet_reader_impl.cpp
     )
     
-    source_group("reader//multi" FILES 
+    source_group("reader//multi" FILES
         ${SDK_HEADERS_DIR}/multi_reader_builder.h
         ${SDK_HEADERS_DIR}/multi_reader_builder_impl.h
         ${SDK_HEADERS_DIR}/multi_reader.h
-        ${SDK_HEADERS_DIR}/signal_reader.h
-        ${SDK_HEADERS_DIR}/queue_reader.h
+        ${SDK_HEADERS_DIR}/multi_reader/queue_reader.h
+        ${SDK_HEADERS_DIR}/multi_reader/data_loss_monitor.h
+        ${SDK_HEADERS_DIR}/multi_reader/input.h
+        ${SDK_HEADERS_DIR}/multi_reader/synchronization_manager.h
+        ${SDK_HEADERS_DIR}/multi_reader/notification_coordinator.h
+        ${SDK_HEADERS_DIR}/multi_reader/read_coordinator.h
         ${SDK_HEADERS_DIR}/multi_reader_impl.h
-        ${SDK_HEADERS_DIR}/multi_typed_reader.h
-        ${SDK_HEADERS_DIR}/reader_domain_info.h
 		${SDK_HEADERS_DIR}/multi_reader_status.h
+        ${SDK_HEADERS_DIR}/multi_reader_status_builder.h
+        ${SDK_HEADERS_DIR}/multi_reader_status_builder_impl.h
         ${SDK_SRC_DIR}/multi_reader_impl.cpp
         ${SDK_SRC_DIR}/multi_reader_builder_impl.cpp
-        ${SDK_SRC_DIR}/signal_reader.cpp
-        ${SDK_SRC_DIR}/queue_reader.cpp
+        ${SDK_SRC_DIR}/multi_reader_status_builder_impl.cpp
+        ${SDK_SRC_DIR}/multi_reader/queue_reader.cpp
+        ${SDK_SRC_DIR}/multi_reader/data_loss_monitor.cpp
+        ${SDK_SRC_DIR}/multi_reader/input.cpp
+        ${SDK_SRC_DIR}/multi_reader/synchronization_manager.cpp
+        ${SDK_SRC_DIR}/multi_reader/notification_coordinator.cpp
+        ${SDK_SRC_DIR}/multi_reader/read_coordinator.cpp
     )
 endfunction()
 
@@ -156,7 +168,6 @@ set(SRC_PublicHeaders_Component
     time_reader.h
     read_info.h
     reader_utils.h
-    reader_domain_info.h
     PARENT_SCOPE
 )
 
@@ -170,9 +181,13 @@ set(SRC_PrivateHeaders_Component
     packet_reader_impl.h
     multi_reader_impl.h
     multi_reader_builder_impl.h
-    multi_typed_reader.h
-    signal_reader.h
-    queue_reader.h
+    multi_reader_status_builder_impl.h
+    multi_reader/queue_reader.h
+    multi_reader/data_loss_monitor.h
+    multi_reader/input.h
+    multi_reader/synchronization_manager.h
+    multi_reader/notification_coordinator.h
+    multi_reader/read_coordinator.h
     reader_status_impl.h
     reader_impl.h
     enum_flags.h
@@ -193,8 +208,13 @@ set(SRC_Cpp_Component
     typed_reading_utils.cpp
     multi_reader_impl.cpp
     multi_reader_builder_impl.cpp
-    signal_reader.cpp
-    queue_reader.cpp
+    multi_reader_status_builder_impl.cpp
+    multi_reader/queue_reader.cpp
+    multi_reader/data_loss_monitor.cpp
+    multi_reader/input.cpp
+    multi_reader/synchronization_manager.cpp
+    multi_reader/notification_coordinator.cpp
+    multi_reader/read_coordinator.cpp
     reader.natvis
     PARENT_SCOPE
 )

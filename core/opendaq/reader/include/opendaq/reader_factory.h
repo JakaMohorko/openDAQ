@@ -28,6 +28,7 @@
 #include <opendaq/multi_reader_ptr.h>
 #include <opendaq/multi_reader_builder_ptr.h>
 #include <opendaq/multi_reader_status_ptr.h>
+#include <opendaq/multi_reader_status_builder_ptr.h>
 
 #include <opendaq/stream_reader_ptr.h>
 #include <opendaq/stream_reader_builder_ptr.h>
@@ -66,11 +67,20 @@ inline TailReaderStatusPtr TailReaderStatus(const EventPacketPtr& packet = nullp
 }
 
 inline MultiReaderStatusPtr MultiReaderStatus(const EventPacketPtr& mainDescriptor = nullptr,
-                                              const DictPtr<IString, IEventPacket>& eventPackets = nullptr, 
-                                              Bool valid = true, 
+                                              const DictPtr<IString, IEventPacket>& eventPackets = nullptr,
+                                              Bool valid = true,
                                               const NumberPtr& offset = 0)
 {
     return MultiReaderStatus_Create(mainDescriptor, eventPackets, valid, offset);
+}
+
+/*!
+ * @brief Creates a builder for multi reader statuses. The reader creates every status through
+ * it; the status validity is derived from the read status (false only for ReadStatus::Fail).
+ */
+inline MultiReaderStatusBuilderPtr MultiReaderStatusBuilder()
+{
+    return MultiReaderStatusBuilder_Create();
 }
 
 /*!
