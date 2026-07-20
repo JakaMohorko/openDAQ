@@ -5,7 +5,7 @@
 **Baseline (main):** `f26d249d`
 **Build:** Release (MSVC 2022, x64), `build/x64/msvc-22/full`; benchmark target `bench_multi_reader` (standalone, public-API only, builds and runs on both branches).
 
-This document records three analyses of the reworked multi reader: a structural complexity overview, a noise-controlled dev-vs-main benchmark, and a phase-attribution profile. It complements the handover specification in [`multi_reader.md`](multi_reader.md) (same directory).
+This document records three analyses of the reworked multi reader: a structural complexity overview, a noise-controlled dev-vs-main benchmark, and a phase-attribution profile. It complements the design specification ([`01_specification.md`](01_specification.md)) and the internal architecture notes ([`08_internal_architecture.md`](08_internal_architecture.md)) in this folder, and the in-repo handover spec ([`../core/opendaq/reader/docs/multi_reader.md`](../core/opendaq/reader/docs/multi_reader.md)).
 
 ---
 
