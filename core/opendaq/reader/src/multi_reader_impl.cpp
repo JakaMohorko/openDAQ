@@ -1025,6 +1025,65 @@ void MultiReaderImpl::evaluateStateLocked()
     }
 }
 
+void MultiReaderImpl::updateCallbackStateLocked()
+{
+    // Establishment and data loss need the full ladder; only the steady synchronized state takes
+    // the light callback pass below.
+    if (invalid || !isActive || state != ReaderState::Synchronized || dataLossMonitor->hasLostSlots())
+    {
+        evaluateStateLocked();
+        return;
+    }
+
+    const bool haveModel = syncManager->hasModel();
+    const SizeT block = haveModel ? syncManager->getModel().blockLcm : 0;
+
+    for (SizeT i = 0; i < slots.size(); ++i)
+    {
+        auto* slot = slots[i];
+        const SizeT index = slot->getIndex();
+        const bool used = slot->isUsed();
+
+        // A slot that already satisfies the callback gate cannot stop satisfying it until a read
+        // consumes it (the read path lowers the bit then), so the callback pass never needs to
+        // re-touch it. Readiness only participates in the gate for used inputs; for an unused input
+        // only its event participates (the recovery signal), so a stale ready bit must not skip it.
+        // Skipping also leaves packetPending set, so the read/query path still adopts data queued
+        // behind the slot.
+        if (notificationCoordinator->getEvent(index) || (used && notificationCoordinator->getReady(index)))
+            continue;
+
+        // Nothing new here: a slot that does not already satisfy the gate and received no packet
+        // cannot have risen to either.
+        if (!slot->clearPacketPending())
+            continue;
+
+        if (!used)
+        {
+            // Only events can arrive on an unused input's inactive port (the recovery signal a
+            // consumer answers with setInputUsed(id, true)).
+            slot->syncConnection();
+            if (slot->isConnected())
+            {
+                auto& reader = slot->getQueueReader();
+                reader.drain();
+                notificationCoordinator->setEvent(index, reader.hasPendingEvents());
+            }
+            continue;
+        }
+
+        auto& reader = slot->getQueueReader();
+        reader.drain();
+
+        // Buried-inclusive: a sub-block residual before a buried event still fires the callback so
+        // the consumer reads and the read path surfaces the event.
+        const bool hasEvent = reader.hasPendingEvents() || reader.hasQueuedEventPackets();
+        notificationCoordinator->setEvent(index, hasEvent);
+        if (!hasEvent && haveModel)
+            notificationCoordinator->setReady(index, reader.getAvailableSamplesUntilEvent() >= block);
+    }
+}
+
 void MultiReaderImpl::onCoalescedEvaluation()
 {
     ProcedurePtr callback;
@@ -1033,11 +1092,10 @@ void MultiReaderImpl::onCoalescedEvaluation()
         if (invalid)
             return;
 
-        // The coalesced task only decides whether onDataAvailable should fire: it maintains the
-        // event/ready bits (escalateOnEvent = false) and never runs the state ladder for events -
-        // that is deferred to the read/query path. Deadlines and non-synchronized states still
-        // escalate inside it.
-        refreshDataPlaneLocked(false);
+        // The coalesced task only decides whether onDataAvailable should fire; it maintains the
+        // gate bits without running the state ladder for events (deferred to the read/query path)
+        // and without walking slots that already satisfy the gate.
+        updateCallbackStateLocked();
         if (notificationCoordinator->shouldInvokeCallback())
             callback = readCallback;
     }

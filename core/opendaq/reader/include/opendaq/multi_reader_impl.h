@@ -175,13 +175,20 @@ private:
     /// Full state evaluation - the transition handler run by the paths that change state
     /// (connect/disconnect, used/active changes, topology, events, deadlines).
     void evaluateStateLocked();
-    /// Data-plane fast path: while synchronized, drains only the slots that
-    /// received packets since the last look. With escalateOnEvent it escalates to
-    /// evaluateStateLocked when an event surfaces (the read/query path, which must transition to
-    /// EventPending); without it (the callback/notify path) it only maintains the event/ready
-    /// bits and re-arms dataPlaneDirty so the next read/query surfaces the event. Either way a
-    /// deadline escalates and data packets never re-run the checks.
+    /// Data-plane pass for the read and query paths: while synchronized, drains the slots that
+    /// received packets, publishes the availability cache, and maintains the readiness bits. With
+    /// escalateOnEvent (the read path) it escalates to evaluateStateLocked when an event surfaces so
+    /// the reader transitions to EventPending; without it (the query path) it records the event and
+    /// re-arms dataPlaneDirty so the next read surfaces it. A deadline or a non-synchronized state
+    /// escalates in either mode.
     void refreshDataPlaneLocked(bool escalateOnEvent);
+    /// Callback pass for the coalesced evaluation: decides only whether onDataAvailable should fire.
+    /// It maintains the event/ready bits but skips any slot that already satisfies the gate (ready
+    /// or event - only a read clears that) and any slot with no pending packet, so it is O(slots
+    /// that changed) rather than O(all used slots). It does not touch the availability cache or
+    /// dataPlaneDirty (the read/query path owns those); a deadline or a non-synchronized state still
+    /// escalates to the full evaluation.
+    void updateCallbackStateLocked();
     /// Adopts unused inputs' queued event packets so they surface in the per-input
     /// states and fire the callback gate.
     void drainUnusedSlotsLocked();

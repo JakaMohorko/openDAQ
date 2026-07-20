@@ -85,6 +85,11 @@ public:
     void setReady(SizeT index, bool ready);
     void setEvent(SizeT index, bool hasEvent);
     bool isUsed(SizeT index) const;
+    /// Current ready/event bit for one slot. The callback pass uses these to skip a slot that
+    /// already satisfies the gate: a ready/event slot cannot stop satisfying it until a read
+    /// consumes it (the read path lowers the bit), so the callback never needs to re-touch it.
+    bool getReady(SizeT index) const;
+    bool getEvent(SizeT index) const;
 
     /// Clears ready and event bits (synchronization invalidated, topology changed, ...).
     void clearReadiness();

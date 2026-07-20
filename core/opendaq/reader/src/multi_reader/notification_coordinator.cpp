@@ -105,6 +105,16 @@ bool NotificationCoordinator::isUsed(SizeT index) const
     return usedMask.at(index);
 }
 
+bool NotificationCoordinator::getReady(SizeT index) const
+{
+    return readyMask.at(index);
+}
+
+bool NotificationCoordinator::getEvent(SizeT index) const
+{
+    return eventMask.at(index);
+}
+
 void NotificationCoordinator::clearReadiness()
 {
     readyMask.assign(readyMask.size(), false);
