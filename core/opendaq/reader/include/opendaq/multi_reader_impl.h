@@ -270,6 +270,18 @@ private:
     std::atomic_bool dataPlaneDirty{true};
     bool dataPlaneConsumed{false};
 
+    /// Availability captured by the last non-escalating synchronized fast pass of
+    /// refreshDataPlaneLocked, so the read path can plan and lower readiness without a second
+    /// walk over every input (dedup of the refresh and createPlan availability passes). The
+    /// per-slot counts (common-rate equivalent, until the next event) are indexed by slot-vector
+    /// index; dataPlaneAvailableCommon is their raw minimum over used slots (pre-alignment).
+    /// Valid only while dataPlaneAvailableValid: the fast pass sets it, and any escalation,
+    /// non-synchronized refresh, or consuming read clears it (consumers then fall back to a
+    /// direct getAvailableCount walk).
+    std::vector<SizeT> dataPlaneSlotAvailable;
+    SizeT dataPlaneAvailableCommon{0};
+    bool dataPlaneAvailableValid{false};
+
     /// Common-domain tick of the next unread output sample while synchronized (spec section 7.4)
     std::optional<std::int64_t> nextReadTick;
 

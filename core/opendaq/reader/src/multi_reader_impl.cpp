@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <limits>
 
 using namespace std::chrono;
 
@@ -545,6 +546,7 @@ void MultiReaderImpl::refreshDataPlaneLocked()
     // encountered or a deadline expires; data packets only ever add availability.
     if (invalid || !isActive || state != ReaderState::Synchronized)
     {
+        // The full ladder decides everything here (and clears the availability cache).
         evaluateStateLocked();
         return;
     }
@@ -552,15 +554,29 @@ void MultiReaderImpl::refreshDataPlaneLocked()
     // Nothing to do if nothing changed since the last pass: no packet arrived (dataPlaneDirty)
     // and no read consumed (dataPlaneConsumed), and no deadline is pending. A buried event can
     // only surface through an arrival or a consumption, so there is nothing to re-check - this
-    // collapses the repeated refreshes of a poll-then-read loop to one real pass.
+    // collapses the repeated refreshes of a poll-then-read loop to one real pass. Any cached
+    // availability stays valid across this early return: with nothing arrived and nothing
+    // consumed the counts cannot have moved.
     const bool arrived = dataPlaneDirty.exchange(false, std::memory_order_acquire);
     if (!arrived && !dataPlaneConsumed && !dataLossMonitor->hasLostSlots())
         return;
     dataPlaneConsumed = false;
 
+    // This pass recomputes each used input's availability (below), so the read path can plan and
+    // lower readiness from the cached counts instead of walking every input again in createPlan
+    // and in the post-commit readiness update. The slot count is fixed after construction; size
+    // the cache lazily.
+    if (dataPlaneSlotAvailable.size() != slots.size())
+        dataPlaneSlotAvailable.assign(slots.size(), 0);
+
+    const bool haveModel = syncManager->hasModel();
+    const SizeT block = haveModel ? syncManager->getModel().blockLcm : 0;
+
     bool escalate = false;
-    for (auto* slot : slots)
+    SizeT availableCommon = std::numeric_limits<SizeT>::max();
+    for (SizeT i = 0; i < slots.size(); ++i)
     {
+        auto* slot = slots[i];
         const bool packetsArrived = slot->clearPacketPending();
 
         if (!slot->isUsed())
@@ -599,15 +615,17 @@ void MultiReaderImpl::refreshDataPlaneLocked()
             continue;
         }
 
-        // Readiness only RISES on arrival (a drained packet adds data). It FALLS only on a
-        // read, which readInternal's commit path lowers directly - so an untriggered slot's
-        // maintained bit is already correct and needs no recompute. This drops the per-cycle
-        // O(buffered) getAvailableSamplesUntilEvent call for untriggered slots (the perf
-        // point); the O(1) event check above still visits every slot.
-        if (packetsArrived && syncManager->hasModel())
+        // Availability is O(1) here (the queue reader maintains it incrementally across drains
+        // and reads), so recomputing it for every used slot each real pass is cheap - and it is
+        // exactly the count createPlan needs, so caching it removes createPlan's separate walk.
+        // Readiness is derived from the same value: a slot is ready with a full aligned block
+        // buffered before its next event.
+        if (haveModel)
         {
-            notificationCoordinator->setReady(slot->getIndex(),
-                                              reader.getAvailableSamplesUntilEvent() >= syncManager->getModel().blockLcm);
+            const SizeT avail = reader.getAvailableSamplesUntilEvent();
+            dataPlaneSlotAvailable[i] = avail;
+            availableCommon = std::min(availableCommon, avail);
+            notificationCoordinator->setReady(slot->getIndex(), avail >= block);
         }
     }
 
@@ -617,11 +635,30 @@ void MultiReaderImpl::refreshDataPlaneLocked()
         escalate = true;
 
     if (escalate)
+    {
+        // The full evaluation can drop partial segments or change state, so the availability
+        // gathered above is not authoritative; it clears the cache and consumers fall back to a
+        // direct walk.
         evaluateStateLocked();
+        return;
+    }
+
+    // Steady synchronized state: publish the availability this pass computed. The sentinel
+    // survives only when no input is used, which maps to nothing available.
+    dataPlaneAvailableCommon = availableCommon == std::numeric_limits<SizeT>::max() ? 0 : availableCommon;
+    dataPlaneAvailableValid = haveModel;
 }
 
 void MultiReaderImpl::evaluateStateLocked()
 {
+    // The full ladder can drain, drop segments or change state, so any availability the last
+    // fast pass cached is no longer authoritative. Clearing it here (the single funnel every full
+    // evaluation passes through) is what makes the cache safe to reuse across refreshDataPlaneLocked's
+    // early return: the cache is valid ONLY between a non-escalating synchronized fast pass and the
+    // next thing that runs, and that next thing is either another fast pass (which republishes it),
+    // the early return (nothing changed, so it stays exact), or a full evaluation (this, which clears it).
+    dataPlaneAvailableValid = false;
+
     // 1. Error is terminal; inactivity gates everything else
     if (invalid)
     {
@@ -1369,10 +1406,18 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
                                      if (state != ReaderState::Synchronized)
                                          return false;
 
-                                     collectUsedReadersInto(availScratchUsed, availScratchSlotIndices);
-                                     const auto available =
-                                         readCoordinator->getAvailableCount(availScratchUsed, syncManager->getModel(), minReadCount);
-                                     const SizeT block = syncManager->getModel().blockLcm;
+                                     const auto& waitModel = syncManager->getModel();
+                                     // The refresh above just published availability on the fast
+                                     // path; reuse it rather than walking the inputs again.
+                                     SizeT available;
+                                     if (dataPlaneAvailableValid)
+                                         available = ReadCoordinator::alignAvailable(dataPlaneAvailableCommon, waitModel, minReadCount);
+                                     else
+                                     {
+                                         collectUsedReadersInto(availScratchUsed, availScratchSlotIndices);
+                                         available = readCoordinator->getAvailableCount(availScratchUsed, waitModel, minReadCount);
+                                     }
+                                     const SizeT block = waitModel.blockLcm;
                                      const SizeT alignedRequest = requested / block * block;
                                      return alignedRequest > 0 && available >= alignedRequest;
                                  });
@@ -1410,6 +1455,12 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
     auto& slotIndices = readScratchSlotIndices;
     const auto& model = syncManager->getModel();
 
+    // The refresh above published per-input availability on the synchronized fast path; capture
+    // whether that cache is usable now so both the plan and the post-commit readiness update can
+    // reuse it instead of re-walking every input (nothing between here and the commit mutates a
+    // queue, so the cached counts stay exact under the held mutex).
+    const bool availableCached = dataPlaneAvailableValid;
+
     readScratchValueBuffers.assign(used.size(), nullptr);
     readScratchDomainBuffers.assign(used.size(), nullptr);
     for (SizeT position = 0; position < used.size(); ++position)
@@ -1420,8 +1471,12 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
             readScratchDomainBuffers[position] = domainBuffers[slotIndices[position]];
     }
 
+    const SizeT alignedAvailable = availableCached
+        ? ReadCoordinator::alignAvailable(dataPlaneAvailableCommon, model, minReadCount)
+        : readCoordinator->getAvailableCount(used, model, minReadCount);
+
     const auto plan = readCoordinator->createPlan(requested,
-                                                  used,
+                                                  alignedAvailable,
                                                   model,
                                                   minReadCount,
                                                   skip ? nullptr : readScratchValueBuffers.data(),
@@ -1445,18 +1500,26 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
     if (plan.commonCount > 0 && nextReadTick.has_value() && model.ticksPerCommonSample() > 0)
         nextReadTick = *nextReadTick + static_cast<std::int64_t>(plan.commonCount) * model.ticksPerCommonSample();
 
-    // The commit consumed from every used input, so their readiness may have fallen below a
-    // block. Lower it here (this is the "fall on read" half of readiness maintenance) so the
-    // coalesced pass only has to RAISE the bits of slots that receive packets - it never has
-    // to re-scan untriggered slots to catch a stale-true bit (review perf follow-up).
+    // The commit consumed exactly plan.commonCount from every used input (a whole number of
+    // blocks, never crossing an event), so each input's availability-until-event simply drops by
+    // that amount. When the fast pass cached the pre-commit counts we derive the new readiness by
+    // subtraction; otherwise (cache not valid this cycle) we query the now-decremented count
+    // directly. This is the "fall on read" half of readiness maintenance.
     if (plan.commonCount > 0)
     {
         const auto block = model.blockLcm;
         for (SizeT position = 0; position < used.size(); ++position)
-            notificationCoordinator->setReady(slotIndices[position], used[position]->getAvailableSamplesUntilEvent() >= block);
+        {
+            const SizeT remaining = availableCached
+                ? dataPlaneSlotAvailable[slotIndices[position]] - plan.commonCount
+                : used[position]->getAvailableSamplesUntilEvent();
+            notificationCoordinator->setReady(slotIndices[position], remaining >= block);
+        }
 
-        // A read advanced the frontier, so a previously buried event may now be leading: force the
-        // next data-plane refresh to run its full pass rather than skip (see refreshDataPlaneLocked).
+        // The read advanced the frontier, so the cached counts are now stale and a previously
+        // buried event may be leading: invalidate the cache and force the next data-plane refresh
+        // to run its full pass rather than skip (see refreshDataPlaneLocked).
+        dataPlaneAvailableValid = false;
         dataPlaneConsumed = true;
     }
 
@@ -1532,8 +1595,17 @@ ErrCode MultiReaderImpl::getAvailableCount(SizeT* count)
     refreshDataPlaneLocked();
     if (state == ReaderState::Synchronized)
     {
-        collectUsedReadersInto(availScratchUsed, availScratchSlotIndices);
-        *count = readCoordinator->getAvailableCount(availScratchUsed, syncManager->getModel(), minReadCount);
+        // The refresh above published availability on the fast path; reuse it rather than
+        // walking every input again. Fall back to a direct count only when it is not valid.
+        if (dataPlaneAvailableValid)
+        {
+            *count = ReadCoordinator::alignAvailable(dataPlaneAvailableCommon, syncManager->getModel(), minReadCount);
+        }
+        else
+        {
+            collectUsedReadersInto(availScratchUsed, availScratchSlotIndices);
+            *count = readCoordinator->getAvailableCount(availScratchUsed, syncManager->getModel(), minReadCount);
+        }
     }
     return OPENDAQ_SUCCESS;
 }

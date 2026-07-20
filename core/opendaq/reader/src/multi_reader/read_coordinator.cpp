@@ -39,12 +39,19 @@ SizeT ReadCoordinator::effectiveMinimum(const CommonModel& model, SizeT minReadC
     return (minimum + block - 1) / block * block;
 }
 
+SizeT ReadCoordinator::alignAvailable(SizeT rawAvailableCommon, const CommonModel& model, SizeT minReadCount)
+{
+    const SizeT block = model.blockLcm > 0 ? model.blockLcm : 1;
+    const SizeT count = rawAvailableCommon / block * block;
+    if (count < effectiveMinimum(model, minReadCount))
+        return 0;
+    return count;
+}
+
 SizeT ReadCoordinator::getAvailableCount(const std::vector<QueueReader*>& inputs, const CommonModel& model, SizeT minReadCount) const
 {
     if (inputs.empty())
         return 0;
-
-    const SizeT block = model.blockLcm > 0 ? model.blockLcm : 1;
 
     SizeT availableCommon = std::numeric_limits<SizeT>::max();
     for (auto* input : inputs)
@@ -53,10 +60,7 @@ SizeT ReadCoordinator::getAvailableCount(const std::vector<QueueReader*>& inputs
         availableCommon = std::min(availableCommon, input->getAvailableSamplesUntilEvent());
     }
 
-    SizeT count = availableCommon / block * block;
-    if (count < effectiveMinimum(model, minReadCount))
-        return 0;
-    return count;
+    return alignAvailable(availableCommon, model, minReadCount);
 }
 
 ReadPlan ReadCoordinator::createPlan(SizeT requestedCommonCount,
@@ -66,13 +70,29 @@ ReadPlan ReadCoordinator::createPlan(SizeT requestedCommonCount,
                                      void* const* valueBuffers,
                                      void* const* domainBuffers) const
 {
+    // Availability is derived here from the inputs; the overload below reuses a count the owner
+    // already computed during its data-plane pass, avoiding the second walk over every input.
+    return createPlan(requestedCommonCount,
+                      getAvailableCount(inputs, model, minReadCount),
+                      model,
+                      minReadCount,
+                      valueBuffers,
+                      domainBuffers);
+}
+
+ReadPlan ReadCoordinator::createPlan(SizeT requestedCommonCount,
+                                     SizeT alignedAvailableCommon,
+                                     const CommonModel& model,
+                                     SizeT minReadCount,
+                                     void* const* valueBuffers,
+                                     void* const* domainBuffers) const
+{
     ReadPlan plan;
 
     const SizeT block = model.blockLcm > 0 ? model.blockLcm : 1;
-    const SizeT available = getAvailableCount(inputs, model, minReadCount);
 
     SizeT count = requestedCommonCount / block * block;  // requests round down to whole blocks
-    count = std::min(count, available);
+    count = std::min(count, alignedAvailableCommon);
     if (count < effectiveMinimum(model, minReadCount))
         count = 0;
 

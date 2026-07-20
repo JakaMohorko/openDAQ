@@ -82,12 +82,33 @@ public:
     SizeT getAvailableCount(const std::vector<QueueReader*>& inputs, const CommonModel& model, SizeT minReadCount) const;
 
     /**
+     * @brief Apply the availability alignment rules to a raw common-rate count: floor to whole
+     * blocks, then drop to 0 below the effective minimum. Split out so the owner can reuse a
+     * raw minimum it already computed during its data-plane pass (dedup of the availability walk)
+     * instead of having createPlan/getAvailableCount re-scan every input.
+     */
+    static SizeT alignAvailable(SizeT rawAvailableCommon, const CommonModel& model, SizeT minReadCount);
+
+    /**
      * @brief Round the request down to whole blocks, clamp to availability and bind buffers.
      * Buffer vectors must either be empty (skip) or hold one entry per input (nullptr
      * entries are allowed and read into nothing... only valid for skip).
      */
     ReadPlan createPlan(SizeT requestedCommonCount,
                         const std::vector<QueueReader*>& inputs,
+                        const CommonModel& model,
+                        SizeT minReadCount,
+                        void* const* valueBuffers,
+                        void* const* domainBuffers) const;
+
+    /**
+     * @brief createPlan variant taking an already-aligned availability (the result of
+     * alignAvailable / getAvailableCount) instead of re-deriving it from the inputs. The owner
+     * passes the count its data-plane pass just computed, so a read plans without a second
+     * availability walk over every input.
+     */
+    ReadPlan createPlan(SizeT requestedCommonCount,
+                        SizeT alignedAvailableCommon,
                         const CommonModel& model,
                         SizeT minReadCount,
                         void* const* valueBuffers,
