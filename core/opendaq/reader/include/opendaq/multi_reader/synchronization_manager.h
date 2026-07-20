@@ -31,9 +31,9 @@ namespace multi_reader
 {
 
 /**
- * @brief Everything derived from more than one input (spec sections 3.3 and 4):
- * the common domain, common sample rate, per-input dividers, the minimum aligned
- * block and - while synchronized - the common start.
+ * @brief Everything derived from more than one input: the common domain, common
+ * sample rate, per-input dividers, the minimum aligned block and - while
+ * synchronized - the common start.
  *
  * The divider vector is parallel to the used-input vector the model was built from;
  * the model is rebuilt whenever the used set, descriptors or configuration change.
@@ -48,8 +48,7 @@ struct CommonModel
     SizeT mainPosition = 0;                    // position of the main input within the used-input vector
 
     /// Common-domain ticks per common-rate sample; integral by construction because the
-    /// common resolution folds in 1/commonSampleRate (spec section 4.1). Zero when the
-    /// model is not usable.
+    /// common resolution folds in 1/commonSampleRate. Zero when the model is not usable.
     std::int64_t ticksPerCommonSample() const
     {
         if (!commonDomain.resolution.assigned() || commonSampleRate <= 0)
@@ -105,7 +104,7 @@ struct SyncResult
 };
 
 /**
- * @brief Owns the cross-input domain/rate model and the alignment algorithm (spec sections 4 and 5).
+ * @brief Owns the cross-input domain/rate model and the alignment algorithm.
  *
  * The manager never owns queues, never consumes reportable events and never reads user buffers;
  * it drives the per-input QueueReaders it is handed (advance/divider assignment only). All inputs
@@ -126,7 +125,7 @@ public:
     /// Zero disables (default). Enforced during synchronize() with per-input diagnostics.
     void setMaxSynchronizationDistance(std::chrono::system_clock::duration distance);
 
-    // --- Checked 64-bit arithmetic (spec section 4.1: overflow => Incompatible, never wraparound) ---
+    // --- Checked 64-bit arithmetic (overflow => Incompatible, never wraparound) ---
     /// Positive operands only; nullopt on overflow or non-positive input.
     static std::optional<std::int64_t> checkedMultiply(std::int64_t a, std::int64_t b);
     static std::optional<std::int64_t> checkedLcm(std::int64_t a, std::int64_t b);
@@ -138,7 +137,7 @@ public:
     static std::optional<RatioPtr> rationalGcd(const std::vector<RatioPtr>& ratios);
 
     /**
-     * @brief Evaluation step 8: cross-input checks and (re)construction of the CommonModel.
+     * @brief Cross-input checks and (re)construction of the CommonModel.
      * Assigns each reader its sample-rate divider on success. commonStart is cleared.
      *
      * The common resolution additionally folds in 1/commonSampleRate so one output sample
@@ -161,22 +160,21 @@ public:
     const CommonModel& getModel() const;
 
     /**
-     * @brief Evaluation step 11: the iterative alignment of spec section 5. Preconditions
-     * (validity, no pending events, data on every input) are the state evaluation's job.
-     * On Synchronized the model's commonStart is assigned; every other outcome leaves it null.
+     * @brief The iterative alignment step. Preconditions (validity, no pending events,
+     * data on every input) are the state evaluation's job. On Synchronized the model's
+     * commonStart is assigned; every other outcome leaves it null.
      *
-     * Reached-value acceptance (spec section 4.3): an input whose sample grid is phase-offset
-     * from the aligned start grid can never reach the candidate tick exactly. Its reached value
-     * is accepted when it lies strictly within half the aligned block interval of the candidate -
-     * the sample then unambiguously belongs to the candidate's block, and the offset stays
-     * visible in the per-signal domain output (direct path, spec section 7.3). An offset of half
-     * the block interval or more is ambiguous and keeps re-targeting until the iteration bound
-     * reports NoCommonTick (the delta-2 odd/even case of spec section 5.7).
+     * Reached-value acceptance: an input whose sample grid is phase-offset from the aligned
+     * start grid can never reach the candidate tick exactly. Its reached value is accepted
+     * when it lies strictly within half the aligned block interval of the candidate - the
+     * sample then unambiguously belongs to the candidate's block, and the offset stays visible
+     * in the per-signal domain output. An offset of half the block interval or more is
+     * ambiguous and keeps re-targeting until the iteration bound reports NoCommonTick.
      */
     SyncResult synchronize(const std::vector<QueueReader*>& inputs, const std::vector<SizeT>& slotIndices);
 
-    /// Spec section 5 invalidation: any returned event, disconnect, descriptor/config/used-set
-    /// change clears the synchronized start (the read pipelines are the coordinator's to clear).
+    /// Any returned event, disconnect, descriptor/config/used-set change clears the
+    /// synchronized start (the read pipelines are the coordinator's to clear).
     void clearSynchronization();
 
     /// Topology or configuration change invalidating the cross-input model itself.

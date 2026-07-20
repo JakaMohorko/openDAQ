@@ -60,7 +60,7 @@ struct IInputListener
  * @brief One input of the multi reader: owns the port reference and the per-input QueueReader,
  * implements IInputPortNotifications for that port, and holds the used/connected/pending flags.
  *
- * Threading contract (spec section 3.2/9):
+ * Threading contract:
  * - The IInputPortNotifications entry points are bounded: they update atomics and forward one
  *   semantic notification; no dequeue, no descriptor parsing, no locks, no user callbacks.
  * - Everything under "owner-side API" must be called with the owner's state lock held; the
@@ -143,7 +143,6 @@ private:
 
     InputPortConfigPtr port;
     QueueReader queueReader;
-    // Phase 5 (resampling) adds: ResamplerPtr resampler; // null on the direct path
 
     /// Cached getInputId() result; cleared on connect/disconnect (see getInputId).
     mutable StringPtr cachedInputId;

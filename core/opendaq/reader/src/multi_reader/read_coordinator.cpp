@@ -16,8 +16,6 @@ ReadCoordinator::ReadCoordinator(const LoggerComponentPtr& logger)
 void ReadCoordinator::configure(const std::vector<QueueReader*>& /*inputs*/, const CommonModel& /*model*/)
 {
     // Direct path: every input copies straight from its queue; nothing to build.
-    // Phase 5 selects per-input pipelines here (direct copy iff the source grid equals
-    // the output grid, otherwise a resampler freshly built via the injected builder).
     configured = true;
 }
 
@@ -35,7 +33,7 @@ SizeT ReadCoordinator::effectiveMinimum(const CommonModel& model, SizeT minReadC
 {
     const SizeT block = model.blockLcm > 0 ? model.blockLcm : 1;
     const SizeT minimum = minReadCount > block ? minReadCount : block;
-    // Round the minimum up to whole blocks: a request below one block is never servable
+    // Round the minimum up to whole blocks: a request below one block is never servable.
     return (minimum + block - 1) / block * block;
 }
 
@@ -56,7 +54,7 @@ SizeT ReadCoordinator::getAvailableCount(const std::vector<QueueReader*>& inputs
     SizeT availableCommon = std::numeric_limits<SizeT>::max();
     for (auto* input : inputs)
     {
-        // Common-rate equivalent, stopping at the input's earliest event boundary
+        // Common-rate equivalent, stopping at the input's earliest event boundary.
         availableCommon = std::min(availableCommon, input->getAvailableSamplesUntilEvent());
     }
 

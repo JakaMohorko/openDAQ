@@ -12,8 +12,6 @@ BEGIN_NAMESPACE_OPENDAQ
 namespace multi_reader
 {
 
-// COMMENT: We should maybe revisit the IMultiReaderStatus and how this is reported to them. Using event packets
-//          is likely not the most intuitive.
 SignalEvent::SignalEvent(const EventPacketPtr& packet)
     : eventType(SignalEventType::NoChange)
     , domainDescriptor(nullptr)
@@ -112,12 +110,12 @@ EventPacketPtr SignalEvent::toEventPacket() const
     }
 }
 
-QueueReader::QueueReader(const InputPortConfigPtr& port,  // Consider using Connection instead
+QueueReader::QueueReader(const InputPortConfigPtr& port,
                          SampleType valueReadType,
                          SampleType domainReadType,
                          ReadMode mode,
                          const LoggerComponentPtr& logger,
-                         bool globalIdFromSignal)  // TODO
+                         bool globalIdFromSignal)
     // Init order matches the member declaration order in the header (avoids C5038)
     : port(port)
     , connection(port.getConnection())
@@ -127,8 +125,6 @@ QueueReader::QueueReader(const InputPortConfigPtr& port,  // Consider using Conn
     typeCtx.domainIn = SampleType::Undefined;
     typeCtx.domainOut = domainReadType;
     typeCtx.valueIn = SampleType::Undefined;
-    // COMMENT: Read mode should be reworked or at least clarified. Seems like there's a weird correlation between read mode and read types.
-    //          Also, unscaled is simply ignored. This should be clarified.
     typeCtx.valueOut = mode == ReadMode::RawValue ? SampleType::Undefined : valueReadType;
     refreshConnectionInternal();
 }
@@ -427,7 +423,7 @@ SizeT QueueReader::getAvailableSamplesUntilEvent() const
 {
     // The native counter stops at the first non-data packet, so the available count
     // already ends at the next event boundary; this alias makes that contract explicit.
-    // Counts are in the common-rate equivalent: the owner-facing unit (spec section 7.1).
+    // Counts are in the common-rate equivalent: the owner-facing unit.
     return getAvailableSamplesNative() * sampleRateDivider;
 }
 
@@ -448,7 +444,7 @@ EventPacketPtr QueueReader::popFrontEvent()
 
 bool QueueReader::isValid() const
 {
-    // A convenience over the issue flags: connected and free of descriptor issues (#11) -
+    // A convenience over the issue flags: connected and free of descriptor issues -
     // the owner consumes the per-slot issues for its Incompatible diagnostics
     return connection.assigned() && issues.empty();
 }
@@ -566,7 +562,7 @@ AdvanceResult QueueReader::readNative(void* valueBuffer, void* domainBuffer, Siz
     // Availability is maintained incrementally, not invalidated: this read consumes exactly the
     // samples it copies (decremented below), and consumeLeadingEventPackets invalidates only if
     // it crosses an event boundary. This keeps the count O(1) on the steady read path instead of
-    // an O(buffered-packets) rescan after every read (main gets it O(1) from the connection).
+    // an O(buffered-packets) rescan after every read.
     if (count == nullptr)
         return AdvanceResult::Error;
 
@@ -789,7 +785,7 @@ void QueueReader::parseDomainDescriptor()
         typeCtx.domainIn = postScaling.getInputSampleType();
     }
 
-    // One layout builder for every reader (#17); the scalar check stays here because it is
+    // One layout builder for every reader; the scalar check stays here because it is
     // a domain-specific constraint, not a layout property
     typeCtx.domainLayout = TypedReadingUtils::createReadLayout(descriptor);
     {
@@ -922,7 +918,7 @@ void QueueReader::parseValueDescriptor()
     }
 
     // Values of any rank are readable - one sample is a fixed-size block of
-    // product-of-dimensions values (the one layout builder computes that, #17)
+    // product-of-dimensions values (the one layout builder computes that)
     typeCtx.valueLayout = TypedReadingUtils::createReadLayout(descriptor);
 
     if (typeCtx.valueOut == SampleType::Undefined)  // Dynamically determine output type

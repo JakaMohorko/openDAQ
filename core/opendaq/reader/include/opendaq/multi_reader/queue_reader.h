@@ -103,7 +103,7 @@ enum class QueueReaderIssue : uint32_t
 class QueueReader
 {
 public:
-    explicit QueueReader(const InputPortConfigPtr& port, // Consider using Connection instead
+    explicit QueueReader(const InputPortConfigPtr& port,
                  SampleType valueReadType,
                  SampleType domainReadType,
                  ReadMode mode,
@@ -114,7 +114,7 @@ public:
     /**
      * @brief Adopt everything currently queued on the connection into the local packet
      * deque, applying leading events. The owner calls this at its evaluation points; every
-     * other accessor is a pure query over the already-adopted state (#10).
+     * other accessor is a pure query over the already-adopted state.
      */
     void drain();
 
@@ -174,7 +174,6 @@ public:
     const DataDescriptorPtr& getValueDescriptor() const;
     const DataDescriptorPtr& getDomainDescriptor() const;
     
-    // COMMENT: According to the spec, these things will probably be removed at the end? 
     /**
      * @brief Adopt already-active descriptors from a previous reader over the same connection
      * (reader-from-existing migration). The originals were consumed from the shared connection
@@ -186,7 +185,6 @@ public:
     SampleType getValueReadType() const;
     SampleType getDomainReadType() const;
 
-    // COMMENT: Are these transform functions actually still needed?
     void setValueTransformFunction(const FunctionPtr& transform);
     void setDomainTransformFunction(const FunctionPtr& transform);
     const FunctionPtr& getValueTransformFunction() const;
@@ -203,12 +201,7 @@ public:
     
     void setSampleRateDivider(SizeT divider);
     SizeT getSampleRateDivider() const;
-    
-    // COMMENT: Do we need the domain buffer? We're anyhow just reading sync values. The domain buffer can be calculated  for the main rate at the end.
-    //          It should probably just be in the main domain units/epoch/resolution...
-    // COMMENT: It feels inconsistent that we're providing divided rate sized buffers, but putting in a non-divided count. Feels like the divider calculation
-    //          is done in multiple locations.
-    
+
     /**
      * @brief Read common rate equivalent samples into the buffer. There will be nativeSamples = count / sampleRateDivider
      * samples read from the packets into the buffer.
@@ -289,12 +282,6 @@ private:
 
     ReadMode readMode;
 
-    // COMMENT: It probably does not make sense to have output domain values for every signal. They should be time aligned anyhow.
-    //          Also, the domain type and transform don't really make sense. Some of these might make sense in the future for 
-    //          Explicit rate (async) signals, but not for sync ones where all must have a common domain. These changes result in API
-    //          usage changes, but I'd prioritize usability over full API behaviour retention. To preserve old behaviour, we should 
-    //          potentially apply the domain transforms at the very end, but not in the queue reader. Ideally, we would not even need 
-    //          them.
     struct TypedReadingContext
     {
         SampleType domainIn;

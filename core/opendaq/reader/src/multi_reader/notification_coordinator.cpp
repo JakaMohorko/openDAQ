@@ -56,7 +56,7 @@ void NotificationCoordinator::scheduleTask()
         [state = taskState]
         {
             // Cleared before running: updates arriving during the evaluation schedule
-            // exactly one follow-up task instead of being lost (spec section 9.4)
+            // exactly one follow-up task instead of being lost.
             state->scheduled = false;
 
             std::lock_guard lock(state->mutex);
@@ -74,7 +74,7 @@ void NotificationCoordinator::resize(SizeT slotCount)
 
 void NotificationCoordinator::erase(SizeT index)
 {
-    // S1 (stable slots): removing one input must not disturb the remaining inputs' bits
+    // Removing one input must not disturb the remaining inputs' bits.
     usedMask.erase(usedMask.begin() + index);
     readyMask.erase(readyMask.begin() + index);
     eventMask.erase(eventMask.begin() + index);
@@ -147,8 +147,8 @@ bool NotificationCoordinator::allUsedReady() const
 
 bool NotificationCoordinator::shouldInvokeCallback() const
 {
-    // Q5: events on unused inputs fire the callback too - that notification is the
-    // recovery API (the consumer can re-include the input with setInputUsed)
+    // Events on unused inputs fire the callback too; that notification is the
+    // recovery path (the consumer can re-include the input with setInputUsed).
     return anyEvent() || allUsedReady();
 }
 

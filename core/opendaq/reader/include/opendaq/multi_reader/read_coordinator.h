@@ -27,7 +27,7 @@ namespace multi_reader
 {
 
 /**
- * @brief One multi-input read or skip, planned before anything commits (spec section 3.4).
+ * @brief One multi-input read or skip, planned before anything commits.
  * Counts are common-rate equivalents; input i delivers commonCount / divider_i samples.
  */
 struct ReadPlan
@@ -47,18 +47,18 @@ enum class CommitResult
 };
 
 /**
- * @brief The single merged read coordinator of spec section 3.4, direct path.
+ * @brief The single merged read coordinator, direct path.
  *
  * Availability, planning and committing all use the same alignment rules: counts are
  * rounded down to whole blockLcm blocks, stop before the earliest event boundary and
  * respect the effective minimum (max(minReadCount, blockLcm) rounded up to blocks).
- * The resampling execution branch is added in Phase 5; pipeline selection then happens
+ * The resampling execution branch is not yet implemented; pipeline selection then happens
  * in configure().
  *
  * Never mutates queues except in commit() and discardLeftoverSegments(). All methods
  * require the owner's state lock; only the owner thread touches the queue readers, so
  * a plan validated against availability cannot be invalidated before its commit -
- * a partial commit is impossible by construction (acceptance criterion 8).
+ * a partial commit is impossible by construction.
  */
 class ReadCoordinator
 {
@@ -67,7 +67,7 @@ public:
 
     /**
      * @brief Called after every successful synchronization. Direct path: nothing to build;
-     * Phase 5 selects per-input pipelines (direct copy vs. freshly built resampler) here.
+     * per-input pipeline selection (direct copy vs. freshly built resampler) will happen here.
      */
     void configure(const std::vector<QueueReader*>& inputs, const CommonModel& model);
 
@@ -118,11 +118,11 @@ public:
     /// by the availability guarantee every read must succeed, anything else is InternalError.
     CommitResult commit(const ReadPlan& plan, const std::vector<QueueReader*>& inputs, std::string& errorMessage);
 
-    /// Skip shares the planner and all alignment rules with read (spec section 7.2).
+    /// Skip shares the planner and all alignment rules with read.
     CommitResult skip(const ReadPlan& plan, const std::vector<QueueReader*>& inputs, std::string& errorMessage);
 
     /**
-     * @brief Silent leftover-segment discard (spec section 3.1): on inputs where less than
+     * @brief Silent leftover-segment discard: on inputs where less than
      * the smallest servable aligned request remains before an event, drop the partial
      * segment so the event becomes pending. Returns the slot positions that discarded.
      */

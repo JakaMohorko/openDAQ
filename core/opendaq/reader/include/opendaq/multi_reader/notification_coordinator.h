@@ -31,7 +31,7 @@ namespace multi_reader
 {
 
 /**
- * @brief Readiness tracking and callback coalescing for the multi reader (spec section 3.5).
+ * @brief Readiness tracking and callback coalescing for the multi reader.
  *
  * Two independent responsibilities:
  *
@@ -43,7 +43,7 @@ namespace multi_reader
  *
  * 2. Used/ready/event masks deciding whether the public onDataAvailable callback fires:
  *    event.any() || (used.any() && (ready & used) == used).
- *    Events on unused slots participate deliberately (review Q5): they are the recovery
+ *    Events on unused slots participate deliberately: they are the recovery
  *    signal consumers react to with setInputUsed. The "ready" meaning is phase-dependent
  *    (first sample while synchronizing, one full block while synchronized) - the owner
  *    sets the bits during its state evaluation.
@@ -77,7 +77,7 @@ public:
 
     // --- Masks (owner state lock held) ---
     void resize(SizeT slotCount);
-    /// S1 (stable slots): drops one slot's bits, shifting the following slots down by one.
+    /// Drops one slot's bits, shifting the following slots down by one.
     void erase(SizeT index);
     SizeT getSlotCount() const;
 
@@ -91,11 +91,11 @@ public:
 
     /// (event & used).any()
     bool anyUsedEvent() const;
-    /// event.any() - unused slots included (review Q5)
+    /// event.any() - unused slots included.
     bool anyEvent() const;
     /// used.any() && (ready & used) == used
     bool allUsedReady() const;
-    /// The callback gate of spec section 3.5.
+    /// The callback gate: fires when there is any event, or when every used slot is ready.
     bool shouldInvokeCallback() const;
 
 private:

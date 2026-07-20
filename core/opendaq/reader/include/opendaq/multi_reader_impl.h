@@ -39,8 +39,8 @@ BEGIN_NAMESPACE_OPENDAQ
 
 /**
  * @brief Internal runtime states of the multi reader. The public surface is the extended
- * ReadStatus plus the per-input InputState dictionary (review decision C5/Q1); this enum
- * only drives the internal state machine and the diagnostic message.
+ * ReadStatus plus the per-input InputState dictionary; this enum only drives the internal
+ * state machine and the diagnostic message.
  */
 enum class ReaderState
 {
@@ -59,11 +59,11 @@ enum class ReaderState
 
 /**
  * @brief Public facade of the multi reader: configuration, input order, the runtime state
- * machine and status creation (spec section 3). All cross-input math lives in the
+ * machine and status creation. All cross-input math lives in the
  * SynchronizationManager, all queue work in the per-slot QueueReaders, read planning in
  * the ReadCoordinator and callback coalescing in the NotificationCoordinator.
  *
- * Locking (spec section 9): one state mutex; producer threads never take it
+ * Locking: one state mutex; producer threads never take it
  * (Input::packetReceived only touches atomics and schedules the coalesced
  * evaluation); user callbacks are invoked with no lock held.
  *
@@ -84,7 +84,7 @@ public:
                     Bool startOnFullUnitOfDomain = false,
                     SizeT minReadCount = 1);
 
-    /// Deprecated MultiReaderFromExisting path; scheduled for removal (Phase 6.1) and
+    /// Deprecated MultiReaderFromExisting path; scheduled for removal and
     /// deliberately not migrated to the builder constructor.
     MultiReaderImpl(MultiReaderImpl* old, SampleType valueReadType, SampleType domainReadType);
 
@@ -123,8 +123,8 @@ public:
     ErrCode INTERFACE_FUNC setMainInput(IString* id) override;
     ErrCode INTERFACE_FUNC getMainInput(IString** id) override;
 
-    /// Test hook (test scaffolding section 2.7): replaces the data-loss time source so
-    /// deadline tests run on virtual time with zero real sleeps. Inline so tests can call
+    /// Test hook: replaces the data-loss time source so deadline tests run on virtual time
+    /// with zero real sleeps. Inline so tests can call
     /// it without the implementation being exported from the library.
     void setDataLossClockForTest(multi_reader::DataLossMonitor::Clock clock)
     {
@@ -171,18 +171,18 @@ private:
     void createSlots(const ListPtr<IInputPortConfig>& inputPorts);
     void applyConfigToSyncManager();
 
-    // --- State machine (spec section 6.2; state mutex held) ---
+    // --- State machine (state mutex held) ---
     /// Full state evaluation - the transition handler run by the paths that change state
     /// (connect/disconnect, used/active changes, topology, events, deadlines).
     void evaluateStateLocked();
-    /// Data-plane fast path (review C11/N6): while synchronized, drains only the slots that
+    /// Data-plane fast path: while synchronized, drains only the slots that
     /// received packets since the last look. With escalateOnEvent it escalates to
     /// evaluateStateLocked when an event surfaces (the read/query path, which must transition to
     /// EventPending); without it (the callback/notify path) it only maintains the event/ready
     /// bits and re-arms dataPlaneDirty so the next read/query surfaces the event. Either way a
     /// deadline escalates and data packets never re-run the checks.
     void refreshDataPlaneLocked(bool escalateOnEvent);
-    /// C12/Q5: adopts unused inputs' queued event packets so they surface in the per-input
+    /// Adopts unused inputs' queued event packets so they surface in the per-input
     /// states and fire the callback gate.
     void drainUnusedSlotsLocked();
     /// Failure-state recovery: a failed input with a corrective descriptor change buried
@@ -214,13 +214,13 @@ private:
     MultiReaderStatusPtr readEventsLocked();
     MultiReaderStatusPtr createStatusLocked(const DictPtr<IString, IEventPacket>& eventPackets = nullptr,
                                             const NumberPtr& offset = nullptr);
-    /// Per-input state snapshot for the status (C6), in slot order: input id + InputState as int,
+    /// Per-input state snapshot for the status, in slot order: input id + InputState as int,
     /// derived from the used/connected flags, pending events and the current failure state's
     /// affected set. This is the self-contained snapshot the status boxes lazily and the cache
     /// fingerprint compares - no boxed dict is built on the read path.
     void buildInputStateSnapshotLocked(std::vector<std::pair<StringPtr, Int>>& out) const;
     /// Descriptor-changed packet for the status: main value descriptor + common output domain
-    /// descriptor (the domain of the status offset, spec section 8.2)
+    /// descriptor (the domain of the status offset).
     EventPacketPtr mainDescriptorPacketLocked();
     void refreshMainInputDescriptorsLocked();
     std::optional<std::int64_t> currentReadOffsetLocked() const;
@@ -240,7 +240,7 @@ private:
     std::mutex mutex;
     std::condition_variable notifyCondition;
 
-    bool invalid{false};  // only the Error state and disposal (spec section 6.1)
+    bool invalid{false};  // only the Error state and disposal
     ReaderState state{ReaderState::WaitingForConnections};
     std::string stateMessage;
     std::vector<SizeT> stateAffectedInputs;
@@ -285,13 +285,13 @@ private:
     SizeT dataPlaneAvailableCommon{0};
     bool dataPlaneAvailableValid{false};
 
-    /// Common-domain tick of the next unread output sample while synchronized (spec section 7.4)
+    /// Common-domain tick of the next unread output sample while synchronized.
     std::optional<std::int64_t> nextReadTick;
 
     DataDescriptorPtr mainValueDescriptor;
     DataDescriptorPtr mainDomainDescriptor;
 
-    /// Status caching (spec section 8.2): the last event-less status is re-issued while its
+    /// Status caching: the last event-less status is re-issued while its
     /// visible content is unchanged; any content change (or any event) creates a new object.
     /// The offset is deliberately NOT part of the fingerprint - it advances on every data read,
     /// while the rest of the status content stays constant in steady synchronized state. When the
@@ -344,7 +344,7 @@ private:
     ContextPtr context;
 
     // --- Configuration ---
-    RatioPtr tickOffsetTolerance;  // deprecated; value ignored (spec section 8.4)
+    RatioPtr tickOffsetTolerance;  // deprecated; value ignored
     StringPtr mainInputId;         // explicitly selected main input; null -> first used input
     RatioPtr maxSynchronizationDistance;  // seconds; null/zero disables
     RatioPtr dataLossTimeout;             // seconds; null/zero disables

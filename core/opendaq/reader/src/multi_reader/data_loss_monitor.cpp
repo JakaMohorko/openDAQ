@@ -92,8 +92,7 @@ void DataLossMonitor::erase(SizeT slot)
         std::unique_lock lock(mutex);
         if (slot >= slots.size())
             return;
-        // S1 (stable slots): removing one input must not disturb the remaining inputs'
-        // arming or deadlines
+        // Removing one input must not disturb the remaining inputs' arming or deadlines.
         slots.erase(slots.begin() + slot);
     }
     cv.notify_all();

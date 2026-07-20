@@ -30,7 +30,7 @@ namespace multi_reader
 {
 
 /**
- * @brief Per-input packet-liveness deadlines (spec section 3.6).
+ * @brief Per-input packet-liveness deadlines.
  *
  * Monitoring arms per slot on the first packet after the slot becomes monitored
  * (used + connected + reader active); a monitored, armed slot whose last arrival is older
@@ -40,8 +40,7 @@ namespace multi_reader
  * Deadlines fire without reads: a waiter thread wakes at the earliest unreported deadline
  * and invokes the deadline callback (once per crossing), which the owner routes into the
  * coalesced state evaluation. With a test clock injected the waiter stays dormant - virtual
- * time cannot wake a real-time wait - and tests drive the evaluation themselves
- * (test scaffolding section 2.7).
+ * time cannot wake a real-time wait - and tests drive the evaluation themselves.
  *
  * Thread safety: all methods are safe from any thread; onPacket is bounded (one leaf mutex,
  * no outward calls). The callback is invoked without the monitor lock held.
@@ -73,7 +72,7 @@ public:
 
     void resize(SizeT slotCount);
 
-    /// S1 (stable slots): drops one slot's state, shifting the following slots down by one;
+    /// Drops one slot's state, shifting the following slots down by one;
     /// the remaining slots keep their arming and deadlines.
     void erase(SizeT slot);
 

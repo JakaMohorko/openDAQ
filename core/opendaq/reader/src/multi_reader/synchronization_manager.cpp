@@ -370,13 +370,13 @@ SynchronizationManager::CandidatePick SynchronizationManager::pickStartCandidate
 
     // Each input can only deliver samples at a regular tick spacing: one sample every
     // (divider * ticksPerCommonSample) ticks, shifted by where its data actually starts.
-    // The output grid follows the MAIN input (spec section 4.4), so the search walks the
+    // The output grid follows the MAIN input, so the search walks the
     // main input's grid, beginning at the first grid point not before the latest input,
     // and inspects one aligned block's worth of grid points - the phase pattern repeats
     // after one block, so looking further cannot find anything new. Best case: a grid
     // point every input hits exactly. Fallback: the first grid point where every input's
     // next sample arrives strictly less than half a block later, so each sample still
-    // unambiguously belongs to that block (spec section 4.3). Neither within one block:
+    // unambiguously belongs to that block. Neither within one block:
     // the inputs share no common tick.
     const auto tickPeriodOf = [this](SizeT i)
     { return static_cast<std::int64_t>(model.sampleRateDividers[i]) * model.ticksPerCommonSample(); };
@@ -554,7 +554,7 @@ RatioPtr SynchronizationManager::startInterval() const
     if (startOnFullUnitOfDomain)
         return Ratio(1, 1);
 
-    // Direct path: the minimum aligned block. The resampled path (Phase 5) uses the
+    // Direct path: the minimum aligned block. The resampled path uses the
     // output sample period instead.
     return Ratio(static_cast<Int>(model.blockLcm), static_cast<Int>(model.commonSampleRate));
 }
