@@ -538,7 +538,7 @@ void MultiReaderImpl::drainUnusedSlotsLocked()
     }
 }
 
-void MultiReaderImpl::refreshDataPlaneLocked()
+void MultiReaderImpl::refreshDataPlaneLocked(bool escalateOnEvent)
 {
     // Establishment phases (waiting/synchronizing/failed) still run the full evaluation -
     // progress toward synchronization is exactly what those states are doing. The fast path
@@ -573,6 +573,7 @@ void MultiReaderImpl::refreshDataPlaneLocked()
     const SizeT block = haveModel ? syncManager->getModel().blockLcm : 0;
 
     bool escalate = false;
+    bool anyEvent = false;
     SizeT availableCommon = std::numeric_limits<SizeT>::max();
     for (SizeT i = 0; i < slots.size(); ++i)
     {
@@ -609,11 +610,27 @@ void MultiReaderImpl::refreshDataPlaneLocked()
         // own consumption (a read advancing the frontier past the data ahead of it) with no
         // new packet arriving, so gating this on packetsArrived would miss it. Both queries
         // are O(1) (empty-check / sticky adoption flag), so per-cycle is cheap.
-        if (reader.hasPendingEvents() || reader.hasQueuedEventPackets())
+        const bool hasEvent = reader.hasPendingEvents() || reader.hasQueuedEventPackets();
+        if (hasEvent)
         {
-            escalate = true;
+            // The read/query path escalates so the full ladder transitions to EventPending and
+            // discards residuals; the callback path only records the event for the gate -
+            // buried-inclusive, so a sub-block residual before a buried event still fires the
+            // callback - and re-arms dataPlaneDirty (below) so the next read/query runs the ladder.
+            if (escalateOnEvent)
+                escalate = true;
+            else
+            {
+                notificationCoordinator->setEvent(slot->getIndex(), true);
+                anyEvent = true;
+            }
             continue;
         }
+
+        // The read/query path leaves event bits to evaluateStateLocked; the callback path owns
+        // them here, so clear a stale bit once the slot's events have drained away.
+        if (!escalateOnEvent)
+            notificationCoordinator->setEvent(slot->getIndex(), false);
 
         // Availability is O(1) here (the queue reader maintains it incrementally across drains
         // and reads), so recomputing it for every used slot each real pass is cheap - and it is
@@ -640,6 +657,16 @@ void MultiReaderImpl::refreshDataPlaneLocked()
         // gathered above is not authoritative; it clears the cache and consumers fall back to a
         // direct walk.
         evaluateStateLocked();
+        return;
+    }
+
+    if (anyEvent)
+    {
+        // The callback path recorded an event for the gate but did not run the ladder. Re-arm
+        // dataPlaneDirty so the next read/query does a full pass (escalateOnEvent) that surfaces
+        // it, and do not publish the partial availability gathered above.
+        dataPlaneDirty.store(true, std::memory_order_release);
+        dataPlaneAvailableValid = false;
         return;
     }
 
@@ -1009,10 +1036,11 @@ void MultiReaderImpl::onCoalescedEvaluation()
         if (invalid)
             return;
 
-        // The coalesced task is the readiness/gate maintainer: data-only arrivals take the
-        // fast path (drain + readiness bits); events and deadlines escalate to the full
-        // evaluation inside it
-        refreshDataPlaneLocked();
+        // The coalesced task only decides whether onDataAvailable should fire: it maintains the
+        // event/ready bits (escalateOnEvent = false) and never runs the state ladder for events -
+        // that is deferred to the read/query path. Deadlines and non-synchronized states still
+        // escalate inside it.
+        refreshDataPlaneLocked(false);
         if (notificationCoordinator->shouldInvokeCallback())
             callback = readCallback;
     }
@@ -1374,7 +1402,7 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
         return skip ? OPENDAQ_IGNORED : OPENDAQ_SUCCESS;
     }
 
-    refreshDataPlaneLocked();
+    refreshDataPlaneLocked(true);
 
     // Zero-count handshake: report events or the current state without consuming data.
     // With a timeout the call waits for events to arrive instead of returning immediately.
@@ -1388,7 +1416,7 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
                                      {
                                          if (invalid)
                                              return true;
-                                         refreshDataPlaneLocked();
+                                         refreshDataPlaneLocked(true);
                                          return state == ReaderState::EventPending;
                                      });
         }
@@ -1410,7 +1438,7 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
                                  {
                                      if (invalid)
                                          return true;
-                                     refreshDataPlaneLocked();
+                                     refreshDataPlaneLocked(true);
                                      if (state == ReaderState::EventPending)
                                          return true;
                                      if (state != ReaderState::Synchronized)
@@ -1438,7 +1466,7 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
             *count = 0;
             return OPENDAQ_SUCCESS;
         }
-        refreshDataPlaneLocked();
+        refreshDataPlaneLocked(true);
     }
 
     if (state == ReaderState::EventPending)
@@ -1602,7 +1630,7 @@ ErrCode MultiReaderImpl::getAvailableCount(SizeT* count)
     if (invalid)
         return OPENDAQ_SUCCESS;
 
-    refreshDataPlaneLocked();
+    refreshDataPlaneLocked(true);
     if (state == ReaderState::Synchronized)
     {
         // The refresh above published availability on the fast path; reuse it rather than

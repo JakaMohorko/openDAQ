@@ -176,9 +176,12 @@ private:
     /// (connect/disconnect, used/active changes, topology, events, deadlines).
     void evaluateStateLocked();
     /// Data-plane fast path (review C11/N6): while synchronized, drains only the slots that
-    /// received packets since the last look and escalates to evaluateStateLocked only when
-    /// an event surfaced or a deadline expired; data packets never re-run the checks.
-    void refreshDataPlaneLocked();
+    /// received packets since the last look. With escalateOnEvent it escalates to
+    /// evaluateStateLocked when an event surfaces (the read/query path, which must transition to
+    /// EventPending); without it (the callback/notify path) it only maintains the event/ready
+    /// bits and re-arms dataPlaneDirty so the next read/query surfaces the event. Either way a
+    /// deadline escalates and data packets never re-run the checks.
+    void refreshDataPlaneLocked(bool escalateOnEvent);
     /// C12/Q5: adopts unused inputs' queued event packets so they surface in the per-input
     /// states and fire the callback gate.
     void drainUnusedSlotsLocked();
