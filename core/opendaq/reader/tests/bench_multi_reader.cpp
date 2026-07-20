@@ -7,10 +7,12 @@
  * target in Release and run with no arguments (runs all scenarios).
  *
  * Scenarios:
- *   inputs        - throughput vs number of inputs (equal rate)
- *   packet        - throughput vs packet size
+ *   inputs        - throughput vs number of inputs (equal rate), incl. extreme 64/128
+ *   packet        - throughput vs packet size, incl. extreme-small 1/2/4/8
  *   rates         - throughput vs multi-rate spread (dividers)
  *   events        - throughput vs descriptor-event rate (resync every K packets)
+ *   event_inputs  - event throughput vs input count (fixed event rate, many inputs)
+ *   stress        - combined worst corner: many inputs x small packets
  *   resync        - time per resync when every packet batch forces a re-synchronization
  *   convert       - typed-read conversion throughput (native copy vs type conversion)
  */
@@ -199,7 +201,9 @@ void throughput(const char* scenario, const std::string& param, Bench& b, SizeT 
 
 void scenarioInputs()
 {
-    for (SizeT n : {1u, 2u, 4u, 8u, 16u, 32u})
+    // 64/128 are the extreme end: per-read cost is O(inputs) in the coordinator layer,
+    // so throughput-per-common-sample degradation here isolates orchestration overhead.
+    for (SizeT n : {1u, 2u, 4u, 8u, 16u, 32u, 64u, 128u})
     {
         Bench b;
         b.build(n, SampleType::Float64, {1});
@@ -209,13 +213,18 @@ void scenarioInputs()
 
 void scenarioPacket()
 {
-    for (SizeT p : {16u, 64u, 256u, 1024u, 4096u, 16384u})
+    // 1/2/4/8 are the extreme-small end: the per-read orchestration cost is fixed while the
+    // payload shrinks, so ns_per_common_sample here is dominated by fixed per-call overhead.
+    for (SizeT p : {1u, 2u, 4u, 8u, 16u, 64u, 256u, 1024u, 4096u, 16384u})
     {
         Bench b;
         b.build(4, SampleType::Float64, {1});
-        // Keep total samples per scenario roughly constant
-        const SizeT iters = (1u << 21) / p;
-        throughput("packet", std::to_string(p), b, p, iters ? iters : 1);
+        // Keep total samples per scenario roughly constant, but cap the iteration count so the
+        // tiny-packet rows do not blow up wall-clock (300k read round-trips is ample for a stable
+        // per-call measurement). The cap never changes the p>=16 rows: 2^21/16 = 131072 < 300000.
+        const SizeT budget = (1u << 21) / p;
+        const SizeT iters = budget < 300000u ? (budget ? budget : 1u) : 300000u;
+        throughput("packet", std::to_string(p), b, p, iters);
     }
 }
 
@@ -264,6 +273,50 @@ void scenarioEvents()
         }
         const double secs = std::chrono::duration<double>(Clock::now() - t0).count();
         emit("events", "every_" + std::to_string(k), "Msamp_s", megaSamplesPerSec(total, secs));
+    }
+}
+
+// Event throughput as the input count grows. Fixed event rate (a descriptor re-assert every
+// 4 batches on a rotating input) while sweeping the number of inputs: this is where the
+// scheduler-thread callback pass and the per-read event handling scale with O(inputs), so it
+// stresses the notify/coalesced path far harder than the 4-input `events` scenario.
+void scenarioEventInputs()
+{
+    for (SizeT n : {4u, 16u, 64u})
+    {
+        Bench b;
+        b.build(n, SampleType::Float64, {1});
+        b.sendAll(1024);
+        b.drain();
+
+        SizeT total = 0;
+        const SizeT iters = 400;
+        const auto t0 = Clock::now();
+        for (SizeT it = 0; it < iters; ++it)
+        {
+            if (it % 4 == 0)
+                b.signals[it % b.signals.size()].setDescriptor(valueDescriptor(SampleType::Float64));
+            b.sendAll(1024);
+            total += b.drain();
+        }
+        const double secs = std::chrono::duration<double>(Clock::now() - t0).count();
+        emit("event_inputs", std::to_string(n), "Msamp_s", megaSamplesPerSec(total, secs));
+    }
+}
+
+// Combined worst corner: many inputs AND small packets at the same time. Per-read overhead is
+// O(inputs) and is paid on every tiny drain, so this is the harshest test of the coordinator
+// orchestration layer (createPlan/commit/refresh per read, all O(slots)) relative to payload.
+void scenarioStress()
+{
+    for (SizeT n : {16u, 32u, 64u})
+    {
+        for (SizeT p : {8u, 32u})
+        {
+            Bench b;
+            b.build(n, SampleType::Float64, {1});
+            throughput("stress", std::to_string(n) + "x" + std::to_string(p), b, p, 400);
+        }
     }
 }
 
@@ -352,13 +405,15 @@ int main(int argc, char** argv)
     std::string only = argc > 1 ? argv[1] : "";
     std::printf("scenario,param,metric,value\n");
 
-    if (only.empty() || only == "inputs")  scenarioInputs();
-    if (only.empty() || only == "packet")  scenarioPacket();
-    if (only.empty() || only == "rates")   scenarioRates();
-    if (only.empty() || only == "events")  scenarioEvents();
-    if (only.empty() || only == "resync")  scenarioResync();
-    if (only.empty() || only == "convert") scenarioConvert();
-    if (only.empty() || only == "micro")   scenarioMicro();
+    if (only.empty() || only == "inputs")       scenarioInputs();
+    if (only.empty() || only == "packet")       scenarioPacket();
+    if (only.empty() || only == "rates")        scenarioRates();
+    if (only.empty() || only == "events")       scenarioEvents();
+    if (only.empty() || only == "event_inputs") scenarioEventInputs();
+    if (only.empty() || only == "stress")       scenarioStress();
+    if (only.empty() || only == "resync")       scenarioResync();
+    if (only.empty() || only == "convert")      scenarioConvert();
+    if (only.empty() || only == "micro")        scenarioMicro();
 
     return 0;
 }
