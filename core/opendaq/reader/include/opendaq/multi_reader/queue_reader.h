@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 #pragma once
+#include <opendaq/connection_internal.h>
 #include <opendaq/data_descriptor_ptr.h>
 #include <opendaq/event_packet_ptr.h>
 #include <opendaq/enum_flags.h>
@@ -236,6 +237,8 @@ public:
 private:
     void drainConnection();
     void adoptPackets();
+    /// Re-query the IConnectionInternal view after `connection` changes (see connectionInternal).
+    void refreshConnectionInternal();
     void consumeLeadingEventPackets();
     
     SizeT getAvailableSamplesNative() const;
@@ -255,6 +258,10 @@ private:
     std::deque<PacketPtr> packets;
     std::deque<SignalEvent> events;
 
+    /// Reused batch buffer for adoptPackets: IConnectionInternal::dequeueUpTo detaches up to
+    /// buffer-size packets under a single connection lock, avoiding one lock per packet.
+    std::vector<IPacket*> adoptBuffer;
+
     SizeT readingPosition = 0;
     /// Sticky adoption-time marker backing hasQueuedEventPackets (conservative: may be true
     /// after the event left the queue; never false while one is in it)
@@ -271,6 +278,10 @@ private:
 
     InputPortConfigPtr port;
     ConnectionPtr connection;
+    /// Cached IConnectionInternal view of `connection` for batch dequeue; null if the connection
+    /// does not implement it (adoptPackets then falls back to per-packet dequeue). Refreshed
+    /// whenever `connection` is reassigned.
+    ObjectPtr<IConnectionInternal> connectionInternal;
 
     LoggerComponentPtr loggerComponent;
 

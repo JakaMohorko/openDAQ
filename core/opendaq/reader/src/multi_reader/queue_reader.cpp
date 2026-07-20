@@ -130,17 +130,51 @@ QueueReader::QueueReader(const InputPortConfigPtr& port,  // Consider using Conn
     // COMMENT: Read mode should be reworked or at least clarified. Seems like there's a weird correlation between read mode and read types.
     //          Also, unscaled is simply ignored. This should be clarified.
     typeCtx.valueOut = mode == ReadMode::RawValue ? SampleType::Undefined : valueReadType;
+    refreshConnectionInternal();
+}
+
+void QueueReader::refreshConnectionInternal()
+{
+    connectionInternal = connection.assigned() ? connection.asPtrOrNull<IConnectionInternal>() : nullptr;
 }
 
 void QueueReader::adoptPackets()
 {
     invalidateAvailable();
-    // Take ownership of all packets
+
+    // Batch path: dequeueUpTo detaches many packets under a single connection lock, instead of
+    // one lock (and one counter update) per packet. Falls back below if the connection does not
+    // implement IConnectionInternal.
+    if (connectionInternal.assigned())
+    {
+        constexpr SizeT batchSize = 64;
+        if (adoptBuffer.size() < batchSize)
+            adoptBuffer.resize(batchSize);
+
+        SizeT dequeued;
+        do
+        {
+            dequeued = batchSize;
+            connectionInternal->dequeueUpTo(adoptBuffer.data(), &dequeued);
+            for (SizeT i = 0; i < dequeued; ++i)
+            {
+                // dequeueUpTo detached each packet (ownership transferred); Adopt takes that
+                // reference without an extra AddRef.
+                PacketPtr packet = PacketPtr::Adopt(adoptBuffer[i]);
+                // Sticky marker for hasQueuedEventPackets: the fast read path (owner's steady
+                // state) must learn about adopted events without scanning the queue per read
+                if (packet.getType() == PacketType::Event)
+                    eventPacketAdopted = true;
+                packets.push_back(std::move(packet));
+            }
+        } while (dequeued == batchSize);  // buffer was filled - the connection may hold more
+        return;
+    }
+
+    // Fallback: take ownership one packet at a time
     PacketPtr packet = connection.dequeue();
     while (packet.assigned())
     {
-        // Sticky marker for hasQueuedEventPackets: the fast read path (owner's steady
-        // state) must learn about adopted events without scanning the queue per read
         if (packet.getType() == PacketType::Event)
             eventPacketAdopted = true;
         packets.push_back(std::move(packet));
@@ -477,6 +511,7 @@ const FunctionPtr& QueueReader::getDomainTransformFunction() const
 void QueueReader::updateConnection()
 {
     connection = port.getConnection();
+    refreshConnectionInternal();
     drainConnection();
 }
 
@@ -490,6 +525,7 @@ bool QueueReader::refreshConnection()
         return false;
 
     connection = std::move(current);
+    refreshConnectionInternal();
     drainConnection();
     return true;
 }

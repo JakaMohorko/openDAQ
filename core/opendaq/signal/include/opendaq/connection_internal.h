@@ -17,6 +17,7 @@
 #pragma once
 #include <coretypes/common.h>
 #include <coretypes/baseobject.h>
+#include <opendaq/packet.h>  // IPacket, used by dequeueUpTo below
 
 BEGIN_NAMESPACE_OPENDAQ
 
