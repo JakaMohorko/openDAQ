@@ -6,6 +6,9 @@
  * Output: CSV lines "scenario,param,metric,value" on stdout. Build the `bench_multi_reader`
  * target in Release and run with no arguments (runs all scenarios).
  *
+ * Throughput metrics are reported in absolute units: `rate_Hz` (common samples read per second)
+ * and `ns_per_sample` (nanoseconds of wall time per common sample). rate_Hz == 1e9 / ns_per_sample.
+ *
  * Scenarios:
  *   inputs        - throughput vs number of inputs (equal rate), incl. extreme 64/128
  *   packet        - throughput vs packet size, incl. extreme-small 1/2/4/8
@@ -13,6 +16,8 @@
  *   events        - throughput vs descriptor-event rate (resync every K packets)
  *   event_inputs  - event throughput vs input count (fixed event rate, many inputs)
  *   stress        - combined worst corner: many inputs x small packets
+ *   maxrate       - maximum sustained read rate (read timed, packet production excluded from the
+ *                   clock); grid of inputs x packet size, incl. the 16-input / 128-sample point
  *   resync        - time per resync when every packet batch forces a re-synchronization
  *   convert       - typed-read conversion throughput (native copy vs type conversion)
  */
@@ -167,11 +172,13 @@ struct Bench
     }
 };
 
-double megaSamplesPerSec(SizeT commonSamples, double seconds)
+// Common samples read per second (Hz). This is the "multi-reading rate": how many aligned
+// common-domain samples the reader delivers per second.
+double rateHz(SizeT commonSamples, double seconds)
 {
     if (seconds <= 0.0)
         return 0.0;
-    return (static_cast<double>(commonSamples) / seconds) / 1e6;
+    return static_cast<double>(commonSamples) / seconds;
 }
 
 void emit(const char* scenario, const std::string& param, const char* metric, double value)
@@ -195,8 +202,8 @@ void throughput(const char* scenario, const std::string& param, Bench& b, SizeT 
         total += b.drain();
     }
     const double secs = std::chrono::duration<double>(Clock::now() - t0).count();
-    emit(scenario, param, "Msamp_s", megaSamplesPerSec(total, secs));
-    emit(scenario, param, "ns_per_common_sample", total ? (secs * 1e9 / total) : 0.0);
+    emit(scenario, param, "rate_Hz", rateHz(total, secs));
+    emit(scenario, param, "ns_per_sample", total ? (secs * 1e9 / total) : 0.0);
 }
 
 void scenarioInputs()
@@ -272,7 +279,7 @@ void scenarioEvents()
             total += b.drain();
         }
         const double secs = std::chrono::duration<double>(Clock::now() - t0).count();
-        emit("events", "every_" + std::to_string(k), "Msamp_s", megaSamplesPerSec(total, secs));
+        emit("events", "every_" + std::to_string(k), "rate_Hz", rateHz(total, secs));
     }
 }
 
@@ -300,7 +307,7 @@ void scenarioEventInputs()
             total += b.drain();
         }
         const double secs = std::chrono::duration<double>(Clock::now() - t0).count();
-        emit("event_inputs", std::to_string(n), "Msamp_s", megaSamplesPerSec(total, secs));
+        emit("event_inputs", std::to_string(n), "rate_Hz", rateHz(total, secs));
     }
 }
 
@@ -316,6 +323,54 @@ void scenarioStress()
             Bench b;
             b.build(n, SampleType::Float64, {1});
             throughput("stress", std::to_string(n) + "x" + std::to_string(p), b, p, 400);
+        }
+    }
+}
+
+// Maximum sustained multi-read rate. Only the read() call is timed; packet production is refilled
+// OUTSIDE the clock (a real producer runs on its own thread), so this isolates the reader's own
+// ceiling. Each read consumes exactly one packet-sized block, so the per-read orchestration cost
+// is amortised over the packet - which is why the packet size is the key parameter here.
+// Reported as rate_Hz (common samples/s) and ns_per_sample. The 16x128 row is the headline point.
+void scenarioMaxRate()
+{
+    for (SizeT n : {8u, 16u, 32u})
+    {
+        for (SizeT p : {64u, 128u, 256u})
+        {
+            Bench b;
+            b.build(n, SampleType::Float64, {1});
+
+            // Warm up to synchronized steady state, then keep a backlog so reads never starve
+            for (int i = 0; i < 64; ++i)
+                b.sendAll(p);
+            b.reader.getAvailableCount();  // adopt + synchronize once
+
+            std::vector<std::vector<double>> bufs(n, std::vector<double>(p));
+            std::vector<void*> ptrs(n);
+            for (SizeT i = 0; i < n; ++i)
+                ptrs[i] = bufs[i].data();
+
+            double readNs = 0.0;
+            SizeT samples = 0;
+            const SizeT reads = 20000;
+            for (SizeT r = 0; r < reads; ++r)
+            {
+                // Refill happens outside the timed region, so packet send never counts
+                if (b.reader.getAvailableCount() < p)
+                    for (int i = 0; i < 64; ++i)
+                        b.sendAll(p);
+
+                SizeT cnt = p;
+                const auto r0 = Clock::now();
+                b.reader.read(ptrs.data(), &cnt);
+                readNs += std::chrono::duration<double, std::nano>(Clock::now() - r0).count();
+                samples += cnt;
+            }
+
+            const std::string param = std::to_string(n) + "x" + std::to_string(p);
+            emit("maxrate", param, "ns_per_sample", samples ? readNs / samples : 0.0);
+            emit("maxrate", param, "rate_Hz", (samples && readNs > 0.0) ? (samples / (readNs / 1e9)) : 0.0);
         }
     }
 }
@@ -503,6 +558,7 @@ int main(int argc, char** argv)
     if (only.empty() || only == "events")       scenarioEvents();
     if (only.empty() || only == "event_inputs") scenarioEventInputs();
     if (only.empty() || only == "stress")       scenarioStress();
+    if (only.empty() || only == "maxrate")      scenarioMaxRate();
     if (only.empty() || only == "resync")       scenarioResync();
     if (only.empty() || only == "convert")      scenarioConvert();
     if (only.empty() || only == "micro")        scenarioMicro();
