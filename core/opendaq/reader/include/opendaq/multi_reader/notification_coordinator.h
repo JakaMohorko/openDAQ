@@ -42,11 +42,14 @@ namespace multi_reader
  *    task state outlives the coordinator and is checked under its own lock.
  *
  * 2. Used/ready/event masks deciding whether the public onDataAvailable callback fires:
- *    event.any() || (used.any() && (ready & used) == used).
+ *    event.any() || (used.any() && (ready & used) == used) || stateChangeNotify.
  *    Events on unused slots participate deliberately: they are the recovery
  *    signal consumers react to with setInputUsed. The "ready" meaning is phase-dependent
  *    (first sample while synchronizing, one full block while synchronized) - the owner
- *    sets the bits during its state evaluation.
+ *    sets the bits during its state evaluation. stateChangeNotify is a one-shot latch for a
+ *    state change that carries no returnable data or event (currently the transition into
+ *    DataLost): the elapsed deadline is itself the notification, so the consumer is woken
+ *    once and reads the naming status - it never has to poll or run its own liveness timer.
  *
  * Threading contract: requestEvaluation() and detach() are thread-safe. Everything else
  * (masks, callback queries) must be called with the owner's state lock held. The
@@ -94,13 +97,21 @@ public:
     /// Clears ready and event bits (synchronization invalidated, topology changed, ...).
     void clearReadiness();
 
+    /// One-shot latch: raise the callback gate for a state change that carries no returnable
+    /// data or event (currently the transition into DataLost). Set by the owner on the
+    /// transition; the owner consumes it (sets false) once the callback has fired, so a single
+    /// occurrence wakes the consumer exactly once and does not re-fire while it persists.
+    void setStateChangeNotify(bool notify);
+    bool getStateChangeNotify() const;
+
     /// (event & used).any()
     bool anyUsedEvent() const;
     /// event.any() - unused slots included.
     bool anyEvent() const;
     /// used.any() && (ready & used) == used
     bool allUsedReady() const;
-    /// The callback gate: fires when there is any event, or when every used slot is ready.
+    /// The callback gate: fires when there is any event, when every used slot is ready, or when
+    /// a state-change notification is latched.
     bool shouldInvokeCallback() const;
 
 private:
@@ -120,6 +131,7 @@ private:
     std::vector<bool> usedMask;
     std::vector<bool> readyMask;
     std::vector<bool> eventMask;
+    bool stateChangeNotifyFlag = false;
 };
 
 }  // namespace multi_reader

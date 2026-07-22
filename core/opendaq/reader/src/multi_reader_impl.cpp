@@ -391,6 +391,14 @@ void MultiReaderImpl::applyDataLossTimeoutLocked()
 
 void MultiReaderImpl::setStateLocked(ReaderState newState, std::string message, std::vector<SizeT> affected)
 {
+    // Entering DataLost - or changing which inputs are lost while already in it - is a condition
+    // the consumer must act on that carries no returnable data or event. Latch a one-shot
+    // callback wake so the elapsed deadline itself notifies the consumer, which then reads the
+    // naming status (spec 3.5/3.6). Edge-triggered: an unchanged DataLost re-evaluation does not
+    // re-latch, so healthy-input packets cannot re-fire the callback while the loss persists.
+    if (newState == ReaderState::DataLost && (state != ReaderState::DataLost || affected != stateAffectedInputs))
+        notificationCoordinator->setStateChangeNotify(true);
+
     state = newState;
     stateMessage = std::move(message);
     stateAffectedInputs = std::move(affected);
@@ -1098,6 +1106,11 @@ void MultiReaderImpl::onCoalescedEvaluation()
         updateCallbackStateLocked();
         if (notificationCoordinator->shouldInvokeCallback())
             callback = readCallback;
+
+        // One-shot: consume a latched state-change wake (DataLost) once observed, so a single
+        // loss fires the callback exactly once rather than on every later evaluation. A blocked
+        // read is woken independently by notifyCondition below.
+        notificationCoordinator->setStateChangeNotify(false);
     }
 
     notifyCondition.notify_all();

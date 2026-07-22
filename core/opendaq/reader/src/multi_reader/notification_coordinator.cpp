@@ -121,6 +121,16 @@ void NotificationCoordinator::clearReadiness()
     eventMask.assign(eventMask.size(), false);
 }
 
+void NotificationCoordinator::setStateChangeNotify(bool notify)
+{
+    stateChangeNotifyFlag = notify;
+}
+
+bool NotificationCoordinator::getStateChangeNotify() const
+{
+    return stateChangeNotifyFlag;
+}
+
 bool NotificationCoordinator::anyUsedEvent() const
 {
     for (SizeT i = 0; i < usedMask.size(); ++i)
@@ -159,7 +169,9 @@ bool NotificationCoordinator::shouldInvokeCallback() const
 {
     // Events on unused inputs fire the callback too; that notification is the
     // recovery path (the consumer can re-include the input with setInputUsed).
-    return anyEvent() || allUsedReady();
+    // stateChangeNotify covers a state change with neither data nor event to return
+    // (the DataLost deadline): the elapsed timer is itself the notification.
+    return anyEvent() || allUsedReady() || stateChangeNotifyFlag;
 }
 
 }  // namespace multi_reader
