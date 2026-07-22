@@ -139,16 +139,22 @@ One coordinator handles both paths; resampling is a per-input execution branch, 
 Maintains `usedMask`, `readyMask`, `eventMask` bitsets. After any slot update:
 
 ```
-schedule one coalesced task  iff  (eventMask & usedMask).any()  ||  (readyMask & usedMask) == usedMask
+schedule one coalesced task  iff  (eventMask & usedMask).any()
+                                   || (readyMask & usedMask) == usedMask
+                                   || stateChangeNotify
 ```
 
-The scheduled task re-runs state evaluation and invokes the public `onDataAvailable` callback only if an event is returnable or one full block is readable. Callback is never invoked from `packetReceived` and never while any internal lock is held. The "ready" meaning is phase-dependent: first sample while synchronizing, one full block while synchronized. Blocked reads with a timeout are woken through the same path plus a condition variable.
+The scheduled task re-runs state evaluation and invokes the public `onDataAvailable` callback when an event is returnable, one full block is readable, **or** the reader has just recognized a condition the consumer must act on that carries neither returnable data nor a returnable event — currently the transition into `DataLost`.
+
+Data-loss recognition **must** wake the consumer. The reader detects the loss on its own (scheduler-armed deadline; see §3.6) and the elapsed deadline is itself the notification: the consumer must not have to poll or run its own liveness timer to discover that an input has stalled. On the transition into `DataLost` the reader raises `onDataAvailable`, and the consumer reads the naming `DataLost` status on its next `read()`. This keeps the consumer implementation lean — a single `onDataAvailable` handler plus a `read()` is sufficient to observe data, events, and stalled inputs alike.
+
+`stateChangeNotify` is a latch set on entry to such a state and cleared once the consumer has been notified (the state is read or the reader leaves it), so a single loss wakes the consumer exactly once and does not busy-loop while the loss is outstanding. Callback is never invoked from `packetReceived` and never while any internal lock is held. The "ready" meaning is phase-dependent: first sample while synchronizing, one full block while synchronized. Blocked reads with a timeout are woken through the same path plus a condition variable.
 
 `getAvailableCount` and the read methods process pending inputs synchronously — correctness never depends on the scheduler having run the coalesced task.
 
 ### 3.6 `DataLossMonitor` (new)
 
-`setDataLossTimeout(t)`; `0` disables (default). Armed per input after the first packet following connect or activation. On expiry (scheduler-armed deadline; fires even with no further packets), the affected inputs form the lost set → `DataLost` state listing every lost input. The next packet from an input clears only that input; the reader leaves `DataLost` when the set is empty. Inactive, unused, and disconnected slots are not monitored.
+`setDataLossTimeout(t)`; `0` disables (default). Armed per input after the first packet following connect or activation. On expiry (scheduler-armed deadline; fires even with no further packets), the affected inputs form the lost set → `DataLost` state listing every lost input, and the reader raises the `onDataAvailable` callback (§3.5) so the consumer is notified of the loss without polling. The next packet from an input clears only that input; the reader leaves `DataLost` when the set is empty. Inactive, unused, and disconnected slots are not monitored.
 
 ---
 
