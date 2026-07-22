@@ -265,22 +265,33 @@ ErrCode readData(const ReadLayout& readLayout,
             return OPENDAQ_SUCCESS;
         }
 
+        // The typed reader converts between the packet and read sample types by design, so a
+        // narrowing conversion here is intended, not a defect. The static_cast expresses intent
+        // but cannot silence C4244 when OutputT is a class type (e.g. complex/range): the
+        // narrowing is on the converting constructor's argument, so suppress it at the site.
+#if defined(_MSC_VER)
+#    pragma warning(push)
+#    pragma warning(disable : 4244)
+#endif
         // If the type of samples is the same, then just copy
         if constexpr (std::is_same_v<OutputT, InputT>)
         {
             // Returns the pointer to the value after the last copied one
-            *outputBuffer = std::copy_n(dataStart, valuesPerSample * toRead, dataOut);  // C4244 - possible data loss due to conversion
+            *outputBuffer = std::copy_n(dataStart, valuesPerSample * toRead, dataOut);
         }
         else
         {
             for (std::size_t i = 0; i < toRead * valuesPerSample; ++i)
             {
-                dataOut[i] = static_cast<OutputT>(dataStart[i]);  // C4244 - possible data loss due to conversion
+                dataOut[i] = static_cast<OutputT>(dataStart[i]);
             }
 
             // Set the pointer to the value after the last copied one
             *outputBuffer = &dataOut[toRead];
         }
+#if defined(_MSC_VER)
+#    pragma warning(pop)
+#endif
 
         return OPENDAQ_SUCCESS;
     }
@@ -479,7 +490,16 @@ SizeT findDomainValue(const ReadLayout& readLayout,
 
         for (std::size_t i = 0; i < size * readLayout.valuesPerSample; ++i)
         {
-            OutputT value = static_cast<OutputT>(domainBuffer[i]);  // C4244 - possible data loss due to conversion
+            // Intentional domain sample-type conversion; C4244 is on the converting
+            // constructor's argument, which the static_cast cannot silence (see readData).
+#if defined(_MSC_VER)
+#    pragma warning(push)
+#    pragma warning(disable : 4244)
+#endif
+            OutputT value = static_cast<OutputT>(domainBuffer[i]);
+#if defined(_MSC_VER)
+#    pragma warning(pop)
+#endif
 
             bool greaterEqual = false;
             if constexpr (IsTemplateOf<OutputT, daq::RangeType>::value)
