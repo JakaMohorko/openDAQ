@@ -32,10 +32,12 @@ namespace multi_reader
 /**
  * @brief Per-input packet-liveness deadlines.
  *
- * Monitoring arms per slot on the first packet after the slot becomes monitored
- * (used + connected + reader active); a monitored, armed slot whose last arrival is older
- * than the timeout is lost. A slot recovers when its next packet arrives; the owner leaves
- * the DataLost state when no lost slots remain. Zero timeout disables monitoring (default).
+ * Monitoring arms a slot the moment it becomes monitored (used + connected + reader active),
+ * with a deadline one full timeout ahead - a missing first packet is treated exactly like a
+ * producer that stops after delivering some. A monitored, armed slot whose last arrival is older
+ * than the timeout is lost. Each packet refreshes the deadline; a slot recovers when its next
+ * packet arrives, and the owner leaves the DataLost state when no lost slots remain. Zero timeout
+ * disables monitoring (default).
  *
  * Deadlines fire without reads: a waiter thread wakes at the earliest unreported deadline
  * and invokes the deadline callback (once per crossing), which the owner routes into the
@@ -80,7 +82,8 @@ public:
     void onPacket(SizeT slot);
 
     /// Owner gate: monitoring applies only to used, connected slots of an active reader.
-    /// Turning a slot off clears its arming; it re-arms on the first packet after turning on.
+    /// Turning a slot off clears its arming; turning it on arms it immediately (deadline one
+    /// timeout ahead), and each packet thereafter refreshes the deadline.
     void setMonitored(SizeT slot, bool monitored);
 
     /// Monitored, armed slots whose deadline has expired, in slot order.

@@ -53,13 +53,22 @@ void DataLossMonitor::setTimeout(std::chrono::nanoseconds newTimeout)
 {
     std::unique_lock lock(mutex);
     timeout = newTimeout;
-    // Both directions clear the arming: disabling stops monitoring outright, and enabling
-    // must not count arrivals recorded before the deadline existed - each slot re-arms on
-    // its first packet under the new timeout
+    const auto now = clock();
+    // Re-arm from now under the new timeout: a monitored slot gets a fresh full deadline (arming
+    // is not deferred to its next packet), and an arrival recorded before this timeout existed
+    // must not count toward it. Disabling (0) disarms every slot.
     for (auto& slot : slots)
     {
-        slot.armed = false;
         slot.reported = false;
+        if (slot.monitored && newTimeout.count() > 0)
+        {
+            slot.armed = true;
+            slot.lastArrival = now;
+        }
+        else
+        {
+            slot.armed = false;
+        }
     }
     ensureWaiterLocked(lock);
     cv.notify_all();
@@ -143,11 +152,21 @@ void DataLossMonitor::setMonitored(SizeT slot, bool monitored)
         if (slots[slot].monitored == monitored)
             return;
         slots[slot].monitored = monitored;
-        if (!monitored)
+        slots[slot].reported = false;
+        if (monitored && timeout.count() > 0)
+        {
+            // Arm at the start of monitoring: the deadline runs one full timeout from now, so a
+            // used + connected input of an active reader that never delivers a packet trips the
+            // same deadline as one whose producer stops after delivering some. onPacket refreshes
+            // the deadline on each arrival; turning monitoring off (below) disarms.
+            slots[slot].lastArrival = clock();
+            slots[slot].armed = true;
+        }
+        else
         {
             slots[slot].armed = false;
-            slots[slot].reported = false;
         }
+        ensureWaiterLocked(lock);
     }
     cv.notify_all();
 }
