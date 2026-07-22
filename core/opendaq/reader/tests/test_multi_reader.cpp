@@ -4397,3 +4397,109 @@ TEST_F(MultiReaderTest, DataLossDeadlineFiresWithoutReads)
     status = multi.read(nullptr, &count);
     ASSERT_EQ(status.getReadStatus(), ReadStatus::InputsFailed);
 }
+
+TEST_F(MultiReaderTest, DataLossFiresCallback)
+{
+    // Part 1 (spec 3.5): the transition into DataLost raises onDataAvailable on its own, so the
+    // consumer is woken and reads the loss with no polling. Real-time smoke test - only the
+    // reader's data-loss waiter thread drives the callback here.
+    readSignals.reserve(2);
+    addSignal(0, 10, createDomainSignal());
+    addSignal(0, 10, createDomainSignal());
+
+    auto multi = MultiReaderBuilder()
+                     .setInputPortNotificationMethod(PacketReadyNotification::SameThread)
+                     .addSignals(signalsToList())
+                     .setDataLossTimeout(Ratio(1, 5))  // 200 ms
+                     .build();
+
+    SizeT count{0};
+    auto status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+    sendPackets(0);
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
+
+    // Drain the buffered pre-loss samples so the loss can surface once the queues run dry
+    {
+        double values0[10]{};
+        double values1[10]{};
+        void* buffers[2]{values0, values1};
+        count = 10;
+        status = multi.read(buffers, &count);
+        ASSERT_EQ(count, 10u);
+    }
+
+    // Arm the callback only now: no packet and no read drive it, so the wake we observe is the
+    // data-loss deadline itself
+    std::promise<void> promise;
+    std::future<void> future = promise.get_future();
+    MultiReaderStatusPtr cbStatus;
+    multi.setOnDataAvailable(
+        [&]
+        {
+            multi.setOnDataAvailable(nullptr);  // one-shot
+            SizeT c{0};
+            cbStatus = multi.read(nullptr, &c);
+            promise.set_value();
+        });
+
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+    ASSERT_TRUE(cbStatus.assigned());
+    ASSERT_EQ(cbStatus.getReadStatus(), ReadStatus::InputsFailed);
+    ASSERT_TRUE(cbStatus.getValid());
+}
+
+TEST_F(MultiReaderTest, DataLossArmsAtStartForSilentReenabledInput)
+{
+    // Part 2 (spec 3.6): a used input arms the moment it becomes monitored, so an input
+    // re-enabled onto a now-silent producer trips the deadline and surfaces as DataLost even
+    // though it never delivers a packet - the case that lets a consumer drop its own liveness timer.
+    readSignals.reserve(2);
+    auto& sig0 = addSignal(0, 10, createDomainSignal());
+    auto& sig1 = addSignal(0, 10, createDomainSignal());
+
+    auto multi = MultiReaderBuilder()
+                     .setInputPortNotificationMethod(PacketReadyNotification::SameThread)
+                     .addSignals(signalsToList())
+                     .setDataLossTimeout(Ratio(10, 1))  // ten virtual seconds
+                     .build();
+
+    auto* impl = dynamic_cast<MultiReaderImpl*>(multi.asPtr<IReaderConfig>().getObject());
+    ASSERT_NE(impl, nullptr);
+    auto virtualNow = std::chrono::steady_clock::now();
+    impl->setDataLossClockForTest([&virtualNow] { return virtualNow; });
+
+    SizeT count{0};
+    auto status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Event);
+    sendPackets(0);
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::Ok);
+    {
+        double values0[10]{};
+        double values1[10]{};
+        void* buffers[2]{values0, values1};
+        count = 10;
+        status = multi.read(buffers, &count);
+        ASSERT_EQ(count, 10u);
+    }
+
+    // Exclude input 1, then re-enable it onto a silent producer: it arms at the moment monitoring
+    // resumes, with no packet to refresh the deadline.
+    multi.setInputUsed(sig1.signal.getGlobalId(), false);
+    multi.setInputUsed(sig1.signal.getGlobalId(), true);
+
+    // Input 0 keeps delivering so it stays fresh; input 1 never does and crosses its deadline.
+    virtualNow += std::chrono::seconds(11);
+    sig0.createAndSendPacket(1);
+
+    count = 0;
+    status = multi.read(nullptr, &count);
+    ASSERT_EQ(status.getReadStatus(), ReadStatus::InputsFailed);
+    ASSERT_TRUE(status.getValid());
+    ASSERT_EQ(static_cast<InputState>(static_cast<Int>(status.getInputStates().get(sig1.signal.getGlobalId()))),
+              InputState::DataLost);
+}

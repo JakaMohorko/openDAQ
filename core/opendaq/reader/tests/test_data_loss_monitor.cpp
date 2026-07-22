@@ -41,12 +41,34 @@ TEST_F(DataLossMonitorTest, ZeroTimeoutDisables)  // DL-4
     ASSERT_TRUE(monitor.lostSlots().empty());
 }
 
-TEST_F(DataLossMonitorTest, ArmsOnlyAfterFirstPacket)  // DL-6
+TEST_F(DataLossMonitorTest, ArmsAtStartUnderTimeout)  // DL-6 (arm at start of monitoring)
+{
+    // The slots are already monitored; enabling the timeout arms them from now. A first packet
+    // that never arrives trips the deadline just like a producer that stops after delivering some.
+    monitor.setTimeout(duration_cast<nanoseconds>(100ms));
+
+    advance(99ms);
+    ASSERT_TRUE(monitor.lostSlots().empty());
+
+    advance(2ms);
+    ASSERT_EQ(monitor.lostSlots(), (std::vector<SizeT>{0, 1}));
+}
+
+TEST_F(DataLossMonitorTest, TurningMonitoringOnArmsImmediately)  // arm at start of monitoring
 {
     monitor.setTimeout(duration_cast<nanoseconds>(100ms));
-    advance(24h);
-    // No packet since the slots became monitored - nothing is armed, nothing is lost
-    ASSERT_TRUE(monitor.lostSlots().empty());
+    monitor.setMonitored(0, false);  // disarm slot 0; slot 1 stays armed from setTimeout
+
+    advance(200ms);
+    ASSERT_EQ(monitor.lostSlots(), (std::vector<SizeT>{1}));
+
+    // Turning monitoring back on arms slot 0 from now, with no packet needed
+    monitor.setMonitored(0, true);
+    advance(99ms);
+    ASSERT_EQ(monitor.lostSlots(), (std::vector<SizeT>{1}));  // slot 0 not yet expired
+
+    advance(2ms);
+    ASSERT_EQ(monitor.lostSlots(), (std::vector<SizeT>{0, 1}));
 }
 
 TEST_F(DataLossMonitorTest, DeadlineExpiryReportsLoss)  // DL-1 (deadline math)
@@ -102,21 +124,23 @@ TEST_F(DataLossMonitorTest, UnmonitoredSlotNeverTrips)  // DL-5
     ASSERT_EQ(monitor.lostSlots(), (std::vector<SizeT>{0}));
 }
 
-TEST_F(DataLossMonitorTest, TurningMonitoringOffDisarms)  // DL-5/DL-6
+TEST_F(DataLossMonitorTest, TurningMonitoringOffDisarmsThenReArmsOnTurnOn)  // DL-5/DL-6
 {
     monitor.setTimeout(duration_cast<nanoseconds>(100ms));
     monitor.onPacket(0);
 
+    // While off, slot 0 never trips no matter how stale (slot 1, armed from setTimeout, does)
     monitor.setMonitored(0, false);
-    monitor.setMonitored(0, true);
-
-    // Re-enabling does not resurrect the old arrival - the slot re-arms on its next packet
     advance(1h);
-    ASSERT_TRUE(monitor.lostSlots().empty());
+    ASSERT_EQ(monitor.lostSlots(), (std::vector<SizeT>{1}));
 
-    monitor.onPacket(0);
-    advance(150ms);
-    ASSERT_EQ(monitor.lostSlots(), (std::vector<SizeT>{0}));
+    // Turning monitoring back on re-arms slot 0 from now - not from the stale pre-off arrival
+    monitor.setMonitored(0, true);
+    advance(99ms);
+    ASSERT_EQ(monitor.lostSlots(), (std::vector<SizeT>{1}));  // slot 0 fresh again
+
+    advance(2ms);
+    ASSERT_EQ(monitor.lostSlots(), (std::vector<SizeT>{0, 1}));
 }
 
 TEST_F(DataLossMonitorTest, RealDeadlineFiresCallbackWithoutReads)  // DL-1 (slow smoke test)

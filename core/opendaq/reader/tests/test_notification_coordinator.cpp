@@ -160,6 +160,39 @@ TEST_F(NotificationCoordinatorTest, ClearReadinessKeepsUsedMask)
     ASSERT_FALSE(coordinator.isUsed(1));
 }
 
+TEST_F(NotificationCoordinatorTest, StateChangeNotifyGatesCallback)
+{
+    // Part 1 (spec 3.5): a latched state-change notification (the DataLost deadline) opens the
+    // callback gate on its own, even with no events and no readiness, and is a one-shot.
+    NotificationCoordinator coordinator(manualExecutor(), loggerComponent);
+    coordinator.resize(2);
+
+    // No events, no ready inputs -> gate closed
+    ASSERT_FALSE(coordinator.shouldInvokeCallback());
+
+    coordinator.setStateChangeNotify(true);
+    ASSERT_TRUE(coordinator.getStateChangeNotify());
+    ASSERT_TRUE(coordinator.shouldInvokeCallback());
+
+    // Consuming the latch closes the gate again
+    coordinator.setStateChangeNotify(false);
+    ASSERT_FALSE(coordinator.getStateChangeNotify());
+    ASSERT_FALSE(coordinator.shouldInvokeCallback());
+}
+
+TEST_F(NotificationCoordinatorTest, ClearReadinessLeavesStateChangeNotify)
+{
+    // clearReadiness drops ready/event bits (sync invalidated) but the state-change latch is a
+    // separate signal the owner consumes explicitly once the callback has fired.
+    NotificationCoordinator coordinator(manualExecutor(), loggerComponent);
+    coordinator.resize(2);
+    coordinator.setStateChangeNotify(true);
+
+    coordinator.clearReadiness();
+    ASSERT_TRUE(coordinator.getStateChangeNotify());
+    ASSERT_TRUE(coordinator.shouldInvokeCallback());
+}
+
 TEST_F(NotificationCoordinatorTest, ResizePreservesExistingBits)
 {
     NotificationCoordinator coordinator(manualExecutor(), loggerComponent);
