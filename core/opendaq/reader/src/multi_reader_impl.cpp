@@ -391,12 +391,19 @@ void MultiReaderImpl::applyDataLossTimeoutLocked()
 
 void MultiReaderImpl::setStateLocked(ReaderState newState, std::string message, std::vector<SizeT> affected)
 {
-    // Entering DataLost - or changing which inputs are lost while already in it - is a condition
-    // the consumer must act on that carries no returnable data or event. Latch a one-shot
-    // callback wake so the elapsed deadline itself notifies the consumer, which then reads the
-    // naming status (spec 3.5/3.6). Edge-triggered: an unchanged DataLost re-evaluation does not
-    // re-latch, so healthy-input packets cannot re-fire the callback while the loss persists.
-    if (newState == ReaderState::DataLost && (state != ReaderState::DataLost || affected != stateAffectedInputs))
+    // Entering an InputsFailed-family state (Incompatible, SynchronizationFailed, DataLost) - or
+    // changing which inputs it affects while in one - is a condition the consumer must act on that
+    // carries no returnable data and, once the descriptors that caused it are cached, no
+    // returnable event either. The two cases that would otherwise wake nobody: a data-loss
+    // deadline (no packet at all), and re-probing a persistently incompatible / unsynchronizable
+    // input (its descriptor is already known, so no new event fires). Latch a one-shot callback
+    // wake so the reader itself notifies the consumer, which then reads the naming status
+    // (spec 3.5/3.6). Edge-triggered: an unchanged failure re-evaluation does not re-latch, so
+    // healthy-input packets cannot re-fire it while the failure persists.
+    const bool inputsFailed = newState == ReaderState::Incompatible ||
+                              newState == ReaderState::SynchronizationFailed ||
+                              newState == ReaderState::DataLost;
+    if (inputsFailed && (newState != state || affected != stateAffectedInputs))
         notificationCoordinator->setStateChangeNotify(true);
 
     state = newState;
@@ -1107,9 +1114,9 @@ void MultiReaderImpl::onCoalescedEvaluation()
         if (notificationCoordinator->shouldInvokeCallback())
             callback = readCallback;
 
-        // One-shot: consume a latched state-change wake (DataLost) once observed, so a single
-        // loss fires the callback exactly once rather than on every later evaluation. A blocked
-        // read is woken independently by notifyCondition below.
+        // One-shot: consume a latched state-change wake (an InputsFailed transition) once
+        // observed, so a single failure fires the callback exactly once rather than on every
+        // later evaluation. A blocked read is woken independently by notifyCondition below.
         notificationCoordinator->setStateChangeNotify(false);
     }
 

@@ -170,7 +170,8 @@ bool NotificationCoordinator::shouldInvokeCallback() const
     // Events on unused inputs fire the callback too; that notification is the
     // recovery path (the consumer can re-include the input with setInputUsed).
     // stateChangeNotify covers a state change with neither data nor event to return
-    // (the DataLost deadline): the elapsed timer is itself the notification.
+    // (an InputsFailed transition: a data-loss deadline, or re-probing an input whose
+    // failing descriptor is already cached so no new event fires).
     return anyEvent() || allUsedReady() || stateChangeNotifyFlag;
 }
 

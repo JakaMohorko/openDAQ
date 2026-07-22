@@ -47,9 +47,10 @@ namespace multi_reader
  *    signal consumers react to with setInputUsed. The "ready" meaning is phase-dependent
  *    (first sample while synchronizing, one full block while synchronized) - the owner
  *    sets the bits during its state evaluation. stateChangeNotify is a one-shot latch for a
- *    state change that carries no returnable data or event (currently the transition into
- *    DataLost): the elapsed deadline is itself the notification, so the consumer is woken
- *    once and reads the naming status - it never has to poll or run its own liveness timer.
+ *    state change that carries no returnable data or event - a transition into an InputsFailed
+ *    state (Incompatible / SynchronizationFailed / DataLost) once the causing descriptors are
+ *    cached, so no event fires and no data is ready. It wakes the consumer once to read the
+ *    naming status, so the consumer never has to poll or run its own liveness timer.
  *
  * Threading contract: requestEvaluation() and detach() are thread-safe. Everything else
  * (masks, callback queries) must be called with the owner's state lock held. The
@@ -98,9 +99,10 @@ public:
     void clearReadiness();
 
     /// One-shot latch: raise the callback gate for a state change that carries no returnable
-    /// data or event (currently the transition into DataLost). Set by the owner on the
-    /// transition; the owner consumes it (sets false) once the callback has fired, so a single
-    /// occurrence wakes the consumer exactly once and does not re-fire while it persists.
+    /// data or event (a transition into an InputsFailed state - Incompatible /
+    /// SynchronizationFailed / DataLost). Set by the owner on the transition; the owner consumes
+    /// it (sets false) once the callback has fired, so a single occurrence wakes the consumer
+    /// exactly once and does not re-fire while it persists.
     void setStateChangeNotify(bool notify);
     bool getStateChangeNotify() const;
 
