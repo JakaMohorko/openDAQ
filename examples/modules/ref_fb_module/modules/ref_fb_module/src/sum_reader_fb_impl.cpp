@@ -11,7 +11,6 @@
 #include <opendaq/reader_factory.h>
 #include <opendaq/reader_config_ptr.h>
 #include <opendaq/reader_utils.h>
-#include <opendaq/work_factory.h>
 
 #include <algorithm>
 #include <cmath>
@@ -308,82 +307,14 @@ void SumReaderFbImpl::onDisconnected(const InputPortPtr& inputPort)
         configureValueDescriptorLocked();
 }
 
-void SumReaderFbImpl::onPacketReceived(const InputPortPtr& inputPort)
-{
-    // This notification can be delivered synchronously on a producer's stack - even from
-    // inside a connect still being constructed - so the reader must not be re-entered from
-    // here. Only decide whether anything needs evaluating and defer the work to a task.
-    bool schedule = false;
-    {
-        auto lock = this->getAcquisitionLock2();
-        if (!reader.assigned() || readerErrored)
-            return;
-
-        const auto now = std::chrono::steady_clock::now();
-
-        // Event-driven recovery of parked ports no longer needs this packet hook: unused-input
-        // events fire the reader's onDataAvailable callback (review Q5), and the status-driven
-        // probe (probeEventfulParkedLocked) reacts to them
-        if (!probingPortId.empty())
-        {
-            // A pending probe resolves at status evaluation points; drive them from the
-            // packet stream, since a probe of a data-starved input produces no data callbacks
-            schedule = true;
-        }
-        else if (dataLossTimeoutSeconds > 0 &&
-                 now - lastReaderCheck >= std::chrono::duration<double>(dataLossTimeoutSeconds))
-        {
-            // Failure states that block data flow (a dead input never becomes ready) never
-            // invoke the data callback; stuck conditions are observed from the packet stream
-            // of the healthy inputs instead
-            schedule = true;
-        }
-        else if (!parkedPorts.empty() && recoveryRetryIntervalSeconds > 0 &&
-                 now - lastProbeTime >= std::chrono::duration<double>(recoveryRetryIntervalSeconds))
-        {
-            // Periodic fallback probing is due
-            schedule = true;
-        }
-
-        if (schedule && deferredCheckScheduled.exchange(true))
-            schedule = false;
-    }
-
-    if (schedule)
-        scheduleDeferredCheck();
-}
-
-void SumReaderFbImpl::scheduleDeferredCheck()
-{
-    const auto scheduler = this->context.getScheduler();
-    if (!scheduler.assigned())
-    {
-        deferredCheckScheduled = false;
-        return;
-    }
-
-    auto thisWeakRef = this->template getWeakRefInternal<IFunctionBlock>();
-    scheduler.scheduleWork(Work(
-        [this, thisWeakRef = std::move(thisWeakRef)]
-        {
-            const auto thisFb = thisWeakRef.getRef();
-            if (thisFb.assigned())
-                this->deferredCheck();
-        }));
-}
-
-void SumReaderFbImpl::deferredCheck()
-{
-    auto lock = this->getAcquisitionLock2();
-    deferredCheckScheduled = false;
-    if (!reader.assigned() || readerErrored)
-        return;
-
-    processReaderLocked();
-}
-
 void SumReaderFbImpl::onDataReceived()
 {
+    // The reader drives everything through this one callback. It fires when a block is ready,
+    // when an input has a returnable event (including an unused/parked input's recovery event,
+    // review Q5), and - since the reader's data-loss rework - when an input misses its packet
+    // deadline (DataLost). A stalled or never-delivering input therefore surfaces here as a
+    // status the read reports, so the FB needs no packet-received hook or liveness timer of its
+    // own: it reacts only to what the reader tells it.
     auto lock = this->getAcquisitionLock2();
     processReaderLocked();
 }
@@ -392,8 +323,6 @@ void SumReaderFbImpl::processReaderLocked()
 {
     if (!reader.assigned() || readerErrored)
         return;
-
-    lastReaderCheck = std::chrono::steady_clock::now();
 
     for (int iteration = 0; iteration < 64; ++iteration)
     {

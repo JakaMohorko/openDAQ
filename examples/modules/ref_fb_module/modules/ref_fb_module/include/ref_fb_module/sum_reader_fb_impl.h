@@ -23,7 +23,6 @@
 #include <opendaq/data_packet_ptr.h>
 #include <opendaq/multi_reader_ptr.h>
 
-#include <atomic>
 #include <chrono>
 #include <map>
 #include <string>
@@ -87,10 +86,7 @@ private:
 
     void onConnected(const InputPortPtr& inputPort) override;
     void onDisconnected(const InputPortPtr& inputPort) override;
-    void onPacketReceived(const InputPortPtr& inputPort) override;
     void onDataReceived();
-    void scheduleDeferredCheck();
-    void deferredCheck();
 
     void processReaderLocked();
     void emitSumLocked(const std::vector<double*>& buffers, const std::vector<SizeT>& strides, SizeT commonCount, const MultiReaderStatusPtr& status);
@@ -125,9 +121,7 @@ private:
     // std::map: parked-port warnings enumerate in a deterministic order
     std::map<std::string, ParkedInfo> parkedPorts;
     std::string probingPortId;
-    std::atomic<bool> deferredCheckScheduled{false};
     std::chrono::steady_clock::time_point lastProbeTime{};
-    std::chrono::steady_clock::time_point lastReaderCheck{};
     bool readerErrored = false;
 
     SumMode mode = SumMode::EqualRates;
