@@ -18,9 +18,9 @@
 
 #ifndef NDEBUG
     #ifdef _MSC_VER
-        #define _CRTDBG_MAP_ALLOC  
-        #include <crtdbg.h> 
-    #endif // _MSC_VER 
+        #define _CRTDBG_MAP_ALLOC
+        #include <crtdbg.h>
+    #endif // _MSC_VER
 #endif // !NDEBUG
 
 #include <testutils/base_test_listener.h>
@@ -42,6 +42,21 @@ class MemCheckListener : public BaseTestListener
 {
 public:
     inline static bool expectMemoryLeak = false;
+
+    // Tolerance for the whole-process MSVC-CRT leak check (_CrtMemDifference), in net allocated
+    // blocks. Some openDAQ subsystems keep a small, fixed amount of process-lifetime state whose
+    // construction/teardown is driven by module (DLL) load/unload and is therefore not aligned with
+    // per-test boundaries - most notably the module manager's own boost::dll bookkeeping for a loaded
+    // module (see OrphanedModules), which allocates/frees a handle object as an Instance comes and
+    // goes. Because the CRT checkpoint spans the whole process it attributes that churn to whichever
+    // test's window it lands in, producing false positives (often as a NEGATIVE delta - a test that
+    // *freed* blocks - which cannot be a leak). Binaries that create/destroy many Instances (e.g. the
+    // docs examples) can raise this tolerance so a handful of such churned blocks are not reported as
+    // leaks. It only relaxes the raw CRT block-count check; the openDAQ object-count check in
+    // DaqMemCheckListener (which tracks every IBaseObject and is the authoritative leak detector)
+    // is unaffected and still fails on any real openDAQ object leak. Default 0 preserves the strict,
+    // historical behaviour for every other test binary.
+    inline static long crtLeakToleranceBlocks = 0;
 
 protected:
     void OnTestStart(const testing::TestInfo& info) override
@@ -83,8 +98,21 @@ protected:
             }
             else if (crtMemDifference)
             {
-                //            _CrtMemDumpAllObjectsSince(&state1);
-                FAIL() << "Memory leaks detected (" << state3.lTotalCount << " allocations)";
+                if (crtLeakToleranceBlocks <= 0)
+                {
+                    // Default (historical) behaviour: any heap difference fails the test.
+                    //            _CrtMemDumpAllObjectsSince(&state1);
+                    FAIL() << "Memory leaks detected (" << state3.lTotalCount << " allocations)";
+                }
+                else
+                {
+                    // A leak grows the heap: with a tolerance configured, only a positive net block
+                    // count that exceeds it is treated as a leak. A negative or zero net delta cannot
+                    // be a leak (the test freed as much as, or more than, it allocated in its window).
+                    const long netBlocks = state3.lCounts[_NORMAL_BLOCK] + state3.lCounts[_CRT_BLOCK];
+                    if (netBlocks > crtLeakToleranceBlocks)
+                        FAIL() << "Memory leaks detected (" << netBlocks << " net blocks, " << state3.lTotalCount << " allocations)";
+                }
             }
 #elif defined(__MINGW32__)
             /*if (expectMemoryLeak)
