@@ -1,12 +1,17 @@
 #include <opendaq/log.h>
 #include <opendaq/module_manager_init.h>
 #include <opendaq/opendaq_init.h>
-#include <opendaq/opendaq.h>
 #include <coreobjects/util.h>
 #include <coretypes/stringobject_factory.h>
 #include <testutils/daq_memcheck_listener.h>
 #include <testutils/testutils.h>
 
+// The module-library pinning and warm-up below exist solely to keep the Debug memory-leak listener
+// from reporting benign module load/unload churn as leaks. The leak listener is Debug-only, so this is
+// compiled out entirely in Release builds and adds no start-up cost there.
+#ifndef NDEBUG
+
+#include <opendaq/opendaq.h>
 #include <filesystem>
 #include <string>
 #include <system_error>
@@ -154,6 +159,8 @@ void warmUpLazyStatics()
 
 }  // namespace
 
+#endif  // !NDEBUG
+
 int main(int argc, char** args)
 {
     daq::daqInitializeCoreObjectsTesting();
@@ -162,6 +169,7 @@ int main(int argc, char** args)
 
     testing::InitGoogleTest(&argc, args);
 
+#ifndef NDEBUG
     // Pin + warm up before appending the leak listener so none of it counts against a per-test checkpoint.
     pinModuleLibraries();
     warmUpLazyStatics();
@@ -174,6 +182,7 @@ int main(int argc, char** args)
     // allow a small residual so that benign churn is not reported as a leak. The authoritative openDAQ
     // object-count check (DaqMemCheckListener) is unaffected and still fails on any real object leak.
     MemCheckListener::crtLeakToleranceBlocks = 8;
+#endif
 
     testing::TestEventListeners& listeners = testing::UnitTest::GetInstance()->listeners();
     listeners.Append(new DaqMemCheckListener());
