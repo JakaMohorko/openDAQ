@@ -307,7 +307,7 @@ TEST_F(QueueReaderTest, CreateBeforeConnection)
     std::unique_ptr<DomainValue> domainValue =
         std::make_unique<DomainValueImpl<Int>>(DomainInfo{std::chrono::system_clock::time_point{}, Ratio(1, 1000)}, 512);
 
-    bool valid;
+    bool valid = false;
     ASSERT_NO_THROW(valid = reader.isValid());
     ASSERT_FALSE(valid);
 
@@ -355,14 +355,14 @@ TEST_F(QueueReaderTest, CreateBeforeConnectionRecovery)
     std::unique_ptr<DomainValue> domainValue =
         std::make_unique<DomainValueImpl<Int>>(DomainInfo{std::chrono::system_clock::time_point{}, Ratio(1, 1000)}, 512);
 
-    bool valid;
+    bool valid = false;
     ASSERT_NO_THROW(valid = reader.isValid());
     ASSERT_TRUE(valid);
 
     ASSERT_NO_THROW(reader.getDomainInfo());
     ASSERT_NO_THROW(reader.getFirstSampleDomainValue());
     ASSERT_NO_THROW(reader.advanceToDomainValue(domainValue.get()));
-    Int sr;
+    Int sr = 0;
     ASSERT_NO_THROW(sr = reader.getSampleRate());
     ASSERT_EQ(sr, sampleRate);
     ASSERT_NO_THROW(reader.dropOutdatedPacketSegments());
@@ -400,7 +400,7 @@ TEST_F(QueueReaderTest, InvalidDomainAndBack)
     inputPort.connect(signal);
     reader.updateConnection();
 
-    bool valid;
+    bool valid = false;
     ASSERT_NO_THROW(valid = reader.isValid());
     ASSERT_FALSE(valid);
 

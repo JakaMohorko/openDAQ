@@ -97,115 +97,6 @@ TEST_F(NotificationCoordinatorTest, QueuedTaskOutlivesCoordinator)
     ASSERT_EQ(evaluations, 0);
 }
 
-TEST_F(NotificationCoordinatorTest, EventOnAnyInputGatesCallback)
-{
-    NotificationCoordinator coordinator(manualExecutor(), loggerComponent);
-    coordinator.resize(3);
-
-    ASSERT_FALSE(coordinator.shouldInvokeCallback());
-
-    coordinator.setEvent(1, true);
-    ASSERT_TRUE(coordinator.anyUsedEvent());
-    ASSERT_TRUE(coordinator.shouldInvokeCallback());
-
-    // Events on unused inputs fire the callback too (review Q5): the notification is the
-    // recovery API for consumers that parked the input
-    coordinator.setUsed(1, false);
-    ASSERT_FALSE(coordinator.anyUsedEvent());
-    ASSERT_TRUE(coordinator.anyEvent());
-    ASSERT_TRUE(coordinator.shouldInvokeCallback());
-
-    // Consuming the event clears the gate
-    coordinator.setEvent(1, false);
-    ASSERT_FALSE(coordinator.shouldInvokeCallback());
-}
-
-TEST_F(NotificationCoordinatorTest, AllUsedReadyGatesCallback)
-{
-    NotificationCoordinator coordinator(manualExecutor(), loggerComponent);
-    coordinator.resize(3);
-
-    coordinator.setReady(0, true);
-    coordinator.setReady(1, true);
-    ASSERT_FALSE(coordinator.allUsedReady());  // input 2 not ready
-
-    coordinator.setReady(2, true);
-    ASSERT_TRUE(coordinator.allUsedReady());
-    ASSERT_TRUE(coordinator.shouldInvokeCallback());
-
-    // An unused input is excluded from the readiness requirement
-    coordinator.setReady(2, false);
-    coordinator.setUsed(2, false);
-    ASSERT_TRUE(coordinator.allUsedReady());
-
-    // No used inputs at all means nothing is ready
-    coordinator.setUsed(0, false);
-    coordinator.setUsed(1, false);
-    ASSERT_FALSE(coordinator.allUsedReady());
-    ASSERT_FALSE(coordinator.shouldInvokeCallback());
-}
-
-TEST_F(NotificationCoordinatorTest, ClearReadinessKeepsUsedMask)
-{
-    NotificationCoordinator coordinator(manualExecutor(), loggerComponent);
-    coordinator.resize(2);
-    coordinator.setUsed(1, false);
-    coordinator.setReady(0, true);
-    coordinator.setEvent(0, true);
-    ASSERT_TRUE(coordinator.shouldInvokeCallback());
-
-    coordinator.clearReadiness();
-    ASSERT_FALSE(coordinator.shouldInvokeCallback());
-    ASSERT_TRUE(coordinator.isUsed(0));
-    ASSERT_FALSE(coordinator.isUsed(1));
-}
-
-TEST_F(NotificationCoordinatorTest, StateChangeNotifyGatesCallback)
-{
-    // Part 1 (spec 3.5): a latched state-change notification (the DataLost deadline) opens the
-    // callback gate on its own, even with no events and no readiness, and is a one-shot.
-    NotificationCoordinator coordinator(manualExecutor(), loggerComponent);
-    coordinator.resize(2);
-
-    // No events, no ready inputs -> gate closed
-    ASSERT_FALSE(coordinator.shouldInvokeCallback());
-
-    coordinator.setStateChangeNotify(true);
-    ASSERT_TRUE(coordinator.getStateChangeNotify());
-    ASSERT_TRUE(coordinator.shouldInvokeCallback());
-
-    // Consuming the latch closes the gate again
-    coordinator.setStateChangeNotify(false);
-    ASSERT_FALSE(coordinator.getStateChangeNotify());
-    ASSERT_FALSE(coordinator.shouldInvokeCallback());
-}
-
-TEST_F(NotificationCoordinatorTest, ClearReadinessLeavesStateChangeNotify)
-{
-    // clearReadiness drops ready/event bits (sync invalidated) but the state-change latch is a
-    // separate signal the owner consumes explicitly once the callback has fired.
-    NotificationCoordinator coordinator(manualExecutor(), loggerComponent);
-    coordinator.resize(2);
-    coordinator.setStateChangeNotify(true);
-
-    coordinator.clearReadiness();
-    ASSERT_TRUE(coordinator.getStateChangeNotify());
-    ASSERT_TRUE(coordinator.shouldInvokeCallback());
-}
-
-TEST_F(NotificationCoordinatorTest, ResizePreservesExistingBits)
-{
-    NotificationCoordinator coordinator(manualExecutor(), loggerComponent);
-    coordinator.resize(2);
-    coordinator.setUsed(1, false);
-
-    coordinator.resize(4);
-    ASSERT_EQ(coordinator.getSlotCount(), 4u);
-    ASSERT_FALSE(coordinator.isUsed(1));
-    ASSERT_TRUE(coordinator.isUsed(2));   // new slots default to used
-    ASSERT_FALSE(coordinator.shouldInvokeCallback());  // and to not-ready
-}
-
 TEST_F(NotificationCoordinatorTest, NoSchedulerRunsInline)
 {
     NotificationCoordinator coordinator(SchedulerPtr(nullptr), loggerComponent);
@@ -217,4 +108,35 @@ TEST_F(NotificationCoordinatorTest, NoSchedulerRunsInline)
 
     coordinator.requestEvaluation();
     ASSERT_EQ(evaluations, 2);
+}
+
+// The coordinator exposes the shared gate; the gate's own semantics are covered in
+// test_callback_gate.cpp. Here we only check the coordinator wires the gate through so a
+// producer query and the owner's reconciliation see the same state.
+TEST_F(NotificationCoordinatorTest, GateSharedAndStateChangeNotify)
+{
+    NotificationCoordinator coordinator(manualExecutor(), loggerComponent);
+    ASSERT_TRUE(coordinator.gate() != nullptr);
+    ASSERT_FALSE(coordinator.gateSatisfied());
+
+    // A state-change latch opens the gate through the coordinator surface too
+    coordinator.setStateChangeNotify(true);
+    ASSERT_TRUE(coordinator.getStateChangeNotify());
+    ASSERT_TRUE(coordinator.gateSatisfied());
+
+    coordinator.setStateChangeNotify(false);
+    ASSERT_FALSE(coordinator.gateSatisfied());
+}
+
+TEST_F(NotificationCoordinatorTest, BeginOwnerPassMakesEpochNoisy)
+{
+    NotificationCoordinator coordinator(manualExecutor(), loggerComponent);
+    const auto& gate = coordinator.gate();
+
+    ASSERT_TRUE(CallbackGate::epochQuiet(gate->passEpoch()));
+    {
+        auto pass = coordinator.beginOwnerPass();
+        ASSERT_FALSE(CallbackGate::epochQuiet(gate->passEpoch()));
+    }
+    ASSERT_TRUE(CallbackGate::epochQuiet(gate->passEpoch()));
 }

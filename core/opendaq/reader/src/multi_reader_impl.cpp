@@ -149,10 +149,10 @@ MultiReaderImpl::MultiReaderImpl(MultiReaderImpl* old, SampleType valueReadType,
         createSlots(ports);
 
         std::lock_guard lock(mutex);
+        const auto ownerPass = notificationCoordinator->beginOwnerPass();
         for (SizeT i = 0; i < usedFlags.size() && i < slots.size(); ++i)
         {
-            slots[i]->setUsed(usedFlags[i]);
-            notificationCoordinator->setUsed(i, usedFlags[i]);
+            applySlotUsedLocked(slots[i], usedFlags[i]);
             slots[i]->getQueueReader().seedDescriptors(oldValueDescriptors[i], oldDomainDescriptors[i]);
         }
         applyDataLossTimeoutLocked();
@@ -218,6 +218,7 @@ MultiReaderImpl::MultiReaderImpl(const MultiReaderBuilderPtr& builder)
         createSlots(ports);
 
         std::lock_guard lock(mutex);
+        const auto ownerPass = notificationCoordinator->beginOwnerPass();
         if (mainInputId.assigned() && findSlotByIdLocked(mainInputId) == notFound)
             DAQ_THROW_EXCEPTION(NotFoundException, "The selected main input does not match any source component");
         // Adopted ports may arrive deactivated (a previous owner parked them via
@@ -347,8 +348,11 @@ void MultiReaderImpl::createSlots(const ListPtr<IInputPortConfig>& inputPorts)
                                                                                        readMode,
                                                                                        loggerComponent,
                                                                                        static_cast<IInputListener*>(this),
-                                                                                       typeOfInputs == InputType::Signals);
+                                                                                       typeOfInputs == InputType::Signals,
+                                                                                       notificationCoordinator->gate());
         auto* slot = static_cast<Input*>(slotObject.getObject());
+        // Slots default to used; the gate's used count follows the slot set
+        notificationCoordinator->gate()->adjustUsed(1);
         port.setListener(slotObject);
 
         slotObjects.push_back(std::move(slotObject));
@@ -356,7 +360,6 @@ void MultiReaderImpl::createSlots(const ListPtr<IInputPortConfig>& inputPorts)
         ++position;
     }
 
-    notificationCoordinator->resize(slots.size());
     dataLossMonitor->resize(slots.size());
 }
 
@@ -404,7 +407,17 @@ void MultiReaderImpl::setStateLocked(ReaderState newState, std::string message, 
                               newState == ReaderState::SynchronizationFailed ||
                               newState == ReaderState::DataLost;
     if (inputsFailed && (newState != state || affected != stateAffectedInputs))
+    {
         notificationCoordinator->setStateChangeNotify(true);
+        // No scheduling here: setStateLocked runs under the state mutex, and the inline
+        // (no-scheduler) executor would re-enter onCoalescedEvaluation and deadlock. The wake
+        // is delivered without it: an InputsFailed state is non-Synchronized, so the reader sets
+        // wakeOnAnyPacket for every slot (publishProducerGateLocked) and the next packet forces
+        // an evaluation that observes the latch; the pure data-loss deadline (no packet at all)
+        // schedules from the monitor's own callback, outside any lock. When the transition
+        // happens inside a coalesced evaluation (an escalated ladder), that same
+        // onCoalescedEvaluation observes the latch after the ladder returns.
+    }
 
     state = newState;
     stateMessage = std::move(message);
@@ -541,14 +554,16 @@ void MultiReaderImpl::drainUnusedSlotsLocked()
         slot->syncConnection();
         if (!slot->isConnected())
         {
-            notificationCoordinator->setEvent(slot->getIndex(), false);
+            slot->publishGateBasis(0, false);
+            setSlotEventLocked(slot, false);
             continue;
         }
 
         slot->clearPacketPending();
         auto& reader = slot->getQueueReader();
         reader.drain();
-        notificationCoordinator->setEvent(slot->getIndex(), reader.hasPendingEvents());
+        publishSlotBasisLocked(slot);
+        setSlotEventLocked(slot, reader.hasPendingEvents());
     }
 }
 
@@ -584,7 +599,10 @@ void MultiReaderImpl::refreshDataPlaneLocked(bool escalateOnEvent)
         dataPlaneSlotAvailable.assign(slots.size(), 0);
 
     const bool haveModel = syncManager->hasModel();
-    const SizeT block = haveModel ? syncManager->getModel().blockLcm : 0;
+    // The gate's ready threshold is the smallest servable aligned request - the same minimum
+    // the availability alignment and the leftover-segment discard enforce - so an open gate
+    // always means a read can actually return samples.
+    const SizeT gateMinimum = haveModel ? ReadCoordinator::effectiveMinimum(syncManager->getModel(), minReadCount) : 0;
 
     bool escalate = false;
     bool anyEvent = false;
@@ -604,7 +622,8 @@ void MultiReaderImpl::refreshDataPlaneLocked(bool escalateOnEvent)
                 {
                     auto& reader = slot->getQueueReader();
                     reader.drain();
-                    notificationCoordinator->setEvent(slot->getIndex(), reader.hasPendingEvents());
+                    publishSlotBasisLocked(slot);
+                    setSlotEventLocked(slot, reader.hasPendingEvents());
                 }
             }
             continue;
@@ -625,6 +644,7 @@ void MultiReaderImpl::refreshDataPlaneLocked(bool escalateOnEvent)
         // new packet arriving, so gating this on packetsArrived would miss it. Both queries
         // are O(1) (empty-check / sticky adoption flag), so per-cycle is cheap.
         const bool hasEvent = reader.hasPendingEvents() || reader.hasQueuedEventPackets();
+        publishSlotBasisLocked(slot);
         if (hasEvent)
         {
             // The read/query path escalates so the full ladder transitions to EventPending and
@@ -635,7 +655,7 @@ void MultiReaderImpl::refreshDataPlaneLocked(bool escalateOnEvent)
                 escalate = true;
             else
             {
-                notificationCoordinator->setEvent(slot->getIndex(), true);
+                setSlotEventLocked(slot, true);
                 anyEvent = true;
             }
             continue;
@@ -644,19 +664,19 @@ void MultiReaderImpl::refreshDataPlaneLocked(bool escalateOnEvent)
         // The read/query path leaves event bits to evaluateStateLocked; the callback path owns
         // them here, so clear a stale bit once the slot's events have drained away.
         if (!escalateOnEvent)
-            notificationCoordinator->setEvent(slot->getIndex(), false);
+            setSlotEventLocked(slot, false);
 
         // Availability is O(1) here (the queue reader maintains it incrementally across drains
         // and reads), so recomputing it for every used slot each real pass is cheap - and it is
         // exactly the count createPlan needs, so caching it removes createPlan's separate walk.
-        // Readiness is derived from the same value: a slot is ready with a full aligned block
-        // buffered before its next event.
+        // Readiness is derived from the same value: a slot is ready with the smallest servable
+        // aligned request buffered before its next event.
         if (haveModel)
         {
             const SizeT avail = reader.getAvailableSamplesUntilEvent();
             dataPlaneSlotAvailable[i] = avail;
             availableCommon = std::min(availableCommon, avail);
-            notificationCoordinator->setReady(slot->getIndex(), avail >= block);
+            setSlotReadyLocked(slot, avail >= gateMinimum);
         }
     }
 
@@ -691,6 +711,108 @@ void MultiReaderImpl::refreshDataPlaneLocked(bool escalateOnEvent)
 }
 
 void MultiReaderImpl::evaluateStateLocked()
+{
+    evaluateStateLadderLocked();
+    publishProducerGateLocked();
+}
+
+void MultiReaderImpl::setSlotReadyLocked(Input* slot, bool ready)
+{
+    slot->gateFlags().setReady(ready);
+}
+
+void MultiReaderImpl::setSlotEventLocked(Input* slot, bool event)
+{
+    slot->gateFlags().setEvent(event);
+}
+
+void MultiReaderImpl::applySlotUsedLocked(Input* slot, bool used)
+{
+    if (slot->isUsed() == used)
+        return;
+    slot->setUsed(used);
+    notificationCoordinator->gate()->adjustUsed(used ? 1 : -1);
+    // An unused slot contributes only events to the gate (the recovery signal); a stale ready
+    // flag would let `ready >= used` open the gate on data the read path will never touch.
+    if (!used)
+        setSlotReadyLocked(slot, false);
+}
+
+void MultiReaderImpl::publishSlotBasisLocked(Input* slot)
+{
+    auto& reader = slot->getQueueReader();
+    const SizeT divider = reader.getSampleRateDivider() > 0 ? reader.getSampleRateDivider() : 1;
+    const bool hasEventPackets = reader.hasPendingEvents() || reader.hasQueuedEventPackets();
+    slot->publishGateBasis(reader.getAvailableSamplesUntilEvent() / divider, hasEventPackets);
+}
+
+void MultiReaderImpl::clearGateReadinessLocked()
+{
+    for (auto* slot : slots)
+    {
+        setSlotReadyLocked(slot, false);
+        setSlotEventLocked(slot, false);
+    }
+}
+
+void MultiReaderImpl::publishProducerGateLocked()
+{
+    // The steady Synchronized state is the only one where producers gate their own scheduling;
+    // everywhere else every packet forces an evaluation (wakeOnAnyPacket), which preserves the
+    // classic liveness of the establishment, failure and recovery paths - a DataLost slot's
+    // reviving packet or a Synchronizing slot's alignment progress never waits on the gate.
+    const bool steady = state == ReaderState::Synchronized && syncManager->hasModel();
+    const SizeT gateMinimum = steady ? ReadCoordinator::effectiveMinimum(syncManager->getModel(), minReadCount) : 0;
+
+    for (auto* slot : slots)
+    {
+        slot->setWakeOnAnyPacket(!steady);
+
+        if (!slot->isConnected())
+        {
+            slot->publishGateBasis(0, false);
+            slot->setReadyThresholdNative(Input::NeverReady);
+            setSlotReadyLocked(slot, false);
+            setSlotEventLocked(slot, false);
+            continue;
+        }
+
+        auto& reader = slot->getQueueReader();
+        const SizeT divider = reader.getSampleRateDivider() > 0 ? reader.getSampleRateDivider() : 1;
+        const bool hasEventPackets = reader.hasPendingEvents() || reader.hasQueuedEventPackets();
+        const SizeT untilEventCommon = reader.getAvailableSamplesUntilEvent();
+        slot->publishGateBasis(untilEventCommon / divider, hasEventPackets);
+
+        if (!slot->isUsed())
+        {
+            // Data is dropped at the inactive port, so only the event flag matters; the ladder
+            // (drainUnusedSlotsLocked) maintains it and a producer can still raise it.
+            slot->setReadyThresholdNative(Input::NeverReady);
+            setSlotReadyLocked(slot, false);
+            continue;
+        }
+
+        if (steady)
+        {
+            // Ground truth while synchronized: ready with the smallest servable request buffered
+            // before the next event, event buried-inclusive (a sub-block residual in front of a
+            // buried event must still open the gate so a read can surface it).
+            slot->setReadyThresholdNative(gateMinimum / divider);
+            setSlotReadyLocked(slot, untilEventCommon >= gateMinimum);
+            setSlotEventLocked(slot, hasEventPackets);
+        }
+        else
+        {
+            // Establishment semantics: the first sample marks the slot ready (the gate then
+            // wakes the consumer as the last input starts delivering); event flags stay
+            // exactly as the ladder decided for the current state.
+            slot->setReadyThresholdNative(1);
+            setSlotReadyLocked(slot, reader.getAvailableSamples() > 0);
+        }
+    }
+}
+
+void MultiReaderImpl::evaluateStateLadderLocked()
 {
     // The full ladder can drain, drop segments or change state, so any availability the last
     // fast pass cached is no longer authoritative. Clearing it here (the single funnel every full
@@ -736,12 +858,12 @@ void MultiReaderImpl::evaluateStateLocked()
             slots[slotIndex]->syncConnection();
             if (!slots[slotIndex]->isConnected())
             {
-                notificationCoordinator->setEvent(slotIndex, false);
+                setSlotEventLocked(slots[slotIndex], false);
                 continue;
             }
 
             const bool hasEvents = inactiveReaders[position]->hasPendingEvents();
-            notificationCoordinator->setEvent(slotIndex, hasEvents);
+            setSlotEventLocked(slots[slotIndex], hasEvents);
             if (hasEvents)
                 inactiveEventInputs.push_back(slotIndex);
         }
@@ -807,7 +929,7 @@ void MultiReaderImpl::evaluateStateLocked()
             // returnable, so the callback must not fire on the
             // events already queued on the connected inputs
             for (const auto index : slotIndices)
-                notificationCoordinator->setEvent(index, false);
+                setSlotEventLocked(slots[index], false);
 
             invalidateModelLocked();
             setStateWithAffectedLocked(ReaderState::WaitingForConnections, "Inputs", " have no signal connected", std::move(unconnected));
@@ -840,7 +962,7 @@ void MultiReaderImpl::evaluateStateLocked()
             const bool hasEvents = usedReaders[position]->hasPendingEvents();
             if (hasEvents)
                 eventInputs.push_back(slotIndices[position]);
-            notificationCoordinator->setEvent(slotIndices[position], hasEvents);
+            setSlotEventLocked(slots[slotIndices[position]], hasEvents);
 
             // A connected input with neither descriptors nor events is still completing its
             // connect handshake: the signal's initial descriptor event has not been enqueued
@@ -859,7 +981,7 @@ void MultiReaderImpl::evaluateStateLocked()
         if (handshakeInFlight)
         {
             for (const auto index : slotIndices)
-                notificationCoordinator->setEvent(index, false);
+                setSlotEventLocked(slots[index], false);
         }
         else if (!eventInputs.empty())
         {
@@ -915,7 +1037,7 @@ void MultiReaderImpl::evaluateStateLocked()
             if (exposeBuriedEventsLocked(invalidInputs))
             {
                 for (const auto index : invalidInputs)
-                    notificationCoordinator->setEvent(index, slots[index]->getQueueReader().hasPendingEvents());
+                    setSlotEventLocked(slots[index], slots[index]->getQueueReader().hasPendingEvents());
                 setStateWithAffectedLocked(ReaderState::EventPending, "Events pending on inputs", "", std::move(invalidInputs));
                 return;
             }
@@ -972,7 +1094,7 @@ void MultiReaderImpl::evaluateStateLocked()
             if (exposeBuriedEventsLocked(setup.affectedInputs))
             {
                 for (const auto index : setup.affectedInputs)
-                    notificationCoordinator->setEvent(index, slots[index]->getQueueReader().hasPendingEvents());
+                    setSlotEventLocked(slots[index], slots[index]->getQueueReader().hasPendingEvents());
                 setStateWithAffectedLocked(ReaderState::EventPending, "Events pending on inputs", "", std::move(setup.affectedInputs));
                 return;
             }
@@ -1009,11 +1131,15 @@ void MultiReaderImpl::evaluateStateLocked()
                 setStateLocked(ReaderState::Synchronizing, std::move(result.message), std::move(result.affectedInputs));
                 break;
             case SyncOutcome::EventPending:
+            {
+                // setStateLocked moved affectedInputs into the state; read them back from there
                 invalidateSynchronizationLocked();
+                auto affected = result.affectedInputs;
                 setStateLocked(ReaderState::EventPending, std::move(result.message), std::move(result.affectedInputs));
-                for (const auto index : result.affectedInputs)
-                    notificationCoordinator->setEvent(index, true);
+                for (const auto index : affected)
+                    setSlotEventLocked(slots[index], true);
                 break;
+            }
             case SyncOutcome::Failed:
                 // Synchronization failure no longer deactivates the reader.
                 // Unlike the Incompatible paths, we do NOT drop buffered data to surface a
@@ -1027,17 +1153,9 @@ void MultiReaderImpl::evaluateStateLocked()
         }
     }
 
-    // 13. Readiness for the callback gate: a full aligned block while synchronized,
-    // the first sample while still synchronizing
-    for (SizeT position = 0; position < usedReaders.size(); ++position)
-    {
-        bool ready = false;
-        if (state == ReaderState::Synchronized && syncManager->hasModel())
-            ready = usedReaders[position]->getAvailableSamplesUntilEvent() >= syncManager->getModel().blockLcm;
-        else
-            ready = usedReaders[position]->getAvailableSamples() > 0;
-        notificationCoordinator->setReady(slotIndices[position], ready);
-    }
+    // 13. Readiness for the callback gate - the smallest servable request while synchronized,
+    // the first sample while still establishing - is published by publishProducerGateLocked,
+    // which every evaluateStateLocked exit path funnels through.
 }
 
 void MultiReaderImpl::updateCallbackStateLocked()
@@ -1051,21 +1169,21 @@ void MultiReaderImpl::updateCallbackStateLocked()
     }
 
     const bool haveModel = syncManager->hasModel();
-    const SizeT block = haveModel ? syncManager->getModel().blockLcm : 0;
+    const SizeT gateMinimum = haveModel ? ReadCoordinator::effectiveMinimum(syncManager->getModel(), minReadCount) : 0;
 
     for (SizeT i = 0; i < slots.size(); ++i)
     {
         auto* slot = slots[i];
-        const SizeT index = slot->getIndex();
         const bool used = slot->isUsed();
+        auto& gateFlags = slot->gateFlags();
 
         // A slot that already satisfies the callback gate cannot stop satisfying it until a read
-        // consumes it (the read path lowers the bit then), so the callback pass never needs to
+        // consumes it (the read path lowers the flag then), so the callback pass never needs to
         // re-touch it. Readiness only participates in the gate for used inputs; for an unused input
-        // only its event participates (the recovery signal), so a stale ready bit must not skip it.
+        // only its event participates (the recovery signal), so a stale ready flag must not skip it.
         // Skipping also leaves packetPending set, so the read/query path still adopts data queued
         // behind the slot.
-        if (notificationCoordinator->getEvent(index) || (used && notificationCoordinator->getReady(index)))
+        if (gateFlags.event() || (used && gateFlags.ready()))
             continue;
 
         // Nothing new here: a slot that does not already satisfy the gate and received no packet
@@ -1082,20 +1200,22 @@ void MultiReaderImpl::updateCallbackStateLocked()
             {
                 auto& reader = slot->getQueueReader();
                 reader.drain();
-                notificationCoordinator->setEvent(index, reader.hasPendingEvents());
+                publishSlotBasisLocked(slot);
+                setSlotEventLocked(slot, reader.hasPendingEvents());
             }
             continue;
         }
 
         auto& reader = slot->getQueueReader();
         reader.drain();
+        publishSlotBasisLocked(slot);
 
         // Buried-inclusive: a sub-block residual before a buried event still fires the callback so
         // the consumer reads and the read path surfaces the event.
         const bool hasEvent = reader.hasPendingEvents() || reader.hasQueuedEventPackets();
-        notificationCoordinator->setEvent(index, hasEvent);
+        setSlotEventLocked(slot, hasEvent);
         if (!hasEvent && haveModel)
-            notificationCoordinator->setReady(index, reader.getAvailableSamplesUntilEvent() >= block);
+            setSlotReadyLocked(slot, reader.getAvailableSamplesUntilEvent() >= gateMinimum);
     }
 }
 
@@ -1104,14 +1224,16 @@ void MultiReaderImpl::onCoalescedEvaluation()
     ProcedurePtr callback;
     {
         std::lock_guard lock(mutex);
+        const auto ownerPass = notificationCoordinator->beginOwnerPass();
         if (invalid)
             return;
 
         // The coalesced task only decides whether onDataAvailable should fire; it maintains the
-        // gate bits without running the state ladder for events (deferred to the read/query path)
-        // and without walking slots that already satisfy the gate.
+        // gate flags without running the state ladder for events (deferred to the read/query path)
+        // and without walking slots that already satisfy the gate. Producer raises are advisory;
+        // this reconciliation is what stands between a stale raise and a spurious user callback.
         updateCallbackStateLocked();
-        if (notificationCoordinator->shouldInvokeCallback())
+        if (notificationCoordinator->gateSatisfied())
             callback = readCallback;
 
         // One-shot: consume a latched state-change wake (an InputsFailed transition) once
@@ -1147,6 +1269,7 @@ void MultiReaderImpl::slotConnected(SizeT slotIndex)
 {
     {
         std::lock_guard lock(mutex);
+        const auto ownerPass = notificationCoordinator->beginOwnerPass();
         if (slotIndex < slots.size())
         {
             slots[slotIndex]->rebindConnection();
@@ -1172,6 +1295,7 @@ void MultiReaderImpl::slotDisconnected(SizeT slotIndex)
 {
     {
         std::lock_guard lock(mutex);
+        const auto ownerPass = notificationCoordinator->beginOwnerPass();
         if (slotIndex < slots.size())
         {
             // Disarm immediately - the state evaluation may return before its monitor
@@ -1192,13 +1316,22 @@ void MultiReaderImpl::slotDisconnected(SizeT slotIndex)
     }
 }
 
-void MultiReaderImpl::slotPacketReceived(SizeT slotIndex)
+void MultiReaderImpl::slotPacketReceived(SizeT slotIndex, bool forceEvaluation)
 {
-    // Bounded producer path: no state mutex, no queue access
+    // Bounded producer path: no state mutex, no queue access, no mutex at all - the slot has
+    // already raised its gate flags from a minimal connection introspection.
     // Mark the data plane changed before the notify below, so a consumer woken by it sees it.
     dataPlaneDirty.store(true, std::memory_order_release);
     dataLossMonitor->onPacket(slotIndex);
-    notificationCoordinator->requestEvaluation();
+
+    // An evaluation task is scheduled only when the callback gate is open - any event flag,
+    // every used slot ready, or a latched state-change wake - or when the slot could not trust
+    // its snapshot / the reader is not in the steady Synchronized state (forceEvaluation).
+    // A closed gate means this packet provably cannot fire onDataAvailable, so scheduling
+    // would only burn a scheduler round-trip; blocked reads are woken by the notify below and
+    // re-check availability themselves.
+    if (forceEvaluation || notificationCoordinator->gateSatisfied())
+        notificationCoordinator->requestEvaluation();
     notifyCondition.notify_all();
 
     if (externalListener.assigned())
@@ -1444,7 +1577,7 @@ MultiReaderStatusPtr MultiReaderImpl::readEventsLocked()
         if (packet.assigned())
             events.set(slot->getInputId(), packet);
 
-        notificationCoordinator->setEvent(slot->getIndex(), reader.hasPendingEvents());
+        setSlotEventLocked(slot, reader.hasPendingEvents());
     }
 
     // Every returned event invalidates synchronization; descriptor changes may have
@@ -1467,6 +1600,9 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
                                       bool skip)
 {
     std::unique_lock lock(mutex);
+    // Spans the whole read, including the timed waits (their predicate refreshes the data
+    // plane): producers treat the entire read as an owner pass and schedule conservatively.
+    const auto ownerPass = notificationCoordinator->beginOwnerPass();
 
     if (invalid)
     {
@@ -1619,13 +1755,18 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
     // directly. This is the "fall on read" half of readiness maintenance.
     if (plan.commonCount > 0)
     {
-        const auto block = model.blockLcm;
+        const SizeT gateMinimum = ReadCoordinator::effectiveMinimum(model, minReadCount);
         for (SizeT position = 0; position < used.size(); ++position)
         {
             const SizeT remaining = availableCached
                 ? dataPlaneSlotAvailable[slotIndices[position]] - plan.commonCount
                 : used[position]->getAvailableSamplesUntilEvent();
-            notificationCoordinator->setReady(slotIndices[position], remaining >= block);
+            auto* slot = slots[slotIndices[position]];
+            // Refresh the full producer-visible basis (availability AND adopted-event state) from
+            // the consumed frontier, so a late async packetReceived never self-gates against a
+            // stale event basis and raises a phantom ready/forces a needless evaluation.
+            publishSlotBasisLocked(slot);
+            setSlotReadyLocked(slot, remaining >= gateMinimum);
         }
 
         // The read advanced the frontier, so the cached counts are now stale and a previously
@@ -1699,13 +1840,14 @@ ErrCode MultiReaderImpl::getAvailableCount(SizeT* count)
     OPENDAQ_PARAM_NOT_NULL(count);
 
     std::lock_guard lock(mutex);
+    const auto ownerPass = notificationCoordinator->beginOwnerPass();
 
     *count = 0;
     if (invalid)
         return OPENDAQ_SUCCESS;
 
     // The query does not run the state ladder for events (escalateOnEvent = false); it drains,
-    // maintains the callback bits, and lets the read path surface any event.
+    // maintains the callback flags, and lets the read path surface any event.
     refreshDataPlaneLocked(false);
     if (state == ReaderState::Synchronized)
     {
@@ -1759,6 +1901,7 @@ ErrCode MultiReaderImpl::getEmpty(Bool* empty)
     OPENDAQ_PARAM_NOT_NULL(empty);
 
     std::lock_guard lock(mutex);
+    const auto ownerPass = notificationCoordinator->beginOwnerPass();
 
     bool allHaveData = !slots.empty();
     for (auto* slot : slots)
@@ -1916,6 +2059,7 @@ ErrCode MultiReaderImpl::setActive(Bool isActive)
     ProcedurePtr callback;
     {
         std::lock_guard lock(mutex);
+        const auto ownerPass = notificationCoordinator->beginOwnerPass();
 
         const bool changed = this->isActive != static_cast<bool>(isActive);
         this->isActive = isActive;
@@ -1924,7 +2068,7 @@ ErrCode MultiReaderImpl::setActive(Bool isActive)
         {
             setPortsActiveLocked(isActive);
             invalidateSynchronizationLocked();
-            notificationCoordinator->clearReadiness();
+            clearGateReadinessLocked();
 
             // Deactivation suspends the data flow: queued data and gap events are dropped
             // (they are meaningless once the stream pauses), while descriptor changes stay
@@ -1988,6 +2132,7 @@ ErrCode MultiReaderImpl::addInput(IComponent* input)
         list.pushBack(input);
 
         std::lock_guard lock(mutex);
+        const auto ownerPass = notificationCoordinator->beginOwnerPass();
         normalizeSources(list);
 
         auto ports = createOrAdoptPorts(list);
@@ -2009,6 +2154,7 @@ ErrCode MultiReaderImpl::removeInput(IString* id)
     OPENDAQ_PARAM_NOT_NULL(id);
 
     std::lock_guard lock(mutex);
+    const auto ownerPass = notificationCoordinator->beginOwnerPass();
 
     const auto position = findSlotByIdLocked(StringPtr::Borrow(id));
     if (position == notFound)
@@ -2022,6 +2168,12 @@ ErrCode MultiReaderImpl::removeInput(IString* id)
 
     auto* slot = slots[position];
     slot->detachListener();
+    // Retire the slot's gate contribution atomically: disarm() subtracts whatever flags are
+    // set and makes any in-flight producer raise a no-op, so the shared counters can never
+    // drift when a packet races the removal.
+    if (slot->isUsed())
+        notificationCoordinator->gate()->adjustUsed(-1);
+    slot->gateFlags().disarm();
     if (!portBinder.assigned())
         slot->getPort().remove();
 
@@ -2030,8 +2182,7 @@ ErrCode MultiReaderImpl::removeInput(IString* id)
     reindexSlotsLocked();
 
     // Only the removed input's per-slot state goes; the remaining
-    // inputs keep their readiness/event bits and armed data-loss deadlines
-    notificationCoordinator->erase(position);
+    // inputs keep their readiness/event flags and armed data-loss deadlines
     dataLossMonitor->erase(position);
 
     invalidateModelLocked();
@@ -2044,14 +2195,14 @@ ErrCode MultiReaderImpl::setInputUsed(IString* id, Bool isUsed)
     OPENDAQ_PARAM_NOT_NULL(id);
 
     std::lock_guard lock(mutex);
+    const auto ownerPass = notificationCoordinator->beginOwnerPass();
 
     const auto position = findSlotByIdLocked(StringPtr::Borrow(id));
     if (position == notFound)
         return OPENDAQ_ERR_NOTFOUND;
 
     auto* slot = slots[position];
-    slot->setUsed(isUsed);
-    notificationCoordinator->setUsed(position, isUsed);
+    applySlotUsedLocked(slot, isUsed);
     if (!isUsed)
         dataLossMonitor->setMonitored(position, false);
 
@@ -2093,6 +2244,7 @@ ErrCode MultiReaderImpl::setMainInput(IString* id)
 {
     {
         std::lock_guard lock(mutex);
+        const auto ownerPass = notificationCoordinator->beginOwnerPass();
 
         StringPtr newId = StringPtr::Borrow(id);
         if (newId.assigned() && newId.getLength() == 0)

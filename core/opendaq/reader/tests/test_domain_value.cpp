@@ -172,7 +172,7 @@ TEST_F(DomainValueTest, SameDomainSameType)
     ASSERT_THROW((void) (*value1P < *value1InCommonDomainP), daq::InvalidParameterException);
 
     auto value2 = std::make_unique<daq::DomainValueImpl<daq::UInt>>(domain1, 1213000);
-    daq::DomainValue* value2P = value2.get();
+    [[maybe_unused]] daq::DomainValue* value2P = value2.get();
 
     ASSERT_THROW((void) (*value1 < *value2), daq::InvalidParameterException);
 }

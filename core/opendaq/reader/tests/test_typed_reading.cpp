@@ -148,7 +148,7 @@ TEST_F(TypedReadingTest, ExplicitRuleReadData)
     {
         void* bufferP = buffer.data();
         daq::SizeT count = packetSize - i;
-        daq::ErrCode err = daq::TypedReadingUtils::readData(
+        [[maybe_unused]] daq::ErrCode err = daq::TypedReadingUtils::readData(
             daq::SampleType::UInt64, daq::SampleType::UInt64, true, readLayout, domainPacket.getRawData(), i, &bufferP, count);
 
         for (daq::SizeT j = 0; j < count; ++j)

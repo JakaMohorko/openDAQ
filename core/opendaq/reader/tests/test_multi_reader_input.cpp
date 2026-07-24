@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <opendaq/input_port_factory.h>
+#include <opendaq/multi_reader/callback_gate.h>
 #include <opendaq/multi_reader/input.h>
 #include <opendaq/packet_factory.h>
 #include "reader_common.h"
@@ -8,6 +9,7 @@
 using namespace daq::multi_reader;
 
 #include <atomic>
+#include <memory>
 
 // Records the semantic notifications an Input forwards to its owner
 struct RecordingSlotListener final : daq::multi_reader::IInputListener
@@ -16,6 +18,7 @@ struct RecordingSlotListener final : daq::multi_reader::IInputListener
     std::atomic<int> connectedCount{0};
     std::atomic<int> disconnectedCount{0};
     std::atomic<int> packetPendingCount{0};
+    std::atomic<int> forcedCount{0};
     std::atomic<daq::SizeT> lastIndex{static_cast<daq::SizeT>(-1)};
     bool acceptSignals = true;
 
@@ -38,9 +41,11 @@ struct RecordingSlotListener final : daq::multi_reader::IInputListener
         lastIndex = slotIndex;
     }
 
-    void slotPacketReceived(daq::SizeT slotIndex) override
+    void slotPacketReceived(daq::SizeT slotIndex, bool forceEvaluation) override
     {
         ++packetPendingCount;
+        if (forceEvaluation)
+            ++forcedCount;
         lastIndex = slotIndex;
     }
 };
@@ -79,7 +84,7 @@ protected:
     void createSlot(SizeT index, const InputPortConfigPtr& port, IInputListener* listener, bool globalIdFromSignal = false)
     {
         slotObj = createWithImplementation<IInputPortNotifications, Input>(
-            index, port, SampleType::Float64, SampleType::Int64, ReadMode::Scaled, loggerComponent, listener, globalIdFromSignal);
+            index, port, SampleType::Float64, SampleType::Int64, ReadMode::Scaled, loggerComponent, listener, globalIdFromSignal, gate);
         slot = static_cast<Input*>(slotObj.getObject());
         port.setListener(slotObj);
     }
@@ -97,6 +102,7 @@ protected:
 
 protected:
     SignalConfigPtr domainSignal;
+    std::shared_ptr<CallbackGate> gate{std::make_shared<CallbackGate>()};
     ObjectPtr<IInputPortNotifications> slotObj;
     Input* slot{};
 };
@@ -258,6 +264,116 @@ TEST_F(MultiReaderInputTest, RebindConnectionDrainsQueue)
     queueReader.popFrontEvent();
     ASSERT_TRUE(queueReader.isValid());
     ASSERT_EQ(queueReader.getAvailableSamples(), 5u);
+}
+
+TEST_F(MultiReaderInputTest, ProducerForcesEvaluationInNonSteadyState)
+{
+    // Default (wakeOnAnyPacket == true, the pre-first-evaluation state): every packet forces
+    // an evaluation regardless of the gate, preserving classic establishment liveness.
+    RecordingSlotListener listener;
+    auto port = createPort();
+    createSlot(0, port, &listener);
+    port.connect(signal);
+
+    slot->clearPacketPending();
+    listener.packetPendingCount = 0;
+    listener.forcedCount = 0;
+
+    sendDataPacket(5, 100);
+    ASSERT_EQ(listener.packetPendingCount, 1);
+    ASSERT_EQ(listener.forcedCount, 1);  // forced because the owner has not gone steady yet
+}
+
+TEST_F(MultiReaderInputTest, ProducerRaisesReadyFromConnectionCountersWhenSteady)
+{
+    RecordingSlotListener listener;
+    auto port = createPort();
+    createSlot(0, port, &listener);
+    port.connect(signal);
+
+    // Adopt the initial descriptor event so subsequent packets are pure data
+    slot->rebindConnection();
+    auto& reader = slot->getQueueReader();
+    if (reader.hasPendingEvents())
+        reader.popFrontEvent();
+
+    // Simulate the owner publishing a steady Synchronized gate: no wake-on-any, ready at 10
+    // native samples, empty adopted basis.
+    slot->setWakeOnAnyPacket(false);
+    slot->setReadyThresholdNative(10);
+    slot->publishGateBasis(0, false);
+    slot->gateFlags().setReady(false);
+    slot->gateFlags().setEvent(false);
+
+    slot->clearPacketPending();
+    listener.forcedCount = 0;
+
+    // Below threshold: 5 native samples on the connection, not adopted, ready must stay down
+    sendDataPacket(5, 200);
+    ASSERT_FALSE(slot->gateFlags().ready());
+    ASSERT_EQ(listener.forcedCount, 0);  // steady state, gate closed -> not forced
+
+    // Crossing the threshold: the producer raises ready from basis + connection counters
+    sendDataPacket(5, 205);
+    ASSERT_TRUE(slot->gateFlags().ready());
+}
+
+TEST_F(MultiReaderInputTest, ProducerForcesEvaluationOnConnectionEventPacket)
+{
+    RecordingSlotListener listener;
+    auto port = createPort();
+    createSlot(0, port, &listener);
+    port.connect(signal);
+
+    slot->rebindConnection();
+    auto& reader = slot->getQueueReader();
+    if (reader.hasPendingEvents())
+        reader.popFrontEvent();
+
+    slot->setWakeOnAnyPacket(false);
+    slot->setReadyThresholdNative(10);
+    slot->publishGateBasis(0, false);
+    slot->gateFlags().setReady(false);
+    slot->gateFlags().setEvent(false);
+
+    listener.forcedCount = 0;
+
+    // Events are owner-managed: a producer that sees an event packet on the connection (via the
+    // O(1) hasEventPacket counter) does NOT raise the event flag itself - that would race the
+    // owner and risk a stale flag. It forces a full evaluation, which sets event flags under the
+    // state lock. So the slot's own event flag stays down; the listener is forced instead.
+    signal.setDescriptor(DataDescriptorBuilder().setSampleType(SampleType::Int32).build());
+
+    ASSERT_FALSE(slot->gateFlags().event());
+    ASSERT_GE(listener.forcedCount.load(), 1);
+}
+
+TEST_F(MultiReaderInputTest, ProducerFallsBackToForceDuringOwnerPass)
+{
+    RecordingSlotListener listener;
+    auto port = createPort();
+    createSlot(0, port, &listener);
+    port.connect(signal);
+
+    slot->rebindConnection();
+    auto& reader = slot->getQueueReader();
+    if (reader.hasPendingEvents())
+        reader.popFrontEvent();
+
+    slot->setWakeOnAnyPacket(false);
+    slot->setReadyThresholdNative(10);
+    slot->publishGateBasis(0, false);
+
+    slot->clearPacketPending();
+    listener.forcedCount = 0;
+
+    // An owner pass in flight makes the epoch noisy: the producer cannot trust its snapshot
+    // and forces an evaluation instead of raising flags.
+    {
+        CallbackGate::PassGuard pass(*gate);
+        sendDataPacket(5, 300);
+        ASSERT_EQ(listener.forcedCount, 1);
+    }
 }
 
 TEST_F(MultiReaderInputTest, UsedFlagAndPortActive)

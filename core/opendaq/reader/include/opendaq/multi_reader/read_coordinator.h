@@ -128,9 +128,14 @@ public:
      */
     std::vector<SizeT> discardLeftoverSegments(const std::vector<QueueReader*>& inputs, const CommonModel& model, SizeT minReadCount);
 
-private:
+    /**
+     * @brief The smallest servable aligned request (common-rate equivalent): max(blockLcm,
+     * minReadCount) rounded up to whole blocks. The same minimum gates availability, the
+     * leftover-segment discard and the callback-gate ready threshold.
+     */
     static SizeT effectiveMinimum(const CommonModel& model, SizeT minReadCount);
 
+private:
     bool configured = false;
     LoggerComponentPtr loggerComponent;
 };

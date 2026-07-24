@@ -1,5 +1,7 @@
 #include <opendaq/multi_reader/input.h>
 
+#include <opendaq/connection_ptr.h>
+
 BEGIN_NAMESPACE_OPENDAQ
 
 namespace multi_reader
@@ -12,12 +14,15 @@ Input::Input(SizeT index,
                      ReadMode mode,
                      const LoggerComponentPtr& logger,
                      IInputListener* listener,
-                     bool globalIdFromSignal)
+                     bool globalIdFromSignal,
+                     std::shared_ptr<CallbackGate> gate)
     : index(index)
     , globalIdFromSignal(globalIdFromSignal)
     , port(port)
     , queueReader(port, valueReadType, domainReadType, mode, logger, globalIdFromSignal)
     , listener(listener)
+    , callbackGate(std::move(gate))
+    , flags(callbackGate)
     , loggerComponent(logger)
 {
     connectedState = port.getConnection().assigned();
@@ -67,10 +72,68 @@ ErrCode Input::packetReceived(IInputPort* /*inputPort*/)
     {
         lastPacketArrival.store(SteadyClock::now());
         packetPending = true;
+
+        // Steady Synchronized state: raise the gate flags from a minimal introspection and let
+        // the listener schedule only when the gate is open. Any other state (or an untrusted
+        // snapshot) forces the evaluation - the classic packet-per-evaluation behavior.
+        bool force = wakeOnAnyPacket.load();
+        if (!force)
+            force = !tryRaiseGateFlags();
+
         if (auto* const target = getListener())
-            target->slotPacketReceived(index);
+            target->slotPacketReceived(index, force);
         return OPENDAQ_SUCCESS;
     });
+}
+
+bool Input::tryRaiseGateFlags()
+{
+    // Epoch guard (see CallbackGate): an owner pass can move samples from the connection into
+    // the adopted queue between our reads, making basis + connection undercount. A raise can
+    // never be wrong for long (the evaluation reconciles), but a SKIPPED raise could silence
+    // the gate forever - so anything inconsistent returns false and the caller forces an
+    // evaluation instead.
+    const auto epochBefore = callbackGate->passEpoch();
+    if (!CallbackGate::epochQuiet(epochBefore))
+        return false;
+
+    // A set event flag already holds the gate open; the caller schedules via gateSatisfied.
+    if (flags.event())
+        return true;
+
+    // Events are rare and always transition the reader out of the steady synchronized state.
+    // Producers never touch the event counter (that would race the owner and risk a stale flag
+    // the owner's gate-skip logic would perpetuate); instead any event indication - adopted
+    // (basis) or still on the connection - forces a full evaluation, which sets event flags
+    // authoritatively under the state lock. Only readiness, the common data-packet case, is
+    // self-gated here.
+    if (basisHasEventPackets.load())
+        return false;
+
+    const auto connection = port.getConnection();
+    if (!connection.assigned())
+        return false;  // mid-(dis)connect: let the evaluation sort it out
+
+    // Both connection queries are O(1) counter reads under the connection's own lock, which the
+    // enqueue that triggered this notification has already released.
+    if (connection.hasEventPacket())
+        return false;
+
+    if (!flags.ready())
+    {
+        const SizeT threshold = readyThresholdNative.load();
+        if (threshold != NeverReady)
+        {
+            const SizeT available = basisAvailableNative.load() + static_cast<SizeT>(connection.getSamplesUntilNextEventPacket());
+            if (available >= threshold)
+            {
+                if (callbackGate->passEpoch() != epochBefore)
+                    return false;  // an owner pass ran under us; its end-of-pass truth wins
+                flags.raiseReady();
+            }
+        }
+    }
+    return true;
 }
 
 SizeT Input::getIndex() const
@@ -163,6 +226,27 @@ Input::SteadyClock::time_point Input::getLastPacketArrival() const
 void Input::setPortActive(bool active)
 {
     port.setActive(active);
+}
+
+SlotGateFlags& Input::gateFlags()
+{
+    return flags;
+}
+
+void Input::publishGateBasis(SizeT availableNativeUntilEvent, bool hasEventPackets)
+{
+    basisAvailableNative.store(availableNativeUntilEvent);
+    basisHasEventPackets.store(hasEventPackets);
+}
+
+void Input::setReadyThresholdNative(SizeT thresholdNative)
+{
+    readyThresholdNative.store(thresholdNative);
+}
+
+void Input::setWakeOnAnyPacket(bool wake)
+{
+    wakeOnAnyPacket.store(wake);
 }
 
 void Input::detachListener()

@@ -7,6 +7,7 @@ namespace multi_reader
 
 NotificationCoordinator::NotificationCoordinator(const SchedulerPtr& scheduler, const LoggerComponentPtr& logger)
     : taskState(std::make_shared<TaskState>())
+    , gateState(std::make_shared<CallbackGate>())
     , loggerComponent(logger)
 {
     executor = [scheduler](std::function<void()> work)
@@ -20,6 +21,7 @@ NotificationCoordinator::NotificationCoordinator(const SchedulerPtr& scheduler, 
 
 NotificationCoordinator::NotificationCoordinator(WorkExecutor executor, const LoggerComponentPtr& logger)
     : taskState(std::make_shared<TaskState>())
+    , gateState(std::make_shared<CallbackGate>())
     , executor(std::move(executor))
     , loggerComponent(logger)
 {
@@ -48,6 +50,31 @@ void NotificationCoordinator::detach()
     taskState->callback = nullptr;
 }
 
+const std::shared_ptr<CallbackGate>& NotificationCoordinator::gate() const
+{
+    return gateState;
+}
+
+bool NotificationCoordinator::gateSatisfied() const
+{
+    return gateState->isSatisfied();
+}
+
+CallbackGate::PassGuard NotificationCoordinator::beginOwnerPass()
+{
+    return CallbackGate::PassGuard(*gateState);
+}
+
+void NotificationCoordinator::setStateChangeNotify(bool notify)
+{
+    gateState->setStateChangeNotify(notify);
+}
+
+bool NotificationCoordinator::getStateChangeNotify() const
+{
+    return gateState->getStateChangeNotify();
+}
+
 void NotificationCoordinator::scheduleTask()
 {
     // The lambda holds the task state alive; a coordinator destroyed with a task still
@@ -63,116 +90,6 @@ void NotificationCoordinator::scheduleTask()
             if (state->callback)
                 state->callback();
         });
-}
-
-void NotificationCoordinator::resize(SizeT slotCount)
-{
-    usedMask.resize(slotCount, true);
-    readyMask.resize(slotCount, false);
-    eventMask.resize(slotCount, false);
-}
-
-void NotificationCoordinator::erase(SizeT index)
-{
-    // Removing one input must not disturb the remaining inputs' bits.
-    usedMask.erase(usedMask.begin() + index);
-    readyMask.erase(readyMask.begin() + index);
-    eventMask.erase(eventMask.begin() + index);
-}
-
-SizeT NotificationCoordinator::getSlotCount() const
-{
-    return usedMask.size();
-}
-
-void NotificationCoordinator::setUsed(SizeT index, bool used)
-{
-    usedMask.at(index) = used;
-}
-
-void NotificationCoordinator::setReady(SizeT index, bool ready)
-{
-    readyMask.at(index) = ready;
-}
-
-void NotificationCoordinator::setEvent(SizeT index, bool hasEvent)
-{
-    eventMask.at(index) = hasEvent;
-}
-
-bool NotificationCoordinator::isUsed(SizeT index) const
-{
-    return usedMask.at(index);
-}
-
-bool NotificationCoordinator::getReady(SizeT index) const
-{
-    return readyMask.at(index);
-}
-
-bool NotificationCoordinator::getEvent(SizeT index) const
-{
-    return eventMask.at(index);
-}
-
-void NotificationCoordinator::clearReadiness()
-{
-    readyMask.assign(readyMask.size(), false);
-    eventMask.assign(eventMask.size(), false);
-}
-
-void NotificationCoordinator::setStateChangeNotify(bool notify)
-{
-    stateChangeNotifyFlag = notify;
-}
-
-bool NotificationCoordinator::getStateChangeNotify() const
-{
-    return stateChangeNotifyFlag;
-}
-
-bool NotificationCoordinator::anyUsedEvent() const
-{
-    for (SizeT i = 0; i < usedMask.size(); ++i)
-    {
-        if (usedMask[i] && eventMask[i])
-            return true;
-    }
-    return false;
-}
-
-bool NotificationCoordinator::anyEvent() const
-{
-    for (SizeT i = 0; i < eventMask.size(); ++i)
-    {
-        if (eventMask[i])
-            return true;
-    }
-    return false;
-}
-
-bool NotificationCoordinator::allUsedReady() const
-{
-    bool anyUsed = false;
-    for (SizeT i = 0; i < usedMask.size(); ++i)
-    {
-        if (!usedMask[i])
-            continue;
-        anyUsed = true;
-        if (!readyMask[i])
-            return false;
-    }
-    return anyUsed;
-}
-
-bool NotificationCoordinator::shouldInvokeCallback() const
-{
-    // Events on unused inputs fire the callback too; that notification is the
-    // recovery path (the consumer can re-include the input with setInputUsed).
-    // stateChangeNotify covers a state change with neither data nor event to return
-    // (an InputsFailed transition: a data-loss deadline, or re-probing an input whose
-    // failing descriptor is already cached so no new event fires).
-    return anyEvent() || allUsedReady() || stateChangeNotifyFlag;
 }
 
 }  // namespace multi_reader

@@ -18,11 +18,14 @@
 #include <opendaq/input_port_config_ptr.h>
 #include <opendaq/input_port_notifications.h>
 #include <opendaq/logger_component_ptr.h>
+#include <opendaq/multi_reader/callback_gate.h>
 #include <opendaq/multi_reader/queue_reader.h>
 #include <opendaq/signal_ptr.h>
 
 #include <atomic>
 #include <chrono>
+#include <limits>
+#include <memory>
 
 BEGIN_NAMESPACE_OPENDAQ
 
@@ -49,20 +52,35 @@ struct IInputListener
     /// The signal was disconnected from the slot's port.
     virtual void slotDisconnected(SizeT slotIndex) = 0;
     /**
-     * @brief Every packet arrival (bounded producer path). Coalescing is the owner's
-     * job (NotificationCoordinator); the slot's packetPending bit stays set until
-     * clearPacketPending() for cheap "anything new since last evaluation" queries.
+     * @brief Every packet arrival (bounded producer path). The slot has already updated its
+     * gate flags from a minimal connection introspection; the listener decides whether the
+     * shared gate warrants scheduling an evaluation. forceEvaluation is the conservative
+     * escape hatch: the slot could not trust its snapshot (owner pass in flight, connection
+     * mid-rebind) or the reader is in a state where every packet must re-enter the state
+     * machine (anything but steady Synchronized) - the listener then schedules
+     * unconditionally, restoring the classic packet-per-evaluation behavior.
      */
-    virtual void slotPacketReceived(SizeT slotIndex) = 0;
+    virtual void slotPacketReceived(SizeT slotIndex, bool forceEvaluation) = 0;
 };
 
 /**
  * @brief One input of the multi reader: owns the port reference and the per-input QueueReader,
- * implements IInputPortNotifications for that port, and holds the used/connected/pending flags.
+ * implements IInputPortNotifications for that port, and holds the used/connected/pending flags
+ * plus this slot's producer-facing callback-gate state.
+ *
+ * Gate state (all atomics, producer-readable):
+ * - gate flags (SlotGateFlags): this slot's ready/event contribution to the shared CallbackGate.
+ * - basis: the adopted queue's availability-until-event (native samples) and whether any event
+ *   packet is adopted - published by the owner after every pass that moves or consumes samples.
+ *   The producer adds the connection's own O(1) counters on top to get the current truth.
+ * - readyThresholdNative: the effective minimum (native samples) at which this slot becomes
+ *   ready; NeverReady disables producer ready-raises (no model, unused, unconnected).
+ * - wakeOnAnyPacket: every packet forces an evaluation (any state but steady Synchronized).
  *
  * Threading contract:
- * - The IInputPortNotifications entry points are bounded: they update atomics and forward one
- *   semantic notification; no dequeue, no descriptor parsing, no locks, no user callbacks.
+ * - The IInputPortNotifications entry points are bounded: they update atomics, read two O(1)
+ *   connection counters and forward one semantic notification; no dequeue, no descriptor
+ *   parsing, no reader-state locks, no user callbacks.
  * - Everything under "owner-side API" must be called with the owner's state lock held; the
  *   QueueReader has no lock of its own.
  * - The port holds only a weak reference to this object (its listener), so the owner's strong
@@ -73,6 +91,9 @@ class Input final : public ImplementationOfWeak<IInputPortNotifications>
 public:
     using SteadyClock = std::chrono::steady_clock;
 
+    /// Sentinel threshold: the producer never raises the ready flag.
+    static constexpr SizeT NeverReady = std::numeric_limits<SizeT>::max();
+
     explicit Input(SizeT index,
                        const InputPortConfigPtr& port,
                        SampleType valueReadType,
@@ -80,7 +101,8 @@ public:
                        ReadMode mode,
                        const LoggerComponentPtr& logger,
                        IInputListener* listener,
-                       bool globalIdFromSignal);
+                       bool globalIdFromSignal,
+                       std::shared_ptr<CallbackGate> gate);
 
     // IInputPortNotifications (producer/connection threads)
     ErrCode INTERFACE_FUNC acceptsSignal(IInputPort* inputPort, ISignal* signal, Bool* accept) override;
@@ -118,7 +140,7 @@ public:
     bool syncConnection();
 
     /**
-     * @brief Used flag only - excluding the slot from masks, compatibility, synchronization and
+     * @brief Used flag only - excluding the slot from the gate, compatibility, synchronization and
      * availability is the owner's responsibility, as is deactivating the port (setPortActive)
      * and resetting/revalidating on re-enable.
      */
@@ -132,11 +154,37 @@ public:
 
     void setPortActive(bool active);
 
+    // --- Gate maintenance (owner state lock held unless noted) ---
+
+    /// This slot's ready/event contribution to the shared gate. Producer-safe for raises;
+    /// owner-only for lowering.
+    SlotGateFlags& gateFlags();
+
+    /**
+     * @brief Publish the adopted queue's producer-visible basis: availability until the next
+     * event (native samples) and whether any event packet (leading or buried) is adopted.
+     * Owner-called after every pass that adopts or consumes samples on this slot.
+     */
+    void publishGateBasis(SizeT availableNativeUntilEvent, bool hasEventPackets);
+
+    /// Native-sample threshold at which the producer raises the ready flag; NeverReady disables.
+    void setReadyThresholdNative(SizeT thresholdNative);
+
+    /// True in every state but steady Synchronized: each packet forces an evaluation.
+    void setWakeOnAnyPacket(bool wake);
+
     /// Owner teardown: no listener notifications are forwarded after this returns.
     void detachListener();
 
 private:
     IInputListener* getListener() const;
+    /**
+     * @brief Producer-side gate maintenance: raise this slot's ready/event flags from the
+     * published basis plus the connection's O(1) counters, guarded by the owner-pass epoch.
+     * @return false when the snapshot cannot be trusted (owner pass in flight, epoch moved,
+     * connection unassigned) - the caller then forces an evaluation instead.
+     */
+    bool tryRaiseGateFlags();
 
     std::atomic<SizeT> index;
     const bool globalIdFromSignal;
@@ -152,6 +200,15 @@ private:
     std::atomic_bool connectedState{false};
     std::atomic_bool packetPending{false};
     std::atomic<SteadyClock::time_point> lastPacketArrival{SteadyClock::time_point{}};
+
+    std::shared_ptr<CallbackGate> callbackGate;
+    SlotGateFlags flags;
+    std::atomic<SizeT> basisAvailableNative{0};
+    std::atomic_bool basisHasEventPackets{false};
+    std::atomic<SizeT> readyThresholdNative{NeverReady};
+    /// Defaults to true: until the first full evaluation publishes a steady Synchronized
+    /// state, every packet re-enters the state machine (classic behavior).
+    std::atomic_bool wakeOnAnyPacket{true};
 
     LoggerComponentPtr loggerComponent;
 };

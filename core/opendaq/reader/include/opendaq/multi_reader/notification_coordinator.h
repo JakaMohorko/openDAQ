@@ -16,6 +16,7 @@
 #pragma once
 #include <coretypes/common.h>
 #include <opendaq/logger_component_ptr.h>
+#include <opendaq/multi_reader/callback_gate.h>
 #include <opendaq/scheduler_ptr.h>
 #include <opendaq/work_factory.h>
 
@@ -23,7 +24,6 @@
 #include <functional>
 #include <memory>
 #include <mutex>
-#include <vector>
 
 BEGIN_NAMESPACE_OPENDAQ
 
@@ -31,32 +31,29 @@ namespace multi_reader
 {
 
 /**
- * @brief Readiness tracking and callback coalescing for the multi reader.
+ * @brief Evaluation-task scheduling and the shared callback gate for the multi reader.
  *
- * Two independent responsibilities:
+ * Two responsibilities:
  *
- * 1. Coalesced evaluation scheduling. requestEvaluation() is the bounded producer-thread
- *    entry point: it schedules at most one evaluation task on the scheduler. The task
- *    clears its scheduled flag before running, so updates arriving during an evaluation
- *    schedule exactly one follow-up. The task never runs after detach() - the shared
- *    task state outlives the coordinator and is checked under its own lock.
+ * 1. Coalesced evaluation scheduling. requestEvaluation() is the bounded, lock-free entry
+ *    point: it schedules at most one evaluation task on the scheduler. The task clears its
+ *    scheduled flag before running, so updates arriving during an evaluation schedule exactly
+ *    one follow-up. The task never runs after detach() - the shared task state outlives the
+ *    coordinator and is checked under its own lock (taken only inside the task, never on the
+ *    request path).
  *
- * 2. Used/ready/event masks deciding whether the public onDataAvailable callback fires:
- *    event.any() || (used.any() && (ready & used) == used) || stateChangeNotify.
- *    Events on unused slots participate deliberately: they are the recovery
- *    signal consumers react to with setInputUsed. The "ready" meaning is phase-dependent
- *    (first sample while synchronizing, one full block while synchronized) - the owner
- *    sets the bits during its state evaluation. stateChangeNotify is a one-shot latch for a
- *    state change that carries no returnable data or event - a transition into an InputsFailed
- *    state (Incompatible / SynchronizationFailed / DataLost) once the causing descriptors are
- *    cached, so no event fires and no data is ready. It wakes the consumer once to read the
- *    naming status, so the consumer never has to poll or run its own liveness timer.
+ * 2. The shared CallbackGate (see callback_gate.h). Producers raise per-slot flags and query
+ *    gateSatisfied() locklessly; a task is scheduled from the packet path only when the gate
+ *    is open (or a producer could not trust its snapshot). The owner reconciles the flags to
+ *    ground truth under its state lock before letting the gate fire the user callback, so
+ *    producer raises are advisory: they can cause a spurious task but never a spurious user
+ *    callback, and they can never suppress one.
  *
- * Threading contract: requestEvaluation() and detach() are thread-safe. Everything else
- * (masks, callback queries) must be called with the owner's state lock held. The
- * evaluation callback itself runs on a scheduler thread without any coordinator lock
- * held - the owner takes its own lock inside and must invoke user callbacks only after
- * releasing it. detach() must be called without holding locks the evaluation takes.
+ * Threading contract: requestEvaluation(), detach() and every gate query are thread-safe and
+ * lock-free on the caller's side. The evaluation callback runs on a scheduler thread without
+ * any coordinator lock held - the owner takes its own lock inside and must invoke user
+ * callbacks only after releasing it. detach() must be called without holding locks the
+ * evaluation takes.
  */
 class NotificationCoordinator
 {
@@ -72,31 +69,22 @@ public:
     /// The owner's coalesced evaluation entry point. Set once during construction of the owner.
     void setEvaluationCallback(EvaluationCallback callback);
 
-    /// Producer-thread safe; schedules at most one coalesced evaluation task.
+    /// Producer-thread safe and lock-free; schedules at most one coalesced evaluation task.
     void requestEvaluation();
 
-    /// No evaluation callback runs after this returns-except one already in flight on
+    /// No evaluation callback runs after this returns - except one already in flight on
     /// another thread, which detach() waits out via the task-state lock.
     void detach();
 
-    // --- Masks (owner state lock held) ---
-    void resize(SizeT slotCount);
-    /// Drops one slot's bits, shifting the following slots down by one.
-    void erase(SizeT index);
-    SizeT getSlotCount() const;
+    /// Shared gate state; each Input holds a reference so producer raises and owner
+    /// reconciliation adjust the same counters.
+    const std::shared_ptr<CallbackGate>& gate() const;
 
-    void setUsed(SizeT index, bool used);
-    void setReady(SizeT index, bool ready);
-    void setEvent(SizeT index, bool hasEvent);
-    bool isUsed(SizeT index) const;
-    /// Current ready/event bit for one slot. The callback pass uses these to skip a slot that
-    /// already satisfies the gate: a ready/event slot cannot stop satisfying it until a read
-    /// consumes it (the read path lowers the bit), so the callback never needs to re-touch it.
-    bool getReady(SizeT index) const;
-    bool getEvent(SizeT index) const;
+    /// Lock-free: the callback gate (see CallbackGate::isSatisfied).
+    bool gateSatisfied() const;
 
-    /// Clears ready and event bits (synchronization invalidated, topology changed, ...).
-    void clearReadiness();
+    /// Mark the current thread as an owner pass for producers' consistency checks.
+    CallbackGate::PassGuard beginOwnerPass();
 
     /// One-shot latch: raise the callback gate for a state change that carries no returnable
     /// data or event (a transition into an InputsFailed state - Incompatible /
@@ -105,16 +93,6 @@ public:
     /// exactly once and does not re-fire while it persists.
     void setStateChangeNotify(bool notify);
     bool getStateChangeNotify() const;
-
-    /// (event & used).any()
-    bool anyUsedEvent() const;
-    /// event.any() - unused slots included.
-    bool anyEvent() const;
-    /// used.any() && (ready & used) == used
-    bool allUsedReady() const;
-    /// The callback gate: fires when there is any event, when every used slot is ready, or when
-    /// a state-change notification is latched.
-    bool shouldInvokeCallback() const;
 
 private:
     struct TaskState
@@ -127,13 +105,9 @@ private:
     void scheduleTask();
 
     std::shared_ptr<TaskState> taskState;
+    std::shared_ptr<CallbackGate> gateState;
     WorkExecutor executor;
     LoggerComponentPtr loggerComponent;
-
-    std::vector<bool> usedMask;
-    std::vector<bool> readyMask;
-    std::vector<bool> eventMask;
-    bool stateChangeNotifyFlag = false;
 };
 
 }  // namespace multi_reader

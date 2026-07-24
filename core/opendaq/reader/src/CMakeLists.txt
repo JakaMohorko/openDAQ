@@ -140,6 +140,7 @@ function(create_component_source_groups_${BASE_NAME})
         ${SDK_HEADERS_DIR}/multi_reader/data_loss_monitor.h
         ${SDK_HEADERS_DIR}/multi_reader/input.h
         ${SDK_HEADERS_DIR}/multi_reader/synchronization_manager.h
+        ${SDK_HEADERS_DIR}/multi_reader/callback_gate.h
         ${SDK_HEADERS_DIR}/multi_reader/notification_coordinator.h
         ${SDK_HEADERS_DIR}/multi_reader/read_coordinator.h
         ${SDK_HEADERS_DIR}/multi_reader_impl.h
@@ -186,6 +187,7 @@ set(SRC_PrivateHeaders_Component
     multi_reader/data_loss_monitor.h
     multi_reader/input.h
     multi_reader/synchronization_manager.h
+    multi_reader/callback_gate.h
     multi_reader/notification_coordinator.h
     multi_reader/read_coordinator.h
     reader_status_impl.h

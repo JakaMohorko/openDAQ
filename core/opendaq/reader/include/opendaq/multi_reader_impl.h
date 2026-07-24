@@ -63,9 +63,10 @@ enum class ReaderState
  * SynchronizationManager, all queue work in the per-slot QueueReaders, read planning in
  * the ReadCoordinator and callback coalescing in the NotificationCoordinator.
  *
- * Locking: one state mutex; producer threads never take it
- * (Input::packetReceived only touches atomics and schedules the coalesced
- * evaluation); user callbacks are invoked with no lock held.
+ * Locking: one state mutex; producer threads never take it - and take no other mutex either:
+ * Input::packetReceived touches atomics plus two O(1) connection counters, and an evaluation
+ * task is scheduled only once the callback gate is open (or the snapshot cannot be trusted).
+ * User callbacks are invoked with no lock held.
  *
  * Naming convention: a "...Locked" suffix means "the caller must already hold `mutex`" -
  * such a method never takes the lock itself and must only be called from code that does.
@@ -153,14 +154,15 @@ private:
     // Why this second listener surface exists: a port can have exactly one listener, and that
     // listener is the slot (it owns the port's QueueReader pairing). This private interface is
     // the slot's channel back up to the facade - it carries the slot index, keeps the producer
-    // path bounded (slotPacketReceived touches atomics and schedules the coalesced evaluation,
-    // taking no facade lock), and serializes external-listener forwarding so user callbacks
-    // never run under the state mutex. The facade itself is deliberately NOT an
-    // IInputPortNotifications: ports never see the reader directly.
+    // path bounded (slotPacketReceived touches atomics and schedules the coalesced evaluation
+    // only when the callback gate is open, taking no facade lock and no other mutex), and
+    // serializes external-listener forwarding so user callbacks never run under the state
+    // mutex. The facade itself is deliberately NOT an IInputPortNotifications: ports never see
+    // the reader directly.
     bool slotAcceptsSignal(SizeT slotIndex, const SignalPtr& signal) override;
     void slotConnected(SizeT slotIndex) override;
     void slotDisconnected(SizeT slotIndex) override;
-    void slotPacketReceived(SizeT slotIndex) override;
+    void slotPacketReceived(SizeT slotIndex, bool forceEvaluation) override;
 
     // --- Construction ---
     /// Source normalization (construction and addInput): validates the list (assigned,
@@ -173,8 +175,19 @@ private:
 
     // --- State machine (state mutex held) ---
     /// Full state evaluation - the transition handler run by the paths that change state
-    /// (connect/disconnect, used/active changes, topology, events, deadlines).
+    /// (connect/disconnect, used/active changes, topology, events, deadlines). Runs the
+    /// ladder, then publishes the producer-facing gate state (publishProducerGateLocked).
     void evaluateStateLocked();
+    /// The evaluation ladder itself; only evaluateStateLocked calls this.
+    void evaluateStateLadderLocked();
+    /**
+     * @brief Publish the producer-facing callback-gate state after a full evaluation: per-slot
+     * basis (adopted availability-until-event + adopted events), the ready threshold, the
+     * wake-on-any-packet mode, and - while synchronized - the ground-truth ready/event flags.
+     * Outside the steady Synchronized state every packet forces an evaluation, so only the
+     * flags the ladder maintains matter there.
+     */
+    void publishProducerGateLocked();
     /// Data-plane pass for the read and query paths: while synchronized, drains the slots that
     /// received packets, publishes the availability cache, and maintains the readiness bits. With
     /// escalateOnEvent (the read path) it escalates to evaluateStateLocked when an event surfaces so
@@ -235,6 +248,18 @@ private:
     SizeT findSlotByIdLocked(const StringPtr& id) const;  // returns slots.size() when not found
     void reindexSlotsLocked();
     void setPortsActiveLocked(bool active);
+
+    // --- Callback-gate maintenance (state mutex held) ---
+    // The per-slot flags and the shared counters live in CallbackGate/SlotGateFlags; these
+    // helpers are the owner-side write path (the flag word adjusts the counters itself).
+    void setSlotReadyLocked(multi_reader::Input* slot, bool ready);
+    void setSlotEventLocked(multi_reader::Input* slot, bool event);
+    /// Used-flag change with gate accounting: adjusts the used count and drops a stale ready flag.
+    void applySlotUsedLocked(multi_reader::Input* slot, bool used);
+    /// Publish one slot's adopted basis (availability-until-event + adopted events) for producers.
+    void publishSlotBasisLocked(multi_reader::Input* slot);
+    /// Lowers every slot's ready/event flag (synchronization invalidated, reader deactivated).
+    void clearGateReadinessLocked();
 
     /// Slot index of the explicitly selected main input; notFound when the default
     /// (first used input) applies or the selection is dangling.
