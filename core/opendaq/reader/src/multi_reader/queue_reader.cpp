@@ -25,11 +25,11 @@ SignalEvent::SignalEvent(const EventPacketPtr& packet)
     }
     else
     {
-        // The parse distinguishes "changed to null" (explicit null marker) from "unchanged"
-        // (parameter absent) - a removed descriptor must not be mistaken for no change.
-        const auto [valueDescChanged, domainDescChanged, newValueDescriptor, newDomainDescriptor] = parseDataDescriptorEventPacket(packet);
-        valueDescriptorChanged = valueDescChanged;
-        domainDescriptorChanged = domainDescChanged;
+        // Tri-state per descriptor, carried by the descriptor itself: unassigned = unchanged
+        // (parameter absent), the explicit NullDataDescriptor marker (sample type Null) =
+        // descriptor unset, anything else = changed to it. A removed descriptor is therefore
+        // never mistaken for no change without needing separate flags.
+        const auto [newValueDescriptor, newDomainDescriptor] = unpackDataDescriptorEventPacket(packet);
         domainDescriptor = newDomainDescriptor;
         valueDescriptor = newValueDescriptor;
         updateType();
@@ -41,15 +41,16 @@ void SignalEvent::updateType()
     if (eventType == SignalEventType::Gap)
         return;
 
-    if (domainDescriptorChanged && valueDescriptorChanged)
+    // Assigned = changed (the NullDataDescriptor "unset" marker counts as a change)
+    if (domainDescriptor.assigned() && valueDescriptor.assigned())
     {
         eventType = SignalEventType::DomainAndValueChanged;
     }
-    else if (domainDescriptorChanged)
+    else if (domainDescriptor.assigned())
     {
         eventType = SignalEventType::DomainChanged;
     }
-    else if (valueDescriptorChanged)
+    else if (valueDescriptor.assigned())
     {
         eventType = SignalEventType::ValueChanged;
     }
@@ -65,16 +66,11 @@ bool SignalEvent::merge(const SignalEvent& other)
     if (this->eventType == SignalEventType::Gap || other.eventType == SignalEventType::Gap)
         return false;
 
-    if (other.domainDescriptorChanged)
-    {
-        domainDescriptorChanged = true;
+    // Newest change wins per descriptor; an unassigned (unchanged) side never overwrites
+    if (other.domainDescriptor.assigned())
         domainDescriptor = other.domainDescriptor;
-    }
-    if (other.valueDescriptorChanged)
-    {
-        valueDescriptorChanged = true;
+    if (other.valueDescriptor.assigned())
         valueDescriptor = other.valueDescriptor;
-    }
     updateType();
     return true;
 }
@@ -104,9 +100,7 @@ EventPacketPtr SignalEvent::toEventPacket() const
     {
         // Unchanged descriptors stay absent (null parameter); a changed descriptor uses the
         // explicit null marker when removed, so consumers can tell "removed" from "unchanged".
-        return DataDescriptorChangedEventPacket(
-            valueDescriptorChanged ? descriptorToEventPacketParam(valueDescriptor) : nullptr,
-            domainDescriptorChanged ? descriptorToEventPacketParam(domainDescriptor) : nullptr);
+        return DataDescriptorChangedEventPacket(valueDescriptor, domainDescriptor);
     }
 }
 
@@ -127,6 +121,10 @@ QueueReader::QueueReader(const InputPortConfigPtr& port,
     typeCtx.valueIn = SampleType::Undefined;
     typeCtx.valueOut = mode == ReadMode::RawValue ? SampleType::Undefined : valueReadType;
     refreshConnectionInternal();
+
+    // Start with issues set - without descriptors the queue reader cannot be valid.
+    parseDomainDescriptor();
+    parseValueDescriptor();
 }
 
 void QueueReader::refreshConnectionInternal()
@@ -752,7 +750,8 @@ SignalEventType QueueReader::addEncounteredEvent(const EventPacketPtr& packet)
             break;
     }
     parseCachedDescriptors();
-    addToEventQueue(std::move(event));
+    if (event.getType() != SignalEventType::NoChange)
+        addToEventQueue(std::move(event));
     return eventType;
 }
 
@@ -771,7 +770,11 @@ void QueueReader::addToEventQueue(SignalEvent&& event)
 void QueueReader::parseDomainDescriptor()
 {
     auto& descriptor = typeCtx.domainLayout.descriptor;
-    if (!descriptor.assigned())
+
+    // Either unset (NullDescriptor) or not assigned is an issue for the queue reader.
+    const bool descriptorNull = !descriptor.assigned() || descriptor.getSampleType() == SampleType::Null;
+    issues.set(QueueReaderIssue::DomainDescriptorNull, descriptorNull);
+    if (descriptorNull)
         return;
 
     // Type conversion
@@ -903,7 +906,11 @@ void QueueReader::parseDomainDescriptor()
 void QueueReader::parseValueDescriptor()
 {
     auto& descriptor = typeCtx.valueLayout.descriptor;
-    if (!descriptor.assigned())
+
+    // See parseDomainDescriptor: the NullDataDescriptor "unset" marker is flagged, not parsed, same for unassigned
+    const bool descriptorNull = !descriptor.assigned() || descriptor.getSampleType() == SampleType::Null;
+    issues.set(QueueReaderIssue::ValueDescriptorNull, descriptorNull);
+    if (descriptorNull)
         return;
 
     auto postScaling = descriptor.getPostScaling();

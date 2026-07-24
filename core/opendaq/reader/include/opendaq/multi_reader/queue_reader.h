@@ -61,10 +61,6 @@ private:
     SignalEventType eventType;
     DataDescriptorPtr domainDescriptor;
     DataDescriptorPtr valueDescriptor;
-    // A change may carry a null descriptor (descriptor removed); explicit flags keep
-    // "changed to null" distinguishable from "unchanged".
-    bool domainDescriptorChanged = false;
-    bool valueDescriptorChanged = false;
     Int gapDiff;
 };
 
@@ -97,7 +93,9 @@ enum class QueueReaderIssue : uint32_t
     UnsupportedDomainRule           = 1 << 2,
     OriginParsingFailed             = 1 << 3,
     DomainUnitInvalid               = 1 << 4,
-    DomainNotScalar           = 1 << 5  // domain descriptor has dimensions - a vector timestamp has no meaning
+    DomainNotScalar                 = 1 << 5,  // domain descriptor has dimensions - a vector timestamp has no meaning
+    ValueDescriptorNull             = 1 << 6,  // descriptor explicitly unset (the NullDataDescriptor marker, sample type Null)
+    DomainDescriptorNull            = 1 << 7
 };
 
 class QueueReader

@@ -41,6 +41,21 @@ inline std::tuple<bool, bool, DataDescriptorPtr, DataDescriptorPtr> parseDataDes
     return std::make_tuple(valueDescriptorChanged, domainDescriptorChanged, newValueDescriptor, newDomainDescriptor);
 }
 
+inline std::tuple<DataDescriptorPtr, DataDescriptorPtr> unpackDataDescriptorEventPacket(const EventPacketPtr& eventPacket)
+{
+    if (!eventPacket.assigned())
+        DAQ_THROW_EXCEPTION(ArgumentNullException, "Event packet not assigned");
+
+    if (!(eventPacket.getEventId() == event_packet_id::DATA_DESCRIPTOR_CHANGED))
+        DAQ_THROW_EXCEPTION(InvalidParameterException, R"(Invalid event packet id: {})", eventPacket.getEventId());
+
+    const auto params = eventPacket.getParameters();
+    const DataDescriptorPtr valueDescriptorParam = params[event_packet_param::DATA_DESCRIPTOR];
+    const DataDescriptorPtr domainDescriptorParam = params[event_packet_param::DOMAIN_DATA_DESCRIPTOR];
+
+    return std::make_tuple(valueDescriptorParam, domainDescriptorParam);
+}
+
 inline DataDescriptorPtr descriptorToEventPacketParam(const DataDescriptorPtr& dataDescriptor)
 {
     return dataDescriptor.assigned() ? dataDescriptor : NullDataDescriptor();
