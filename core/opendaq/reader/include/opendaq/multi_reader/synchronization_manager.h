@@ -51,9 +51,10 @@ struct CommonModel
     /// common resolution folds in 1/commonSampleRate. Zero when the model is not usable.
     std::int64_t ticksPerCommonSample() const
     {
-        if (!commonDomain.resolution.assigned() || commonSampleRate <= 0)
+        // {0, 0} is TickResolution's unassigned sentinel
+        if (commonDomain.resolution.den == 0 || commonSampleRate <= 0)
             return 0;
-        return commonDomain.resolution.getDenominator() / (commonDomain.resolution.getNumerator() * commonSampleRate);
+        return commonDomain.resolution.den / (commonDomain.resolution.num * commonSampleRate);
     }
 };
 

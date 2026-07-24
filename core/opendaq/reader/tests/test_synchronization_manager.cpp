@@ -168,8 +168,8 @@ TEST_F(SyncManagerTest, ModelEqualRates)
     ASSERT_EQ(model.commonSampleRate, 1000);
     ASSERT_EQ(model.sampleRateDividers, (std::vector<SizeT>{1, 1}));
     ASSERT_EQ(model.blockLcm, 1u);
-    ASSERT_EQ(model.commonDomain.resolution.getNumerator(), 1);
-    ASSERT_EQ(model.commonDomain.resolution.getDenominator(), 1000);
+    ASSERT_EQ(model.commonDomain.resolution.num, 1);
+    ASSERT_EQ(model.commonDomain.resolution.den, 1000);
     ASSERT_EQ(inputs[0]->reader->getSampleRateDivider(), 1u);
     ASSERT_EQ(inputs[1]->reader->getSampleRateDivider(), 1u);
 }
@@ -187,8 +187,8 @@ TEST_F(SyncManagerTest, ModelMixedResolutions)
     ASSERT_EQ(model.commonSampleRate, 30);
     ASSERT_EQ(model.sampleRateDividers, (std::vector<SizeT>{3, 2}));
     ASSERT_EQ(model.blockLcm, 6u);
-    ASSERT_EQ(model.commonDomain.resolution.getNumerator(), 1);
-    ASSERT_EQ(model.commonDomain.resolution.getDenominator(), 30);
+    ASSERT_EQ(model.commonDomain.resolution.num, 1);
+    ASSERT_EQ(model.commonDomain.resolution.den, 30);
 }
 
 TEST_F(SyncManagerTest, ModelDeltaBasedDividers)
@@ -232,8 +232,8 @@ TEST_F(SyncManagerTest, ModelRequiredRateRefinesResolution)
     ASSERT_EQ(model.commonSampleRate, 2000);
     ASSERT_EQ(model.sampleRateDividers, (std::vector<SizeT>{2, 4}));
     ASSERT_EQ(model.blockLcm, 4u);
-    ASSERT_EQ(model.commonDomain.resolution.getNumerator(), 1);
-    ASSERT_EQ(model.commonDomain.resolution.getDenominator(), 2000);
+    ASSERT_EQ(model.commonDomain.resolution.num, 1);
+    ASSERT_EQ(model.commonDomain.resolution.den, 2000);
 }
 
 TEST_F(SyncManagerTest, ModelRequiredRateNotDivisible)

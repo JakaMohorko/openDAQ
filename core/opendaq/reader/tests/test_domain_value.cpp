@@ -31,8 +31,8 @@ TEST_F(DomainValueTest, DomainInfoComparison)
     daq::DomainInfo info6 = {daq::reader::parseEpoch("1999-01-01T00:00:00+00:00"), daq::Ratio(5, 2000)};
     ASSERT_FALSE(info6 == info1);
 
-    // Unassigned resolution
-    daq::DomainInfo info7 = {daq::reader::parseEpoch("1999-01-01T00:00:00+00:00"), nullptr};
+    // Unassigned resolution ({0, 0} sentinel, also what a null RatioPtr converts to)
+    daq::DomainInfo info7 = {daq::reader::parseEpoch("1999-01-01T00:00:00+00:00"), daq::TickResolution{}};
     ASSERT_THROW((void) (info7 == info1), daq::InvalidParameterException);
 }
 

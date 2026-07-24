@@ -803,7 +803,7 @@ void QueueReader::parseDomainDescriptor()
     // END Type Conversion
 
     // Resolution and origin
-    auto newResolution = descriptor.getTickResolution();
+    const TickResolution newResolution(descriptor.getTickResolution());
     if (typeCtx.domainInfo.resolution != newResolution)
     {
         typeCtx.domainInfo.resolution = newResolution;
@@ -838,16 +838,15 @@ void QueueReader::parseDomainDescriptor()
         }
 
         const bool resolutionValid =
-            typeCtx.domainInfo.resolution.assigned() &&
-            typeCtx.domainInfo.resolution.getNumerator() > 0 &&
-            typeCtx.domainInfo.resolution.getDenominator() > 0;
+            typeCtx.domainInfo.resolution.num > 0 &&
+            typeCtx.domainInfo.resolution.den > 0;
         const bool deltaPositive = delta.getFloatValue() > 0.0;
 
         double sr = 0.0;
         if (resolutionValid && deltaPositive)
         {
-            sr = static_cast<double>(typeCtx.domainInfo.resolution.getDenominator()) /
-                 (static_cast<double>(typeCtx.domainInfo.resolution.getNumerator()) * delta.getFloatValue());
+            sr = static_cast<double>(typeCtx.domainInfo.resolution.den) /
+                 (static_cast<double>(typeCtx.domainInfo.resolution.num) * delta.getFloatValue());
         }
 
         const bool deltaIsInteger = (delta.getFloatValue() == static_cast<double>(delta.getIntValue()));

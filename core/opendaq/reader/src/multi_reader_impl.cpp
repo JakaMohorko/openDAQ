@@ -1230,7 +1230,7 @@ EventPacketPtr MultiReaderImpl::mainDescriptorPacketLocked()
         {
             cachedCommonDomainDescriptor = DataDescriptorBuilderCopy(mainDomainDescriptor)
                                                .setOrigin(reader::isoEpochString(model.commonDomain.epoch))
-                                               .setTickResolution(model.commonDomain.resolution)
+                                               .setTickResolution(Ratio(model.commonDomain.resolution.num, model.commonDomain.resolution.den))
                                                .setRule(LinearDataRule(static_cast<Int>(model.ticksPerCommonSample()), 0))
                                                .build();
         }
@@ -1843,7 +1843,9 @@ ErrCode MultiReaderImpl::getTickResolution(IRatio** resolution)
         return OPENDAQ_IGNORED;
     }
 
-    *resolution = syncManager->getModel().commonDomain.resolution.addRefAndReturn();
+    // The public API reports the resolution as a Ratio object; the model stores plain values
+    const auto& res = syncManager->getModel().commonDomain.resolution;
+    *resolution = Ratio(res.num, res.den).detach();
     return OPENDAQ_SUCCESS;
 }
 

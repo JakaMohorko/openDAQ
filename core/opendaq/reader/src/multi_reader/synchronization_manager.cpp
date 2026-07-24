@@ -154,7 +154,8 @@ SyncSetupResult SynchronizationManager::buildCommonModelImpl(const std::vector<Q
     std::vector<SizeT> missing;
     for (SizeT i = 0; i < count; ++i)
     {
-        if (!inputs[i]->getDomainDescriptor().assigned() || !inputs[i]->getDomainInfo().resolution.assigned())
+        // resolution {0, 0} is TickResolution's unassigned sentinel
+        if (!inputs[i]->getDomainDescriptor().assigned() || inputs[i]->getDomainInfo().resolution.den == 0)
             missing.push_back(slotIndices[i]);
     }
     if (!missing.empty())
@@ -241,7 +242,7 @@ SyncSetupResult SynchronizationManager::buildCommonModelImpl(const std::vector<Q
     {
         const auto& domainInfo = inputs[i]->getDomainInfo();
         commonEpoch = std::min(commonEpoch, domainInfo.epoch);
-        resolutions.push_back(domainInfo.resolution);
+        resolutions.push_back(Ratio(domainInfo.resolution.num, domainInfo.resolution.den));
     }
     resolutions.push_back(Ratio(1, commonRate));
 

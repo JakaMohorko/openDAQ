@@ -456,7 +456,8 @@ SizeT findDomainValueLinear(const DataPacketPtr& domainPacket,
             {
                 // Tick corresponding to index in signal's resolution ticks.
                 OutputT tick = startTick + static_cast<OutputT>(index) * ruleDelta;
-                auto readValueSysTime = reader::toSysTime(tick, target->getDomain().epoch, target->getDomain().resolution);
+                auto readValueSysTime =
+                    reader::toSysTime(tick, target->getDomain().epoch, target->getDomain().resolution.num, target->getDomain().resolution.den);
                 *absoluteTimestamp = readValueSysTime.time_since_epoch().count();
             }
         }
@@ -508,7 +509,8 @@ SizeT findDomainValue(const ReadLayout& readLayout,
                 {
                     if (absoluteTimestamp)
                     {
-                        auto readValueSysTime = reader::toSysTime(value.start, target->getDomain().epoch, target->getDomain().resolution);
+                        auto readValueSysTime = reader::toSysTime(
+                            value.start, target->getDomain().epoch, target->getDomain().resolution.num, target->getDomain().resolution.den);
                         *absoluteTimestamp = readValueSysTime.time_since_epoch().count();
                     }
                     greaterEqual = true;
@@ -520,7 +522,8 @@ SizeT findDomainValue(const ReadLayout& readLayout,
                 {
                     if (absoluteTimestamp)
                     {
-                        auto readValueSysTime = reader::toSysTime(value, target->getDomain().epoch, target->getDomain().resolution);
+                        auto readValueSysTime = reader::toSysTime(
+                            value, target->getDomain().epoch, target->getDomain().resolution.num, target->getDomain().resolution.den);
                         *absoluteTimestamp = readValueSysTime.time_since_epoch().count();
                     }
                     greaterEqual = true;

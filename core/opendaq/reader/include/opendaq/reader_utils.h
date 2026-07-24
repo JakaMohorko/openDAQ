@@ -171,12 +171,12 @@ namespace reader
         struct SysTime
         {
             template <typename RoundTo = std::chrono::system_clock::duration>
-            static auto ToSysTime(T value, std::chrono::system_clock::time_point epoch, const RatioPtr& resolution)
+            static auto ToSysTime(T value, std::chrono::system_clock::time_point epoch, Int resolutionNum, Int resolutionDen)
             {
                 using namespace std::chrono;
                 using Seconds = duration<double>;
 
-                auto offset = Seconds((resolution.getNumerator() * value) / static_cast<double>(resolution.getDenominator()));
+                auto offset = Seconds((resolutionNum * value) / static_cast<double>(resolutionDen));
                 return round<RoundTo>(epoch + offset);
             }
         };
@@ -185,7 +185,7 @@ namespace reader
         struct SysTime<T, std::enable_if_t<IsTemplateOf<T, RangeType>::value>>
         {
             template <typename RoundTo = std::chrono::system_clock::duration>
-            static auto ToSysTime(T /*value*/, std::chrono::system_clock::time_point /*epoch*/, const RatioPtr& /*resolution*/)
+            static auto ToSysTime(T /*value*/, std::chrono::system_clock::time_point /*epoch*/, Int /*resolutionNum*/, Int /*resolutionDen*/)
             {
                 return std::chrono::system_clock::time_point{};
             }
@@ -195,7 +195,7 @@ namespace reader
         struct SysTime<T, std::enable_if_t<IsTemplateOf<T, Complex_Number>::value>>
         {
             template <typename RoundTo = std::chrono::system_clock::duration>
-            static auto ToSysTime(T /*value*/, std::chrono::system_clock::time_point /*epoch*/, const RatioPtr& /*resolution*/)
+            static auto ToSysTime(T /*value*/, std::chrono::system_clock::time_point /*epoch*/, Int /*resolutionNum*/, Int /*resolutionDen*/)
             {
                 return std::chrono::system_clock::time_point{};
             }
@@ -203,9 +203,15 @@ namespace reader
     }
 
     template <typename T, typename RoundTo = std::chrono::system_clock::duration>
+    auto toSysTime(T value, std::chrono::system_clock::time_point epoch, Int resolutionNum, Int resolutionDen)
+    {
+        return detail::SysTime<T>:: template ToSysTime<RoundTo>(value, epoch, resolutionNum, resolutionDen);
+    }
+
+    template <typename T, typename RoundTo = std::chrono::system_clock::duration>
     auto toSysTime(T value, std::chrono::system_clock::time_point epoch, const RatioPtr& resolution)
     {
-        return detail::SysTime<T>:: template ToSysTime<RoundTo>(value, epoch, resolution);
+        return toSysTime<T, RoundTo>(value, epoch, resolution.getNumerator(), resolution.getDenominator());
     }
 
     inline std::int64_t getSampleRate(const DataDescriptorPtr& dataDescriptor)

@@ -25,10 +25,46 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+/// Plain-value tick resolution (num/den); replaces RatioPtr in the domain-value arithmetic so
+/// the hot conversion paths carry no refcounted object. {0, 0} means "not assigned".
+struct TickResolution
+{
+    Int num = 0;
+    Int den = 0;
+
+    TickResolution() = default;
+
+    TickResolution(Int num, Int den)
+        : num(num)
+        , den(den)
+    {
+    }
+
+    // Convenience conversion from the descriptor's RatioPtr; an unassigned ratio yields {0, 0}.
+    TickResolution(const RatioPtr& ratio)
+    {
+        if (ratio.assigned())
+        {
+            num = ratio.getNumerator();
+            den = ratio.getDenominator();
+        }
+    }
+
+    friend bool operator==(const TickResolution& lhs, const TickResolution& rhs)
+    {
+        return lhs.num == rhs.num && lhs.den == rhs.den;
+    }
+
+    friend bool operator!=(const TickResolution& lhs, const TickResolution& rhs)
+    {
+        return !(lhs == rhs);
+    }
+};
+
 struct DomainInfo
 {
     std::chrono::system_clock::time_point epoch;
-    RatioPtr resolution;
+    TickResolution resolution;
 
     static DomainInfo fromDescriptor(const DataDescriptorPtr& descriptor)
     {
@@ -43,16 +79,11 @@ struct DomainInfo
 
     friend bool operator==(const DomainInfo& lhs, const DomainInfo& rhs)
     {
-        if (!lhs.resolution.assigned() || !rhs.resolution.assigned())
+        // {0, 0} is the unassigned sentinel (see TickResolution)
+        if (lhs.resolution == TickResolution{} || rhs.resolution == TickResolution{})
             DAQ_THROW_EXCEPTION(InvalidParameterException, "DomainInfo::resolution must be assigned.");
 
-        if (!(lhs.epoch == rhs.epoch))
-            return false;
-        if (!(lhs.resolution.getNumerator() == rhs.resolution.getNumerator()))
-            return false;
-        if (!(lhs.resolution.getDenominator() == rhs.resolution.getDenominator()))
-            return false;
-        return true;
+        return lhs.epoch == rhs.epoch && lhs.resolution == rhs.resolution;
     }
 
     friend bool operator!=(const DomainInfo& lhs, const DomainInfo& rhs)
@@ -64,8 +95,8 @@ struct DomainInfo
 inline std::ostream& operator<<(std::ostream& os, const DomainInfo& info)
 {
     os << "DomainInfo{"
-       << "epoch=" << info.epoch.time_since_epoch().count() << ", resolution=" << info.resolution.getNumerator() << "/"
-       << info.resolution.getDenominator() << "}";
+       << "epoch=" << info.epoch.time_since_epoch().count() << ", resolution=" << info.resolution.num << "/"
+       << info.resolution.den << "}";
 
     return os;
 }
@@ -76,12 +107,12 @@ namespace domain_conversion
     /// zero (the sub-tick remainder of an epoch is not representable on the tick grid).
     inline Int epochOffsetTicks(const std::chrono::system_clock::time_point& from,
                                 const std::chrono::system_clock::time_point& to,
-                                const RatioPtr& resolution)
+                                const TickResolution& resolution)
     {
         using SysPeriod = std::chrono::system_clock::period;
         const Int epochDiff = from.time_since_epoch().count() - to.time_since_epoch().count();
-        const Int scaleNumerator = SysPeriod::num * resolution.getDenominator();
-        const Int scaleDenominator = SysPeriod::den * resolution.getNumerator();
+        const Int scaleNumerator = SysPeriod::num * resolution.den;
+        const Int scaleDenominator = SysPeriod::den * resolution.num;
         return epochDiff * scaleNumerator / scaleDenominator;
     }
 
@@ -92,10 +123,10 @@ namespace domain_conversion
         Int denominator;
     };
 
-    inline TickMultiplier tickMultiplier(const RatioPtr& sourceResolution, const RatioPtr& targetResolution)
+    inline TickMultiplier tickMultiplier(const TickResolution& sourceResolution, const TickResolution& targetResolution)
     {
-        return {sourceResolution.getNumerator() * targetResolution.getDenominator(),
-                sourceResolution.getDenominator() * targetResolution.getNumerator()};
+        return {sourceResolution.num * targetResolution.den,
+                sourceResolution.den * targetResolution.num};
     }
 }  // namespace domain_conversion
 
@@ -231,8 +262,8 @@ public:
 
     void roundUpOnDomainInterval(const RatioPtr& interval) override
     {
-        auto num = domain.resolution.getNumerator() * interval.getDenominator();
-        auto den = domain.resolution.getDenominator() * interval.getNumerator();
+        auto num = domain.resolution.num * interval.getDenominator();
+        auto den = domain.resolution.den * interval.getNumerator();
 
         const Int gcd = std::gcd(num, den);
         num /= gcd;
@@ -251,7 +282,7 @@ public:
 
     std::chrono::system_clock::time_point toAbsoluteTime() const override
     {
-        return reader::toSysTime(value, domain.epoch, domain.resolution);
+        return reader::toSysTime(value, domain.epoch, domain.resolution.num, domain.resolution.den);
     }
 
     Type getValue() const
@@ -265,7 +296,7 @@ public:
         using namespace reader;
 
         std::stringstream ss;
-        ss << toSysTime(value, domain.epoch, domain.resolution);
+        ss << toSysTime(value, domain.epoch, domain.resolution.num, domain.resolution.den);
 
         return ss.str();
     }
@@ -352,7 +383,7 @@ public:
 
     std::chrono::system_clock::time_point toAbsoluteTime() const override
     {
-        return reader::toSysTime(value.start, domain.epoch, domain.resolution);
+        return reader::toSysTime(value.start, domain.epoch, domain.resolution.num, domain.resolution.den);
     }
 
     RangeType64 getValue() const
@@ -366,7 +397,7 @@ public:
         using namespace reader;
 
         std::stringstream ss;
-        ss << toSysTime(value.start, domain.epoch, domain.resolution);
+        ss << toSysTime(value.start, domain.epoch, domain.resolution.num, domain.resolution.den);
 
         return ss.str();
     }
