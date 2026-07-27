@@ -710,7 +710,7 @@ bool SumReaderFbImpl::ensureRateModelLocked()
         return false;
 
     const auto commonRule = commonDomainDescriptor.getRule();
-    const NumberPtr ruleStart = commonRule.assigned() ? commonRule.getParameters().get("start") : NumberPtr(0);
+    const NumberPtr ruleStart = commonRule.assigned() ? commonRule.getParameters().get("start").asPtr<INumber>() : NumberPtr(0);
     sumDomainDataDescriptor =
         DataDescriptorBuilderCopy(commonDomainDescriptor)
             .setRule(LinearDataRule(static_cast<Int>(ticksPerCommonSample * static_cast<std::int64_t>(blockLcm)), ruleStart))
