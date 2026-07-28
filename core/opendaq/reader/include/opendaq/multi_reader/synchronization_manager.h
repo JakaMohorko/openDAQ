@@ -135,7 +135,7 @@ public:
      * the coarsest resolution every input resolution is an integer multiple of
      * (1/10 and 1/15 yield 1/30). nullopt on overflow or invalid ratio.
      */
-    static std::optional<RatioPtr> rationalGcd(const std::vector<RatioPtr>& ratios);
+    static std::optional<TickResolution> rationalGcd(const std::vector<TickResolution>& ratios);
 
     /**
      * @brief Cross-input checks and (re)construction of the CommonModel.
@@ -210,9 +210,10 @@ private:
     std::optional<SyncResult> checkSynchronizationDistance(const std::vector<std::unique_ptr<DomainValue>>& firstSamples,
                                                            const std::vector<SizeT>& slotIndices) const;
 
-    /// synchronize() step 3: choose the tick every input should start on. The candidate is
-    /// moved out of @p firstSamples; the search itself is documented at the definition.
-    CandidatePick pickStartCandidate(std::vector<std::unique_ptr<DomainValue>>& firstSamples,
+    /// synchronize() step 3: choose the tick every input should start on. The candidate is an
+    /// independent copy, so @p firstSamples stays intact on every path (including the failure
+    /// ones); the search itself is documented at the definition.
+    CandidatePick pickStartCandidate(const std::vector<std::unique_ptr<DomainValue>>& firstSamples,
                                      const std::vector<SizeT>& slotIndices) const;
 
     /// synchronize() step 4: advance every input's cursor to the candidate and classify the

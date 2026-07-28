@@ -134,24 +134,26 @@ TEST_F(SyncManagerTest, CheckedArithmetic)
 
 TEST_F(SyncManagerTest, RationalGcd)
 {
-    const auto gcd1 = SynchronizationManager::rationalGcd({Ratio(1, 10), Ratio(1, 15)});
+    const auto gcd1 = SynchronizationManager::rationalGcd({TickResolution{1, 10}, TickResolution{1, 15}});
     ASSERT_TRUE(gcd1.has_value());
-    ASSERT_EQ((*gcd1).getNumerator(), 1);
-    ASSERT_EQ((*gcd1).getDenominator(), 30);
+    ASSERT_EQ(gcd1->num, 1);
+    ASSERT_EQ(gcd1->den, 30);
 
-    const auto gcd2 = SynchronizationManager::rationalGcd({Ratio(1, 1000), Ratio(1, 1000)});
+    const auto gcd2 = SynchronizationManager::rationalGcd({TickResolution{1, 1000}, TickResolution{1, 1000}});
     ASSERT_TRUE(gcd2.has_value());
-    ASSERT_EQ((*gcd2).getNumerator(), 1);
-    ASSERT_EQ((*gcd2).getDenominator(), 1000);
+    ASSERT_EQ(gcd2->num, 1);
+    ASSERT_EQ(gcd2->den, 1000);
 
     // Unreduced input: 2/10 reduces to 1/5, gcd(1/5, 1/15) = 1/15
-    const auto gcd3 = SynchronizationManager::rationalGcd({Ratio(2, 10), Ratio(1, 15)});
+    const auto gcd3 = SynchronizationManager::rationalGcd({TickResolution{2, 10}, TickResolution{1, 15}});
     ASSERT_TRUE(gcd3.has_value());
-    ASSERT_EQ((*gcd3).getNumerator(), 1);
-    ASSERT_EQ((*gcd3).getDenominator(), 15);
+    ASSERT_EQ(gcd3->num, 1);
+    ASSERT_EQ(gcd3->den, 15);
 
     ASSERT_EQ(SynchronizationManager::rationalGcd({}), std::nullopt);
-    ASSERT_EQ(SynchronizationManager::rationalGcd({Ratio(0, 10)}), std::nullopt);
+    ASSERT_EQ(SynchronizationManager::rationalGcd({TickResolution{0, 10}}), std::nullopt);
+    // Default-constructed {0, 0}: a resolution that was never set must not be treated as valid
+    ASSERT_EQ(SynchronizationManager::rationalGcd({TickResolution{}}), std::nullopt);
 }
 
 // --- Common model construction (spec section 4) ---

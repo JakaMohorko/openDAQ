@@ -93,7 +93,7 @@ std::optional<std::int64_t> SynchronizationManager::checkedLcm(std::int64_t a, s
     return checkedMultiply(a / gcd, b);
 }
 
-std::optional<RatioPtr> SynchronizationManager::rationalGcd(const std::vector<RatioPtr>& ratios)
+std::optional<TickResolution> SynchronizationManager::rationalGcd(const std::vector<TickResolution>& ratios)
 {
     if (ratios.empty())
         return std::nullopt;
@@ -104,11 +104,8 @@ std::optional<RatioPtr> SynchronizationManager::rationalGcd(const std::vector<Ra
 
     for (const auto& ratio : ratios)
     {
-        if (!ratio.assigned())
-            return std::nullopt;
-
-        std::int64_t num = ratio.getNumerator();
-        std::int64_t den = ratio.getDenominator();
+        std::int64_t num = ratio.num;
+        std::int64_t den = ratio.den;
         if (num <= 0 || den <= 0)
             return std::nullopt;
 
@@ -124,7 +121,7 @@ std::optional<RatioPtr> SynchronizationManager::rationalGcd(const std::vector<Ra
         denominator = *lcm;
     }
 
-    return Ratio(numerator, denominator);
+    return TickResolution{numerator, denominator};
 }
 
 SyncSetupResult SynchronizationManager::buildCommonModel(const std::vector<QueueReader*>& inputs,
@@ -236,15 +233,15 @@ SyncSetupResult SynchronizationManager::buildCommonModelImpl(const std::vector<Q
     // Common domain: earliest epoch; rational GCD of all resolutions plus the output sample
     // period, so one output sample is always a whole number of common ticks
     auto commonEpoch = inputs[0]->getDomainInfo().epoch;
-    std::vector<RatioPtr> resolutions;
+    std::vector<TickResolution> resolutions;
     resolutions.reserve(count + 1);
     for (SizeT i = 0; i < count; ++i)
     {
         const auto& domainInfo = inputs[i]->getDomainInfo();
         commonEpoch = std::min(commonEpoch, domainInfo.epoch);
-        resolutions.push_back(Ratio(domainInfo.resolution.num, domainInfo.resolution.den));
+        resolutions.push_back(domainInfo.resolution);
     }
-    resolutions.push_back(Ratio(1, commonRate));
+    resolutions.push_back(TickResolution{1, commonRate});
 
     const auto commonResolution = rationalGcd(resolutions);
     if (!commonResolution)
@@ -321,7 +318,7 @@ std::optional<SyncResult> SynchronizationManager::checkSynchronizationDistance(
 }
 
 SynchronizationManager::CandidatePick SynchronizationManager::pickStartCandidate(
-    std::vector<std::unique_ptr<DomainValue>>& firstSamples, const std::vector<SizeT>& slotIndices) const
+    const std::vector<std::unique_ptr<DomainValue>>& firstSamples, const std::vector<SizeT>& slotIndices) const
 {
     const SizeT count = firstSamples.size();
 
@@ -353,7 +350,13 @@ SynchronizationManager::CandidatePick SynchronizationManager::pickStartCandidate
         }
     }
 
-    auto candidate = std::move(firstSamples[latestIndex]);
+    // An independent copy, not the element itself: the candidate is mutated below
+    // (roundUpOnDomainInterval / shiftTicks) and is destroyed outright on the failure paths, so
+    // owning it separately keeps firstSamples valid for the caller and removes the ordering
+    // hazard that a stolen element would impose on anything added after this point. The elements
+    // are already in the common domain (collectFirstSamples converted them), so this conversion
+    // is the identity and costs one small allocation on a path that runs once per sync round.
+    auto candidate = firstSamples[latestIndex]->toDomain(model.commonDomain);
     if (!ticksKnown)
     {
         // Fallback: tick values unavailable (unusual domain read type) or a full-unit start
