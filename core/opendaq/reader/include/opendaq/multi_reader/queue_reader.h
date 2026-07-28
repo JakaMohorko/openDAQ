@@ -191,12 +191,6 @@ public:
     void domainChangeHandled();
     void updateConnection();
 
-    /**
-     * @brief Rebind to the port's current connection only if it differs from the cached one.
-     * @return true if the connection changed and the queue was re-drained.
-     */
-    bool refreshConnection();
-    
     void setSampleRateDivider(SizeT divider);
     SizeT getSampleRateDivider() const;
 

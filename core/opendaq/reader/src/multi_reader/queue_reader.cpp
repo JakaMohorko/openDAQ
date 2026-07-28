@@ -509,22 +509,6 @@ void QueueReader::updateConnection()
     drainConnection();
 }
 
-bool QueueReader::refreshConnection()
-{
-    // The port can hold a connection the owner was never notified about: a port connected before
-    // its listener was installed gets no connected() callback at all, and InputPort::setListener
-    // front-loads a descriptor event through Connection::enqueueLastDescriptor without notifying.
-    // Polling the port is therefore the only way to discover such a connection.
-    auto current = port.getConnection();
-    if (current == connection)
-        return false;
-
-    connection = std::move(current);
-    refreshConnectionInternal();
-    drainConnection();
-    return true;
-}
-
 void QueueReader::setSampleRateDivider(SizeT divider)
 {
     if (divider == 0)

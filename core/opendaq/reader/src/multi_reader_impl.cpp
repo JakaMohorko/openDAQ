@@ -148,15 +148,18 @@ MultiReaderImpl::MultiReaderImpl(MultiReaderImpl* old, SampleType valueReadType,
 
         createSlots(ports);
 
-        std::lock_guard lock(mutex);
-        const auto ownerPass = notificationCoordinator->beginOwnerPass();
-        for (SizeT i = 0; i < usedFlags.size() && i < slots.size(); ++i)
         {
-            applySlotUsedLocked(slots[i], usedFlags[i]);
-            slots[i]->getQueueReader().seedDescriptors(oldValueDescriptors[i], oldDomainDescriptors[i]);
+            std::lock_guard lock(mutex);
+            const auto ownerPass = notificationCoordinator->beginOwnerPass();
+            for (SizeT i = 0; i < usedFlags.size() && i < slots.size(); ++i)
+            {
+                applySlotUsedLocked(slots[i], usedFlags[i]);
+                slots[i]->getQueueReader().seedDescriptors(oldValueDescriptors[i], oldDomainDescriptors[i]);
+            }
+            applyDataLossTimeoutLocked();
+            evaluateStateLocked();
         }
-        applyDataLossTimeoutLocked();
-        evaluateStateLocked();
+        replaySlotCallbacks();
     }
     catch (...)
     {
@@ -217,15 +220,18 @@ MultiReaderImpl::MultiReaderImpl(const MultiReaderBuilderPtr& builder)
         auto ports = createOrAdoptPorts(sourceComponents);
         createSlots(ports);
 
-        std::lock_guard lock(mutex);
-        const auto ownerPass = notificationCoordinator->beginOwnerPass();
-        if (mainInputId.assigned() && findSlotByIdLocked(mainInputId) == notFound)
-            DAQ_THROW_EXCEPTION(NotFoundException, "The selected main input does not match any source component");
-        // Adopted ports may arrive deactivated (a previous owner parked them via
-        // setInputUsed(false)); their active state belongs to this reader now
-        setPortsActiveLocked(isActive);
-        applyDataLossTimeoutLocked();
-        evaluateStateLocked();
+        {
+            std::lock_guard lock(mutex);
+            const auto ownerPass = notificationCoordinator->beginOwnerPass();
+            if (mainInputId.assigned() && findSlotByIdLocked(mainInputId) == notFound)
+                DAQ_THROW_EXCEPTION(NotFoundException, "The selected main input does not match any source component");
+            // Adopted ports may arrive deactivated (a previous owner parked them via
+            // setInputUsed(false)); their active state belongs to this reader now
+            setPortsActiveLocked(isActive);
+            applyDataLossTimeoutLocked();
+            evaluateStateLocked();
+        }
+        replaySlotCallbacks();
     }
     catch (...)
     {
@@ -353,14 +359,16 @@ void MultiReaderImpl::createSlots(const ListPtr<IInputPortConfig>& inputPorts)
         auto* slot = static_cast<Input*>(slotObject.getObject());
         // Slots default to used; the gate's used count follows the slot set
         notificationCoordinator->gate()->adjustUsed(1);
-        // Installing the listener on an already-connected port enqueues a SECOND initial descriptor
-        // event: SignalImpl::listenerConnected enqueued one at connect time (which made
-        // ConnectionImpl::onPacketEnqueued cache the descriptors), and setListener then calls
-        // Connection::enqueueLastDescriptor, which front-loads those cached descriptors again.
-        // Both carry identical descriptors and consuming a descriptor event is idempotent, so this
-        // is harmless - but the reader does observe two leading events per input at construction,
-        // which matters to anything that counts events rather than acting on them.
-        port.setListener(slotObject);
+        // Listening must happen here, before any evaluation drains the connection: setListener
+        // front-loads the connection's cached descriptor, which has to sit AHEAD of data already
+        // queued behind it (see Input::listen). Note this also means an already-connected port
+        // ends up with a SECOND initial descriptor event - SignalImpl::listenerConnected enqueued
+        // one at connect time, which made ConnectionImpl::onPacketEnqueued cache the descriptors,
+        // and enqueueLastDescriptor now front-loads those same descriptors again. Both are
+        // identical and consuming a descriptor event is idempotent, so it is harmless, but the
+        // reader does observe two leading events per input - which matters to anything counting
+        // events rather than acting on them.
+        slot->listen(slotObject);
 
         slotObjects.push_back(std::move(slotObject));
         slots.push_back(slot);
@@ -368,6 +376,14 @@ void MultiReaderImpl::createSlots(const ListPtr<IInputPortConfig>& inputPorts)
     }
 
     dataLossMonitor->resize(slots.size());
+}
+
+void MultiReaderImpl::replaySlotCallbacks(SizeT firstSlot)
+{
+    // Must run WITHOUT the state lock: the replayed connected()/packetReceived() callbacks re-enter
+    // this reader through slotConnected/slotPacketReceived, which take the lock themselves.
+    for (SizeT i = firstSlot; i < slots.size(); ++i)
+        slots[i]->replayMissedPortCallbacks();
 }
 
 namespace
@@ -558,7 +574,7 @@ void MultiReaderImpl::drainUnusedSlotsLocked()
         if (slot->isUsed())
             continue;
 
-        slot->syncConnection();
+        slot->adoptQueuedPackets();
         if (!slot->isConnected())
         {
             slot->publishGateBasis(0, false);
@@ -624,7 +640,7 @@ void MultiReaderImpl::refreshDataPlaneLocked(bool escalateOnEvent)
             // Only events can arrive on an unused input's inactive port
             if (packetsArrived)
             {
-                slot->syncConnection();
+                slot->adoptQueuedPackets();
                 if (slot->isConnected())
                 {
                     auto& reader = slot->getQueueReader();
@@ -859,10 +875,10 @@ void MultiReaderImpl::evaluateStateLadderLocked()
         for (SizeT position = 0; position < inactiveReaders.size(); ++position)
         {
             const auto slotIndex = inactiveSlotIndices[position];
-            // Clear-then-drain (see step 3): clear before syncConnection so a concurrent
+            // Clear-then-drain (see step 3): clear before adopting so a concurrent
             // lock-free arrival re-arms the flag instead of being stranded.
             slots[slotIndex]->clearPacketPending();
-            slots[slotIndex]->syncConnection();
+            slots[slotIndex]->adoptQueuedPackets();
             if (!slots[slotIndex]->isConnected())
             {
                 setSlotEventLocked(slots[slotIndex], false);
@@ -913,32 +929,23 @@ void MultiReaderImpl::evaluateStateLadderLocked()
         mainPosition = static_cast<SizeT>(position - slotIndices.begin());
     }
 
-    // 3. Connections - resynced from the ports themselves, because the connection every reader
-    // starts with is established with NO notification at all. createOrAdoptPorts connects the
-    // signal to a port that has no listener yet, so InputPort::connectInternal skips connected()
-    // (the listener is null) and the descriptor enqueue that follows fires no packetReceived
-    // (listenerRef is unassigned); createSlots installs the listener only afterwards, and
-    // InputPort::setListener front-loads a descriptor via Connection::enqueueLastDescriptor -
-    // which pushes onto the queue WITHOUT notifying. So a freshly built slot can own a connected
-    // port holding queued events, having received neither callback. The port is the source of
-    // truth, not the notifications.
-    //
-    // (Notification ORDER is not the problem: connectInternal calls connected() strictly before
-    // listenerConnected() enqueues the initial descriptor, so on the connect path packetReceived
-    // can never precede connected(). Per-thread order is further guaranteed by the reader's
-    // PacketReadyNotification::SameThread requirement, which keeps packetReceived synchronous
-    // inside the producer's enqueue rather than hopping through the scheduler.)
+    // 3. Adopt what the producers enqueued. Connectivity itself is NOT polled here: every
+    // connect/disconnect/reconnect reaches the slot as a port callback, and Input::attach replays
+    // the two callbacks the port skips for a port that was already connected when the listener was
+    // installed (adoption, and the reader's own createOrAdoptPorts connect). So isConnected() is
+    // authoritative; only the queue contents need collecting, because the lock-free producer path
+    // cannot hand them over itself.
     {
         std::vector<SizeT> unconnected;
         for (const auto index : slotIndices)
         {
-            // Clear the arrival flag BEFORE syncConnection drains (clear-then-drain). The
-            // producer path is lock-free, so a packet enqueued after this clear re-arms the flag
-            // and is caught by the next pass; clearing AFTER the drain would instead wipe the
-            // flag of a packet enqueued in the drain->clear window without ever adopting it,
-            // stranding it on the connection (the availability-undercount race).
+            // Clear the arrival flag BEFORE draining (clear-then-drain). The producer path is
+            // lock-free, so a packet enqueued after this clear re-arms the flag and is caught by
+            // the next pass; clearing AFTER the drain would instead wipe the flag of a packet
+            // enqueued in the drain->clear window without ever adopting it, stranding it on the
+            // connection (the availability-undercount race).
             slots[index]->clearPacketPending();
-            slots[index]->syncConnection();
+            slots[index]->adoptQueuedPackets();
             if (!slots[index]->isConnected())
                 unconnected.push_back(index);
         }
@@ -1214,7 +1221,7 @@ void MultiReaderImpl::updateCallbackStateLocked()
         {
             // Only events can arrive on an unused input's inactive port (the recovery signal a
             // consumer answers with setInputUsed(id, true)).
-            slot->syncConnection();
+            slot->adoptQueuedPackets();
             if (slot->isConnected())
             {
                 auto& reader = slot->getQueueReader();
@@ -1929,7 +1936,7 @@ ErrCode MultiReaderImpl::getEmpty(Bool* empty)
             continue;
 
         // Queues refresh only at explicit points
-        slot->syncConnection();
+        slot->adoptQueuedPackets();
         if (!slot->isConnected())
         {
             allHaveData = false;
@@ -2150,15 +2157,22 @@ ErrCode MultiReaderImpl::addInput(IComponent* input)
         ListPtr<IComponent> list = List<IComponent>();
         list.pushBack(input);
 
-        std::lock_guard lock(mutex);
-        const auto ownerPass = notificationCoordinator->beginOwnerPass();
-        normalizeSources(list);
+        SizeT firstNewSlot = 0;
+        {
+            std::lock_guard lock(mutex);
+            const auto ownerPass = notificationCoordinator->beginOwnerPass();
+            normalizeSources(list);
 
-        auto ports = createOrAdoptPorts(list);
-        createSlots(ports);
+            auto ports = createOrAdoptPorts(list);
+            firstNewSlot = slots.size();
+            createSlots(ports);
 
-        invalidateModelLocked();
-        evaluateStateLocked();
+            invalidateModelLocked();
+            evaluateStateLocked();
+        }
+        // Unlocked: the new slots install themselves as listeners and replay the port's missing
+        // callbacks, which re-enter this reader through slotConnected/slotPacketReceived.
+        replaySlotCallbacks(firstNewSlot);
     }
     catch (...)
     {

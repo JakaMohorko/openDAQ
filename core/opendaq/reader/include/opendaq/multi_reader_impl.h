@@ -171,6 +171,15 @@ private:
     void normalizeSources(const ListPtr<IComponent>& list);
     ListPtr<IInputPortConfig> createOrAdoptPorts(const ListPtr<IComponent>& list) const;
     void createSlots(const ListPtr<IInputPortConfig>& inputPorts);
+
+    /**
+     * @brief Completes slot setup by replaying the port callbacks that were never delivered for an
+     * already-connected port (Input::replayMissedPortCallbacks). createSlots already installed the
+     * listeners; this is the part that must happen afterwards and WITHOUT the state lock, because
+     * the replayed callbacks come back in through slotConnected/slotPacketReceived, which take it.
+     * @param firstSlot index of the first slot to replay; addInput replays only the new ones.
+     */
+    void replaySlotCallbacks(SizeT firstSlot = 0);
     void applyConfigToSyncManager();
 
     // --- State machine (state mutex held) ---

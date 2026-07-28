@@ -110,6 +110,41 @@ public:
     ErrCode INTERFACE_FUNC disconnected(IInputPort* inputPort) override;
     ErrCode INTERFACE_FUNC packetReceived(IInputPort* inputPort) override;
 
+    /**
+     * @brief Take over the port as its listener. Must run before anything drains the connection:
+     * InputPort::setListener front-loads the connection's cached descriptor through
+     * Connection::enqueueLastDescriptor, and that descriptor has to end up AHEAD of any data
+     * already queued behind it. Draining first would invert the two.
+     *
+     * The slot cannot do this in its own constructor (the port would reference an interface of an
+     * object that is not finished yet), so the owner calls it right after construction.
+     *
+     * @param self the owner's strong reference to this slot, installed as the port's (weak)
+     *             listener reference.
+     */
+    void listen(const ObjectPtr<IInputPortNotifications>& self);
+
+    /**
+     * @brief Replay the port callbacks that were never delivered for an already-connected port,
+     * completing the port's notification history.
+     *
+     * InputPort delivers connected() only from connectInternal, and only to a listener that was
+     * already installed. A port connected earlier therefore produces no callback at all - which is
+     * every adopted port, and every port the reader connected itself before the slot existed. On
+     * top of that, listen()'s setListener front-loads a descriptor event without notifying anyone.
+     * Replaying both here is what allows the rest of the reader to assume that every connection it
+     * knows about arrived through the normal notification path, and therefore to stop polling the
+     * port for connectivity (see adoptQueuedPackets).
+     *
+     * Call WITHOUT the owner's state lock held: the replayed callbacks re-enter the owner through
+     * slotConnected/slotPacketReceived, which take that lock themselves.
+     *
+     * Replaying is safe even if the port delivers the real thing concurrently: connected() is
+     * idempotent (rebind + invalidate + re-evaluate) and packetReceived() only sets flags and
+     * requests an evaluation, so a duplicate costs at most one spurious evaluation.
+     */
+    void replayMissedPortCallbacks();
+
     // --- Owner-side API (owner state lock held) ---
 
     SizeT getIndex() const;
@@ -132,14 +167,16 @@ public:
     void rebindConnection();
 
     /**
-     * @brief Resync connected state and the QueueReader's connection from the port itself.
-     * A port connected before its listener was installed produces no connected() callback, and
-     * InputPort::setListener front-loads a descriptor event (Connection::enqueueLastDescriptor)
-     * without notifying - so a slot can start out connected with queued events and no callback
-     * ever delivered. The port is the source of truth, not the notifications.
-     * @return true if the QueueReader was rebound to a different connection.
+     * @brief Adopt whatever the producers enqueued on the connection since the last evaluation.
+     *
+     * This is the only refresh the evaluation points need. It deliberately does NOT re-read the
+     * port's connection: connect/disconnect/reconnect all arrive as callbacks (attach() replays
+     * the ones the port skipped for a pre-connected port), and the rebind that follows a connect
+     * happens in slotConnected under the owner's lock. Connectivity is therefore notification-
+     * driven; only the queue contents are polled, because the lock-free producer path cannot
+     * hand them over itself.
      */
-    bool syncConnection();
+    void adoptQueuedPackets();
 
     /**
      * @brief Used flag only - excluding the slot from the gate, compatibility, synchronization and

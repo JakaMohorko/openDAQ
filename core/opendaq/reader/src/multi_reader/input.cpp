@@ -66,6 +66,27 @@ ErrCode Input::disconnected(IInputPort* /*inputPort*/)
     });
 }
 
+void Input::listen(const ObjectPtr<IInputPortNotifications>& self)
+{
+    // The owner passes its own strong reference rather than the slot deriving one from `this`:
+    // the port stores only a weak listener reference, so the owner's ref is what keeps the slot
+    // alive, and it is the owner that must be able to end the slot's lifetime (removeInput).
+    port.setListener(self);
+}
+
+void Input::replayMissedPortCallbacks()
+{
+    // Nothing to replay if no signal is connected yet: a later connect() delivers the real thing.
+    if (!port.getConnection().assigned())
+        return;
+
+    checkErrorInfo(connected(port));
+
+    // The connection can already hold packets - at minimum the descriptor event that listen()'s
+    // setListener front-loaded without notifying.
+    checkErrorInfo(packetReceived(port));
+}
+
 ErrCode Input::packetReceived(IInputPort* /*inputPort*/)
 {
     return daqTry([&]
@@ -187,15 +208,11 @@ void Input::rebindConnection()
     queueReader.updateConnection();
 }
 
-bool Input::syncConnection()
+void Input::adoptQueuedPackets()
 {
-    connectedState = port.getConnection().assigned();
-    const bool rebound = queueReader.refreshConnection();
-    // The owner's evaluation points are the only places queues are refreshed;
-    // adopt whatever the producers enqueued since the last evaluation.
-    if (!rebound && connectedState)
+    // The owner's evaluation points are the only places queues are refreshed.
+    if (connectedState.load())
         queueReader.drain();
-    return rebound;
 }
 
 bool Input::isUsed() const
