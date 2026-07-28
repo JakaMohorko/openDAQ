@@ -353,6 +353,13 @@ void MultiReaderImpl::createSlots(const ListPtr<IInputPortConfig>& inputPorts)
         auto* slot = static_cast<Input*>(slotObject.getObject());
         // Slots default to used; the gate's used count follows the slot set
         notificationCoordinator->gate()->adjustUsed(1);
+        // Installing the listener on an already-connected port enqueues a SECOND initial descriptor
+        // event: SignalImpl::listenerConnected enqueued one at connect time (which made
+        // ConnectionImpl::onPacketEnqueued cache the descriptors), and setListener then calls
+        // Connection::enqueueLastDescriptor, which front-loads those cached descriptors again.
+        // Both carry identical descriptors and consuming a descriptor event is idempotent, so this
+        // is harmless - but the reader does observe two leading events per input at construction,
+        // which matters to anything that counts events rather than acting on them.
         port.setListener(slotObject);
 
         slotObjects.push_back(std::move(slotObject));
@@ -906,9 +913,21 @@ void MultiReaderImpl::evaluateStateLadderLocked()
         mainPosition = static_cast<SizeT>(position - slotIndices.begin());
     }
 
-    // 3. Connections - resynced from the ports themselves: initial event packets arrive
-    // (and packetReceived fires) while the connection is still being constructed, before
-    // the connected() notification reaches the slot
+    // 3. Connections - resynced from the ports themselves, because the connection every reader
+    // starts with is established with NO notification at all. createOrAdoptPorts connects the
+    // signal to a port that has no listener yet, so InputPort::connectInternal skips connected()
+    // (the listener is null) and the descriptor enqueue that follows fires no packetReceived
+    // (listenerRef is unassigned); createSlots installs the listener only afterwards, and
+    // InputPort::setListener front-loads a descriptor via Connection::enqueueLastDescriptor -
+    // which pushes onto the queue WITHOUT notifying. So a freshly built slot can own a connected
+    // port holding queued events, having received neither callback. The port is the source of
+    // truth, not the notifications.
+    //
+    // (Notification ORDER is not the problem: connectInternal calls connected() strictly before
+    // listenerConnected() enqueues the initial descriptor, so on the connect path packetReceived
+    // can never precede connected(). Per-thread order is further guaranteed by the reader's
+    // PacketReadyNotification::SameThread requirement, which keeps packetReceived synchronous
+    // inside the producer's enqueue rather than hopping through the scheduler.)
     {
         std::vector<SizeT> unconnected;
         for (const auto index : slotIndices)

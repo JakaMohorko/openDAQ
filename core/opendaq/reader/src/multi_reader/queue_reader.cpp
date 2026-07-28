@@ -511,9 +511,10 @@ void QueueReader::updateConnection()
 
 bool QueueReader::refreshConnection()
 {
-    // The port can hold a connection whose notifications have not reached the owner yet -
-    // initial event packets are enqueued while the connection is still being constructed,
-    // before the connected() notification fires.
+    // The port can hold a connection the owner was never notified about: a port connected before
+    // its listener was installed gets no connected() callback at all, and InputPort::setListener
+    // front-loads a descriptor event through Connection::enqueueLastDescriptor without notifying.
+    // Polling the port is therefore the only way to discover such a connection.
     auto current = port.getConnection();
     if (current == connection)
         return false;

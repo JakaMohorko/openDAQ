@@ -133,8 +133,10 @@ public:
 
     /**
      * @brief Resync connected state and the QueueReader's connection from the port itself.
-     * Initial event packets are enqueued while the connection is still being constructed, before
-     * the connected() notification fires - the port is the source of truth, not the notifications.
+     * A port connected before its listener was installed produces no connected() callback, and
+     * InputPort::setListener front-loads a descriptor event (Connection::enqueueLastDescriptor)
+     * without notifying - so a slot can start out connected with queued events and no callback
+     * ever delivered. The port is the source of truth, not the notifications.
      * @return true if the QueueReader was rebound to a different connection.
      */
     bool syncConnection();
