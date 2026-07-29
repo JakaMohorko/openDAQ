@@ -2251,6 +2251,13 @@ ErrCode MultiReaderImpl::setInputUsed(IString* id, Bool isUsed)
     else
     {
         slot->setPortActive(false);
+        // Exclusion drops what the input has already adopted, at the moment of exclusion rather
+        // than on the way back in: the data is unreadable either way (re-enabling restarts from the
+        // live stream), and keeping it would bury the events that ARE the input's only remaining
+        // job - the per-input Event state is the recovery signal a consumer answers with
+        // setInputUsed(id, true), and it is derived from leading events only. dropForInactive keeps
+        // descriptor changes pending, so the type state stays coherent.
+        slot->getQueueReader().dropForInactive();
     }
 
     invalidateModelLocked();

@@ -17,6 +17,7 @@ set(TEST_SOURCES test_factories.cpp
                  test_typed_reading.cpp
                  test_queue_reader.cpp
                  test_multi_reader_input.cpp
+                 test_multi_reader_state_transitions.cpp
                  test_synchronization_manager.cpp
                  test_callback_gate.cpp
                  test_notification_coordinator.cpp

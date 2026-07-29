@@ -504,9 +504,52 @@ const FunctionPtr& QueueReader::getDomainTransformFunction() const
 
 void QueueReader::updateConnection()
 {
-    connection = port.getConnection();
+    const auto newConnection = port.getConnection();
+    // Everything adopted belongs to ONE connection, so a change of connection identity discards it.
+    // Identity, not "is it null", because a port can be reconnected to a different signal without
+    // ever reporting a disconnect: InputPortImpl::connectInternal replaces the connection with
+    // notifyListener = false, so the slot sees only connected(). Comparing the objects covers all
+    // three transitions - connect, disconnect and replace - in one place, and leaves the first
+    // rebind of an already-connected port (construction, adoption, setInputUsed) untouched: same
+    // connection, nothing to discard, so the descriptor setListener front-loaded survives.
+    if (newConnection.getObject() != connection.getObject())
+        dropForConnectionChange();
+
+    connection = newConnection;
     refreshConnectionInternal();
     drainConnection();
+}
+
+void QueueReader::dropForConnectionChange()
+{
+    packets.clear();
+    events.clear();
+    readingPosition = 0;
+    eventPacketAdopted = false;
+    invalidateAvailable();
+
+    // The descriptors and everything derived from them described the old signal. The new
+    // connection's own descriptor event re-establishes them, and until it is consumed the owner
+    // truthfully reports the input as waiting for descriptors.
+    typeCtx.valueLayout = {};
+    typeCtx.domainLayout = {};
+    typeCtx.domainInfo = {};
+    typeCtx.valueIn = SampleType::Undefined;
+    typeCtx.domainIn = SampleType::Undefined;
+    typeCtx.valueReadFn = nullptr;
+    typeCtx.domainReadFn = nullptr;
+    sampleRate = -1;
+    packetDelta = 0;
+    domainChanged = false;
+
+    // The read types stay: a dynamically resolved value type (SampleType::Undefined configured) is
+    // fixed for the reader's lifetime, so a new signal is converted to it or reported incompatible.
+    //
+    // Recompute the issue flags from the now-absent descriptors rather than clearing them: the two
+    // "descriptor null" issues must be set, and the parse functions return early on a null
+    // descriptor without touching the rest, so the slate has to be clean first.
+    issues = EnumFlags<QueueReaderIssue>{};
+    parseCachedDescriptors();
 }
 
 void QueueReader::setSampleRateDivider(SizeT divider)

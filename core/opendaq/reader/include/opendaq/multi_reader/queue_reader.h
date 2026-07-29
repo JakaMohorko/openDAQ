@@ -190,6 +190,13 @@ public:
     const FunctionPtr& getDomainTransformFunction() const;
 
     void domainChangeHandled();
+
+    /**
+     * @brief Re-query the port's connection and adopt whatever it already holds. A change of
+     * connection identity discards everything adopted from the previous one - queued packets,
+     * pending events and the cached descriptors - because a port can be reconnected to a different
+     * signal (see the definition).
+     */
     void updateConnection();
 
     void setSampleRateDivider(SizeT divider);
@@ -222,6 +229,9 @@ public:
     
 private:
     void drainConnection();
+    /// Forget the previous connection's signal entirely: adopted packets, pending events, cached
+    /// descriptors and the state derived from them. Only updateConnection calls this.
+    void dropForConnectionChange();
     void adoptPackets();
     /// Re-query the IConnectionInternal view after `connection` changes (see connectionInternal).
     void refreshConnectionInternal();

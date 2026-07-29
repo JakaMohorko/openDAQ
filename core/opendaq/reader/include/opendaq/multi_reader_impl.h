@@ -132,6 +132,24 @@ public:
         dataLossMonitor->setClockForTest(std::move(clock));
     }
 
+    struct StateSnapshotForTest
+    {
+        ReaderState state;
+        std::string message;
+        std::vector<SizeT> affectedInputs;
+    };
+
+    /// Test hook: the internal state-machine verdict. The public ReadStatus is a lossy projection
+    /// of it (four substates collapse into Preparing alone), so the state-machine characterization
+    /// tests assert on this instead - they exist to prove a refactor computes the same substate for
+    /// the same observable inputs, which the projection cannot show. Inline for the same reason as
+    /// setDataLossClockForTest: the implementation is not exported from the library.
+    StateSnapshotForTest getStateForTest()
+    {
+        std::lock_guard lock(mutex);
+        return {state, stateMessage, stateAffectedInputs};
+    }
+
     // IReaderConfig
     ErrCode INTERFACE_FUNC getValueTransformFunction(IFunction** transform) override;
     ErrCode INTERFACE_FUNC getDomainTransformFunction(IFunction** transform) override;
