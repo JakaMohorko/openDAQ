@@ -72,6 +72,36 @@ const char* stateClassName(StateId id)
 namespace
 {
 
+/**
+ * @brief The effects that follow from the substate itself rather than from the rung that decided it.
+ * Applied once, where the machine settles, so the rule holds on every path to that substate instead
+ * of being restated at each of them.
+ *
+ * Level-triggered like everything else here: applied whenever the machine settles on the substate,
+ * not only on the transition into it. That is exactly what the rungs did before, and it is
+ * idempotent - clearing an already-cleared synchronization is a no-op.
+ *
+ * Only two substates have an effect that is genuinely theirs. A returnable event and a missed
+ * deadline both mean the aligned stream is finished: the event has to be consumed before data can be
+ * read again, and an input that went silent cannot contribute to the block being assembled. Neither
+ * can leave a synchronized start behind, on any path.
+ *
+ * Everything else stays with the rung that decides it, because the effect differs per path even for
+ * one substate - see the notes in the classes below and §5.1 of docs/multi_reader_state_refactor.md.
+ */
+void applyStateInvariants(StateContext& ctx, ReaderState substate)
+{
+    switch (substate)
+    {
+        case ReaderState::EventPending:
+        case ReaderState::DataLost:
+            ctx.invalidateSynchronization();
+            break;
+        default:
+            break;
+    }
+}
+
 // --- Rungs shared by more than one class -------------------------------------------------------
 
 /// Unused inputs stay observable. Their ports are inactive, so data is dropped at the connection and
@@ -234,7 +264,8 @@ GuardOutcome computeInputGuard(StateContext& ctx)
                     ctx.syncManager.buildCommonModel(usedReaders, slotIndices, guard.mainPosition);
             }
 
-            ctx.invalidateSynchronization();
+            // The synchronization is dropped by applyStateInvariants - it holds for every path to
+            // EventPending, not just this one. The model built above deliberately survives.
             guard.blocker = outcomeWithAffected(ReaderState::EventPending, "Events pending on inputs", "", std::move(eventInputs));
             return GuardOutcome::Blocked;
         }
@@ -349,7 +380,6 @@ std::optional<StateOutcome> checkDataLoss(StateContext& ctx)
         return std::nullopt;
     }
 
-    ctx.invalidateSynchronization();
     return outcomeWithAffected(ReaderState::DataLost, "Inputs", " missed their packet deadline", std::move(drainedLost));
 }
 
@@ -440,7 +470,6 @@ public:
 
         if (!inactiveEventInputs.empty())
         {
-            ctx.invalidateSynchronization();
             return Transition::settled(
                 outcomeWithAffected(ReaderState::EventPending, "Events pending on inputs", "", std::move(inactiveEventInputs)));
         }
@@ -540,7 +569,6 @@ public:
                 return Transition::settled(ReaderState::Synchronizing, std::move(result.message), std::move(result.affectedInputs));
             case SyncOutcome::EventPending:
             {
-                ctx.invalidateSynchronization();
                 for (const auto index : result.affectedInputs)
                     setSlotEvent(*ctx.slots[index], true);
                 return Transition::settled(ReaderState::EventPending, std::move(result.message), std::move(result.affectedInputs));
@@ -635,6 +663,7 @@ void runStateEvaluation(StateContext& ctx)
         auto transition = current->checkTransitionCriteria(ctx);
         if (!transition.isHandOff())
         {
+            applyStateInvariants(ctx, transition.outcome.state);
             ctx.outcome = std::move(transition.outcome);
             return;
         }

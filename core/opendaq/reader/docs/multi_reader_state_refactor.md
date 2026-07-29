@@ -1,10 +1,12 @@
 # Multi Reader state machine refactor — specification and implementation plan
 
-**Status:** the state classes themselves (sections 3, 4 and phases 2-6) are a proposal, for review,
-not implemented. Three parts are done: the notification-completeness work of 2.1-2.2 (`Input::listen`
-/ `Input::replayMissedPortCallbacks` / `Input::adoptQueuedPackets`), for which this document is the
-rationale; **Phase 0**, the characterization suite every later phase is verified against (§5, §5.1);
-and **Phase 1**, the `StateContext` extraction (§5).
+**Status:** phases 0-3 and 5 are implemented; phases 4 and 6 remain, and §3.2/§3.3's sketch of the API
+is superseded by what the code does (see the phase notes in §5). Also implemented: the
+notification-completeness work of 2.1-2.2 (`Input::listen` / `Input::replayMissedPortCallbacks` /
+`Input::adoptQueuedPackets`), for which this document is the rationale.
+
+Read §5 top to bottom for what each phase actually found - three of them contradicted the plan in this
+document, and those notes are the useful part.
 **Scope:** `MultiReaderImpl`'s state handling only. No change to `SynchronizationManager`,
 `QueueReader`, `ReadCoordinator`, `CallbackGate`, or any public interface.
 **Companion:** [`multi_reader.md`](multi_reader.md) — §4 (states), §8 (evaluation), §9 (data plane).
@@ -165,7 +167,7 @@ changing it would ripple into status code for no benefit.
 |---|---|---|---|
 | `ErrorState` | `Error` | `invalid == true`; terminal, latched, no exit | `Fail` |
 | `InactiveState` | `Inactive`, `EventPending` | `isActive == false`; no data flow; data-loss monitoring disarmed for all slots | `Inactive`, `Event` |
-| `WaitingForValidInputsState` | `WaitingForConnections`, `WaitingForDescriptors`, `Incompatible`, `EventPending` | no valid cross-input model; the blocker is per-input (a connection, a descriptor, a compatible descriptor, or an unconsumed event) | `Preparing`, `InputsFailed`, `Event` |
+| `WaitingForValidInputsState` | `WaitingForConnections`, `WaitingForDescriptors`, `Incompatible`, `EventPending` | nothing is readable yet and the blocker is per-input (a connection, a descriptor, a compatible descriptor, or an unconsumed event). **Not** "no valid cross-input model": the event rung builds the model opportunistically, so `getCommonSampleRate` works while events are still pending | `Preparing`, `InputsFailed`, `Event` |
 | `SynchronizingState` | `WaitingForData`, `Synchronizing`, `SynchronizationFailed`, `DataLost` | model valid, `commonStart == nullptr` — alignment is being attempted or has failed recoverably | `Preparing`, `InputsFailed` |
 | `ReadyState` | `Synchronized` | `commonStart != nullptr` **and** `syncManager->hasModel()` — aligned blocks are readable | `Ok` |
 
@@ -558,15 +560,40 @@ call site and no semantics until Phase 4 specializes them, and a virtual nobody 
 missing one — the facade's `slotConnected`/`slotDisconnected` still run the full evaluation, which is
 exactly what `reevaluate()` would have meant.
 
-### Phase 3 — move side effects into `onEnter`/`onExit`
+### Phase 3 — side effects as invariants (**implemented, and much smaller than planned**)
 
-Relocate, from the 17 `setStateLocked` call sites: `invalidateSynchronizationLocked`,
-`invalidateModelLocked`, `readCoordinator->invalidate()`, data-loss monitor arm/disarm, the
-`stateChangeNotify` latch, and the all-slot event-bit suppression. After this, "does this state
-clear the model?" is answerable from one place per class.
+The premise of this phase was wrong. Almost none of the listed side effects are entry/exit
+invariants of a state class; they are effects of the *rung* that decided the state, and the same
+substate reached by two rungs legitimately needs two different effects. What survived is one rule,
+applied in one place.
 
-Watch item: some of these currently run *before* the state is set and some after; entry/exit
-ordering must be chosen per effect, not uniformly.
+**What moved.** `applyStateInvariants` in `state_machine.cpp`, called by the runner where the machine
+settles:
+
+> `EventPending` and `DataLost` always clear the synchronization.
+
+That replaces four separate inline calls and makes the rule true by construction on all five paths to
+`EventPending` (the guard's event rung, the guard's validity rung, the inactive arm, the model rung and
+the alignment rung) rather than by coincidence on four of them. Level-triggered, like everything else
+here: applied whenever the machine settles on the substate, not only on the transition into it — which
+is what the rungs did before, and is idempotent.
+
+**Why the rest stayed put.** Each of these was tried and rejected for a concrete reason, not for
+convenience:
+
+| Candidate effect | Why it is not an entry/exit invariant |
+|---|---|
+| `invalidateModel` | Not uniform per substate. `WaitingForConnections` invalidates the model when the main input is dangling or an input has no signal, but only the synchronization when there are no used inputs at all; `Incompatible` invalidates the model from the validity rung but only the read pipelines from the model rung (where the build itself already failed). Folding these together would be a behaviour change dressed as a refactor |
+| **`EventPending` must NOT invalidate the model** | The event rung *builds* the model opportunistically so `getCommonSampleRate`/`getTickResolution` work while events are still pending. A class-level "clears the model" invariant would destroy exactly that. This also **corrects §3.1**: `WaitingForValidInputsState`'s invariant is not "no valid cross-input model" |
+| data-loss monitor arm/disarm | Level-triggered *and* driven from outside the machine (`slotDisconnected`, `setInputUsed` both call `setMonitored`). Entry-only arming would desynchronize the moment either of those ran while the class stayed the same |
+| `readCoordinator.configure` + `nextReadTick` | Belongs to "a start was just established", not to "entering `ReadyState`". As an entry effect it would fire when `SynchronizingState` hands off to `ReadyState` on an already-assigned start and **rewind the read offset** to the common start, because `nextReadTick` advances with every read while `readOffset()` returns the start |
+| `stateChangeNotify` latch | Already in exactly one place, and correct: `setStateLocked` compares the new substate *and* the new affected set against the ones it is replacing. Splitting it across `WaitingForValidInputsState` (`Incompatible`) and `SynchronizingState` (`SynchronizationFailed`, `DataLost`) would lose that comparison and gain nothing |
+| all-slot event-bit suppression | Two different cross-input rules with different conditions (a used input with no signal; a connect handshake in flight), and the second one does not correspond to a state at all — it falls through to `WaitingForDescriptors` |
+
+**No `onEnter`/`onExit` virtuals were added.** With one rule left, and that rule keyed on the substate
+rather than on the class, a pair of virtuals per class would be five empty overrides and a hook with no
+user. Same reasoning as the `slot*` edges in Phase 2: a virtual nobody calls is worse than a missing
+one.
 
 ### Phase 4 — specialize the edges (the only phase with a performance goal)
 
