@@ -26,6 +26,7 @@
 #include <chrono>
 #include <limits>
 #include <memory>
+#include <vector>
 
 BEGIN_NAMESPACE_OPENDAQ
 
@@ -251,6 +252,34 @@ private:
 
     LoggerComponentPtr loggerComponent;
 };
+
+// --- Operations over a slot vector -------------------------------------------------------------
+// Shared by the facade's read/query/callback paths and by the state evaluation
+// (multi_reader/state_context.h), so they belong to neither and live here.
+
+constexpr SizeT slotNotFound = static_cast<SizeT>(-1);
+
+/// Owner-side gate writes. Producers only ever raise, and only readiness; the owner is the
+/// authority on both flags (the flag word maintains the shared counters itself).
+inline void setSlotReady(Input& slot, bool ready)
+{
+    slot.gateFlags().setReady(ready);
+}
+
+inline void setSlotEvent(Input& slot, bool event)
+{
+    slot.gateFlags().setEvent(event);
+}
+
+/// Publish one slot's producer-visible basis from its adopted queue: availability until the next
+/// event (native samples) plus whether any event packet is adopted.
+void publishSlotBasis(Input& slot);
+
+/// Used inputs in slot order plus their slot indices; reuses the vectors' capacity.
+void collectUsedReaders(const std::vector<Input*>& slots, std::vector<QueueReader*>& readers, std::vector<SizeT>& slotIndices);
+
+/// Slot index of the input with this id, or slotNotFound.
+SizeT findSlotById(const std::vector<Input*>& slots, const StringPtr& id);
 
 }  // namespace multi_reader
 

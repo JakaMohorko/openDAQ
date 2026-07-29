@@ -143,6 +143,8 @@ function(create_component_source_groups_${BASE_NAME})
         ${SDK_HEADERS_DIR}/multi_reader/callback_gate.h
         ${SDK_HEADERS_DIR}/multi_reader/notification_coordinator.h
         ${SDK_HEADERS_DIR}/multi_reader/read_coordinator.h
+        ${SDK_HEADERS_DIR}/multi_reader/reader_state.h
+        ${SDK_HEADERS_DIR}/multi_reader/state_context.h
         ${SDK_HEADERS_DIR}/multi_reader_impl.h
 		${SDK_HEADERS_DIR}/multi_reader_status.h
         ${SDK_HEADERS_DIR}/multi_reader_status_builder.h
@@ -156,6 +158,8 @@ function(create_component_source_groups_${BASE_NAME})
         ${SDK_SRC_DIR}/multi_reader/synchronization_manager.cpp
         ${SDK_SRC_DIR}/multi_reader/notification_coordinator.cpp
         ${SDK_SRC_DIR}/multi_reader/read_coordinator.cpp
+        ${SDK_SRC_DIR}/multi_reader/state_context.cpp
+        ${SDK_SRC_DIR}/multi_reader/state_evaluation.cpp
     )
 endfunction()
 
@@ -190,6 +194,8 @@ set(SRC_PrivateHeaders_Component
     multi_reader/callback_gate.h
     multi_reader/notification_coordinator.h
     multi_reader/read_coordinator.h
+    multi_reader/reader_state.h
+    multi_reader/state_context.h
     reader_status_impl.h
     reader_impl.h
     enum_flags.h
@@ -217,6 +223,8 @@ set(SRC_Cpp_Component
     multi_reader/synchronization_manager.cpp
     multi_reader/notification_coordinator.cpp
     multi_reader/read_coordinator.cpp
+    multi_reader/state_context.cpp
+    multi_reader/state_evaluation.cpp
     reader.natvis
     PARENT_SCOPE
 )

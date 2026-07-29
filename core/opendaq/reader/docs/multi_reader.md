@@ -138,7 +138,8 @@ The facade owns one instance of each component and is the only thing that holds 
 
 | Component | File | Responsibility |
 |---|---|---|
-| **`MultiReaderImpl`** (facade) | `multi_reader_impl.*` | Public API, input ordering, the `ReaderState` machine (`evaluateStateLocked`), the data-plane paths (§8), and status creation. Holds the single state mutex. |
+| **`MultiReaderImpl`** (facade) | `multi_reader_impl.*` | Public API, input ordering, the entry point of the `ReaderState` machine (`evaluateStateLocked`), the data-plane paths (§8), and status creation. Holds the single state mutex. |
+| **State evaluation** | `multi_reader/state_context.*`, `multi_reader/state_evaluation.cpp` | The `ReaderState` derivation itself, as a function over a `StateContext` - the collaborator bundle (slots, sync manager, read coordinator, data-loss monitor) plus the configuration it reads and the single `StateOutcome` it produces. It never touches the facade, so the two effects that are the facade's (the status caches, the main-input descriptors) come back as flags the facade applies when the evaluation returns. |
 | **`Input`** (slot) | `multi_reader/input.*` | One input port + its `QueueReader`. Receives port notifications on the producer thread, holds `packetPending`, and reports connect/disconnect/packet up to the facade via `IInputListener`. |
 | **`QueueReader`** | `multi_reader/queue_reader.*` | Per-input queue over one connection: adopts packets (`drain`), tracks value/domain descriptors and events, computes available samples, and executes the actual value/domain copy on `read`/`skip`. |
 | **`SynchronizationManager`** | `multi_reader/synchronization_manager.*` | All cross-input math: builds the `CommonModel` (common sample rate, per-input dividers, `blockLcm`, tick resolution) and aligns every input to a common start tick. |

@@ -1,10 +1,10 @@
 # Multi Reader state machine refactor — specification and implementation plan
 
-**Status:** the state-machine refactor itself (sections 3, 4 and phases 1-6) is a proposal, for
-review, not implemented. Two parts are done: the notification-completeness work of 2.1-2.2
-(`Input::listen` / `Input::replayMissedPortCallbacks` / `Input::adoptQueuedPackets`), for which this
-document is the rationale, and **Phase 0**, the characterization suite every later phase is verified
-against (§5, §5.1).
+**Status:** the state classes themselves (sections 3, 4 and phases 2-6) are a proposal, for review,
+not implemented. Three parts are done: the notification-completeness work of 2.1-2.2 (`Input::listen`
+/ `Input::replayMissedPortCallbacks` / `Input::adoptQueuedPackets`), for which this document is the
+rationale; **Phase 0**, the characterization suite every later phase is verified against (§5, §5.1);
+and **Phase 1**, the `StateContext` extraction (§5).
 **Scope:** `MultiReaderImpl`'s state handling only. No change to `SynchronizationManager`,
 `QueueReader`, `ReadCoordinator`, `CallbackGate`, or any public interface.
 **Companion:** [`multi_reader.md`](multi_reader.md) — §4 (states), §8 (evaluation), §9 (data plane).
@@ -13,8 +13,9 @@ against (§5, §5.1).
 
 ## 1. Why
 
-`evaluateStateLadderLocked` is one ~330-line function that computes the reader state by testing
-conditions top to bottom and returning at the first match. Three things have frayed:
+The state evaluation (`evaluateStateLadderLocked` when this was written; `evaluateStateLadder` since
+phase 1) is one ~330-line function that computes the reader state by testing conditions top to bottom
+and returning at the first match. Three things have frayed:
 
 1. **It is not one ladder.** `if (!isActive)` (`multi_reader_impl.cpp:834`) forks into a second,
    much shorter ladder with its own event scan, its own `clearPacketPending`/`adoptQueuedPackets`, and a
@@ -477,17 +478,47 @@ silently change, and two of them bear on the target model in §3.
    and an unused slot is not monitored — but it is arming state maintained for nobody. To be
    revisited when the edges are specialized.
 
-### Phase 1 — extract `StateContext` (mechanical)
+### Phase 1 — extract `StateContext` (**implemented**)
 
-Introduce the struct, thread it through the existing ladder unchanged. Pure plumbing; the ladder
-stays one function. Verifies that the collaborator set is actually separable.
+The evaluation is now a free function over the collaborator bundle:
+`multi_reader::evaluateStateLadder(StateContext&)` in `multi_reader/state_evaluation.cpp`, with
+`StateContext` in `multi_reader/state_context.*`. The rungs are unchanged, in the same order, with
+the same comments; only what they reach *through* changed. `MultiReaderImpl::evaluateStateLocked`
+builds the context, runs the evaluation, applies its verdict and publishes the producer gate.
+
+The collaborator set turned out to be separable with **two** exceptions, both facade-owned caches
+derived from the model: the status cache (`cachedStatus` and friends) and the main-input descriptors.
+The evaluation records that they need attention (`StateContext::modelInvalidated`,
+`mainDescriptorsStale`) and the facade applies both the moment the evaluation returns. That is
+equivalent to doing it inline, which is what keeps the phase behaviour-preserving: nothing between
+the rungs that set the flags and the end of the evaluation reads either, and no status can be built
+in between (statuses are built on the read and query paths, after the evaluation).
+
+Two further findings, both recorded in the code:
+
+- **One evaluation produces exactly one outcome.** Every rung assigns the state and returns, so the
+  verdict is a value (`StateOutcome`) the facade applies once through the unchanged
+  `setStateLocked` — which keeps the `stateChangeNotify` edge check (contract item 7) comparing
+  against the state it is replacing.
+- Three operations over the slot vector are shared with the facade's read/query/callback paths
+  (`publishSlotBasis`, `collectUsedReaders`, `findSlotById`) plus the two gate writes. They belong to
+  neither side and are now free functions in `multi_reader/input.h`; the facade's `...Locked` wrappers
+  forward to them, so the read paths are untouched.
+
+`ReaderState` moved to `multi_reader/reader_state.h` so a `multi_reader/` header can name it without
+depending on the facade.
+
+**Note for the rest of this document:** the `multi_reader_impl.cpp:NNN` line references in §1, §3 and
+§4 predate this phase. The ladder they point into now lives in `state_evaluation.cpp`; the rung
+comments (`// 1.`, `// 4./5.`, …) are the stable way to find each one.
 
 ### Phase 2 — introduce the hierarchy, `checkTransitionCriteria` only
 
-Five classes, each holding the slice of the existing ladder that its substates own. `slot*` methods
-present but implemented as `return Transition::reevaluate();` — i.e. exactly today's behaviour, in
-which every notification triggers a full re-derivation. Add the bounded loop of §3.3. Keep
-`setStateLocked`/`setStateWithAffectedLocked` intact as the substate applier.
+Five classes, each holding the slice of the existing evaluation that its substates own. `slot*`
+methods present but implemented as `return Transition::reevaluate();` — i.e. exactly today's
+behaviour, in which every notification triggers a full re-derivation. Add the bounded loop of §3.3.
+Keep `StateContext::setState`/`setStateWithAffected` and the facade's `setStateLocked` intact as the
+substate applier.
 
 Highest-risk phase. The slicing must be verified against the golden trace, not by reading.
 

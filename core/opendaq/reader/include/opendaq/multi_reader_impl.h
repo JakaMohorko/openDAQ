@@ -22,6 +22,8 @@
 #include <opendaq/multi_reader_builder_ptr.h>
 #include <opendaq/multi_reader/notification_coordinator.h>
 #include <opendaq/multi_reader/read_coordinator.h>
+#include <opendaq/multi_reader/reader_state.h>
+#include <opendaq/multi_reader/state_context.h>
 #include <opendaq/reader_config_ptr.h>
 #include <opendaq/reader_factory.h>
 #include <opendaq/reader_status_impl.h>
@@ -36,26 +38,6 @@
 #include <vector>
 
 BEGIN_NAMESPACE_OPENDAQ
-
-/**
- * @brief Internal runtime states of the multi reader. The public surface is the extended
- * ReadStatus plus the per-input InputState dictionary; this enum only drives the internal
- * state machine and the diagnostic message.
- */
-enum class ReaderState
-{
-    Inactive = 0,           ///< Disabled via setActive(false)
-    WaitingForConnections,  ///< A used input has no signal connected
-    WaitingForDescriptors,  ///< A used input has not received its descriptors yet
-    Incompatible,           ///< Local or cross-input validation failed (recoverable)
-    WaitingForData,         ///< Valid, but some input has no samples
-    Synchronizing,          ///< Alignment in progress, waiting for data to reach the aligned start
-    Synchronized,           ///< Aligned blocks readable
-    EventPending,           ///< Event(s) must be returned before data
-    SynchronizationFailed,  ///< Span, representability or common-tick failure
-    DataLost,               ///< A used input missed its packet deadline
-    Error                   ///< Internal invariant violated or reader disposed; not recoverable
-};
 
 /**
  * @brief Public facade of the multi reader: configuration, input order, the runtime state
@@ -202,11 +184,16 @@ private:
 
     // --- State machine (state mutex held) ---
     /// Full state evaluation - the transition handler run by the paths that change state
-    /// (connect/disconnect, used/active changes, topology, events, deadlines). Runs the
-    /// ladder, then publishes the producer-facing gate state (publishProducerGateLocked).
+    /// (connect/disconnect, used/active changes, topology, events, deadlines). Builds the
+    /// StateContext, runs the evaluation (multi_reader::evaluateStateLadder), applies its verdict
+    /// and its deferred facade effects, then publishes the producer-facing gate state
+    /// (publishProducerGateLocked).
     void evaluateStateLocked();
-    /// The evaluation ladder itself; only evaluateStateLocked calls this.
-    void evaluateStateLadderLocked();
+    /// The collaborator bundle the evaluation works on; a view, rebuilt per evaluation.
+    multi_reader::StateContext makeStateContextLocked();
+    /// Apply what the evaluation decided: its deferred facade effects first (in the order the
+    /// evaluation would have run them inline), then the substate through setStateLocked.
+    void applyStateOutcomeLocked(multi_reader::StateContext& ctx);
     /**
      * @brief Publish the producer-facing callback-gate state after a full evaluation: per-slot
      * basis (adopted availability-until-event + adopted events), the ready threshold, the
@@ -229,28 +216,16 @@ private:
     /// dataPlaneDirty (the read/query path owns those); a deadline or a non-synchronized state still
     /// escalates to the full evaluation.
     void updateCallbackStateLocked();
-    /// Adopts unused inputs' queued event packets so they surface in the per-input
-    /// states and fire the callback gate.
-    void drainUnusedSlotsLocked();
-    /// Failure-state recovery: a failed input with a corrective descriptor change buried
-    /// behind unreadable stale data drops that data (dropForInactive semantics) so the event
-    /// can surface. Returns true when any event became pending.
-    bool exposeBuriedEventsLocked(const std::vector<SizeT>& affected);
     void invalidateSynchronizationLocked();
     void invalidateModelLocked();
+    /// The caches derived from the cross-input model - the status cache and the common-output-domain
+    /// descriptor. Separate from invalidateModelLocked because the state evaluation invalidates the
+    /// model without being able to reach these (StateContext::modelInvalidated).
+    void clearModelDerivedCachesLocked();
     void setStateLocked(ReaderState newState, std::string message = {}, std::vector<SizeT> affected = {});
-    /// Formats "<messagePrefix> [i, j, ...]<messageSuffix>" from the affected indices before
-    /// moving them into the state - never both format and move in one argument list (the
-    /// evaluation order of function arguments is unspecified).
-    void setStateWithAffectedLocked(ReaderState newState,
-                                    const char* messagePrefix,
-                                    const char* messageSuffix,
-                                    std::vector<SizeT> affected);
 
-    /// Used inputs in slot order plus their slot indices; main input is the first used slot.
-    std::vector<multi_reader::QueueReader*> collectUsedReaders(std::vector<SizeT>& slotIndices) const;
-    /// Same, but fills caller-owned vectors (reusing their capacity) instead of allocating -
-    /// used by the read hot path to avoid per-read heap allocation.
+    /// Used inputs in slot order plus their slot indices, filling caller-owned vectors (reusing
+    /// their capacity) instead of allocating - used by the read hot path.
     void collectUsedReadersInto(std::vector<multi_reader::QueueReader*>& readers, std::vector<SizeT>& slotIndices) const;
 
     /// Scheduler-side entry of the coalesced evaluation (never called with locks held).
@@ -270,9 +245,8 @@ private:
     /// descriptor (the domain of the status offset).
     EventPacketPtr mainDescriptorPacketLocked();
     void refreshMainInputDescriptorsLocked();
-    std::optional<std::int64_t> currentReadOffsetLocked() const;
 
-    SizeT findSlotByIdLocked(const StringPtr& id) const;  // returns slots.size() when not found
+    SizeT findSlotByIdLocked(const StringPtr& id) const;  // returns notFound when not found
     void reindexSlotsLocked();
     void setPortsActiveLocked(bool active);
 
@@ -293,7 +267,7 @@ private:
     SizeT mainSlotIndexLocked() const;
     void applyDataLossTimeoutLocked();
 
-    static constexpr SizeT notFound = static_cast<SizeT>(-1);
+    static constexpr SizeT notFound = multi_reader::slotNotFound;
 
     // --- State ---
     std::mutex mutex;

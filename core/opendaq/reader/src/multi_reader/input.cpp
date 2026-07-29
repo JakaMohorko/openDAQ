@@ -276,6 +276,39 @@ IInputListener* Input::getListener() const
     return listener.load();
 }
 
+// --- Operations over a slot vector -------------------------------------------------------------
+
+void publishSlotBasis(Input& slot)
+{
+    auto& reader = slot.getQueueReader();
+    const SizeT divider = reader.getSampleRateDivider() > 0 ? reader.getSampleRateDivider() : 1;
+    const bool hasEventPackets = reader.hasPendingEvents() || reader.hasQueuedEventPackets();
+    slot.publishGateBasis(reader.getAvailableSamplesUntilEvent() / divider, hasEventPackets);
+}
+
+void collectUsedReaders(const std::vector<Input*>& slots, std::vector<QueueReader*>& readers, std::vector<SizeT>& slotIndices)
+{
+    readers.clear();
+    slotIndices.clear();
+    for (SizeT i = 0; i < slots.size(); ++i)
+    {
+        if (!slots[i]->isUsed())
+            continue;
+        readers.push_back(&slots[i]->getQueueReader());
+        slotIndices.push_back(i);
+    }
+}
+
+SizeT findSlotById(const std::vector<Input*>& slots, const StringPtr& id)
+{
+    for (SizeT i = 0; i < slots.size(); ++i)
+    {
+        if (slots[i]->getInputId() == id)
+            return i;
+    }
+    return slotNotFound;
+}
+
 }  // namespace multi_reader
 
 END_NAMESPACE_OPENDAQ

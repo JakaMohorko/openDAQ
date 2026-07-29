@@ -447,27 +447,20 @@ void MultiReaderImpl::setStateLocked(ReaderState newState, std::string message, 
     stateAffectedInputs = std::move(affected);
 }
 
-void MultiReaderImpl::setStateWithAffectedLocked(ReaderState newState,
-                                                 const char* messagePrefix,
-                                                 const char* messageSuffix,
-                                                 std::vector<SizeT> affected)
-{
-    auto message = fmt::format("{} [{}]{}", messagePrefix, fmt::join(affected, ", "), messageSuffix);
-    setStateLocked(newState, std::move(message), std::move(affected));
-}
-
 void MultiReaderImpl::invalidateSynchronizationLocked()
 {
-    syncManager->clearSynchronization();
-    readCoordinator->invalidate();
-    nextReadTick.reset();
+    multi_reader::invalidateSynchronization(*syncManager, *readCoordinator, nextReadTick);
 }
 
 void MultiReaderImpl::invalidateModelLocked()
 {
     invalidateSynchronizationLocked();
     syncManager->invalidateModel();
+    clearModelDerivedCachesLocked();
+}
 
+void MultiReaderImpl::clearModelDerivedCachesLocked()
+{
     // The cached status and the common-output-domain descriptor embed the model
     // (epoch/resolution/rate) - any input's descriptor change can move it
     cachedStatus = nullptr;
@@ -478,24 +471,9 @@ void MultiReaderImpl::invalidateModelLocked()
     cachedMainDescriptorPacket = nullptr;
 }
 
-std::vector<QueueReader*> MultiReaderImpl::collectUsedReaders(std::vector<SizeT>& slotIndices) const
-{
-    std::vector<QueueReader*> readers;
-    collectUsedReadersInto(readers, slotIndices);
-    return readers;
-}
-
 void MultiReaderImpl::collectUsedReadersInto(std::vector<QueueReader*>& readers, std::vector<SizeT>& slotIndices) const
 {
-    readers.clear();
-    slotIndices.clear();
-    for (SizeT i = 0; i < slots.size(); ++i)
-    {
-        if (!slots[i]->isUsed())
-            continue;
-        readers.push_back(&slots[i]->getQueueReader());
-        slotIndices.push_back(i);
-    }
+    multi_reader::collectUsedReaders(slots, readers, slotIndices);
 }
 
 void MultiReaderImpl::refreshMainInputDescriptorsLocked()
@@ -537,57 +515,6 @@ SizeT MultiReaderImpl::mainSlotIndexLocked() const
     if (!mainInputId.assigned())
         return notFound;
     return findSlotByIdLocked(mainInputId);
-}
-
-bool MultiReaderImpl::exposeBuriedEventsLocked(const std::vector<SizeT>& affected)
-{
-    bool exposed = false;
-    for (const auto index : affected)
-    {
-        if (index >= slots.size())
-            continue;
-
-        auto& reader = slots[index]->getQueueReader();
-        if (!reader.hasPendingEvents() && reader.hasQueuedEventPackets())
-        {
-            // The failing input has a corrective descriptor change queued behind data that
-            // was produced under the old, failing descriptor. That data can never be read
-            // while the input keeps failing, so drop it and let the event surface - the same
-            // semantics the setInputUsed(false -> true) recovery applies (dropForInactive).
-            // Without this, an actively producing input could never recover: the fix would
-            // stay buried behind unreadable data forever.
-            reader.dropForInactive();
-            exposed |= reader.hasPendingEvents();
-        }
-    }
-    return exposed;
-}
-
-void MultiReaderImpl::drainUnusedSlotsLocked()
-{
-    // Unused inputs stay observable. Their ports are inactive, so data is dropped at
-    // the connection and only events can arrive; draining them makes pending events visible
-    // in the per-input states and lets them fire the dataAvailable callback (the recovery
-    // signal a consumer answers with setInputUsed(id, true)).
-    for (auto* slot : slots)
-    {
-        if (slot->isUsed())
-            continue;
-
-        slot->adoptQueuedPackets();
-        if (!slot->isConnected())
-        {
-            slot->publishGateBasis(0, false);
-            setSlotEventLocked(slot, false);
-            continue;
-        }
-
-        slot->clearPacketPending();
-        auto& reader = slot->getQueueReader();
-        reader.drain();
-        publishSlotBasisLocked(slot);
-        setSlotEventLocked(slot, reader.hasPendingEvents());
-    }
 }
 
 void MultiReaderImpl::refreshDataPlaneLocked(bool escalateOnEvent)
@@ -735,18 +662,56 @@ void MultiReaderImpl::refreshDataPlaneLocked(bool escalateOnEvent)
 
 void MultiReaderImpl::evaluateStateLocked()
 {
-    evaluateStateLadderLocked();
+    // The full evaluation can drain, drop segments or change state, so any availability the last
+    // fast pass cached is no longer authoritative. Clearing it here (the single funnel every full
+    // evaluation passes through) is what makes the cache safe to reuse across
+    // refreshDataPlaneLocked's early return: the cache is valid ONLY between a non-escalating
+    // synchronized fast pass and the next thing that runs, and that next thing is either another
+    // fast pass (which republishes it), the early return (nothing changed, so it stays exact), or a
+    // full evaluation (this, which clears it).
+    dataPlaneAvailableValid = false;
+
+    auto ctx = makeStateContextLocked();
+    evaluateStateLadder(ctx);
+    applyStateOutcomeLocked(ctx);
+
     publishProducerGateLocked();
+}
+
+StateContext MultiReaderImpl::makeStateContextLocked()
+{
+    StateContext ctx(slots, *syncManager, *readCoordinator, *dataLossMonitor, nextReadTick, stateMessage);
+    ctx.invalid = invalid;
+    ctx.isActive = isActive;
+    ctx.minReadCount = minReadCount;
+    ctx.mainInputId = mainInputId;
+    ctx.resolvedDomainReadType = resolvedDomainReadType;
+    return ctx;
+}
+
+void MultiReaderImpl::applyStateOutcomeLocked(StateContext& ctx)
+{
+    // The evaluation cannot reach these, so it flagged them instead. The order is the order the
+    // ladder used to run them in: the descriptor refresh sits above the rungs that invalidate the
+    // model, and the refresh may itself drop the cached main-descriptor packet.
+    if (ctx.mainDescriptorsStale)
+        refreshMainInputDescriptorsLocked();
+    if (ctx.modelInvalidated)
+        clearModelDerivedCachesLocked();
+
+    // One evaluation, one verdict - so the InputsFailed latch in setStateLocked still sees exactly
+    // one transition per evaluation, and still compares against the state it is replacing.
+    setStateLocked(ctx.outcome.state, std::move(ctx.outcome.message), std::move(ctx.outcome.affected));
 }
 
 void MultiReaderImpl::setSlotReadyLocked(Input* slot, bool ready)
 {
-    slot->gateFlags().setReady(ready);
+    multi_reader::setSlotReady(*slot, ready);
 }
 
 void MultiReaderImpl::setSlotEventLocked(Input* slot, bool event)
 {
-    slot->gateFlags().setEvent(event);
+    multi_reader::setSlotEvent(*slot, event);
 }
 
 void MultiReaderImpl::applySlotUsedLocked(Input* slot, bool used)
@@ -763,10 +728,7 @@ void MultiReaderImpl::applySlotUsedLocked(Input* slot, bool used)
 
 void MultiReaderImpl::publishSlotBasisLocked(Input* slot)
 {
-    auto& reader = slot->getQueueReader();
-    const SizeT divider = reader.getSampleRateDivider() > 0 ? reader.getSampleRateDivider() : 1;
-    const bool hasEventPackets = reader.hasPendingEvents() || reader.hasQueuedEventPackets();
-    slot->publishGateBasis(reader.getAvailableSamplesUntilEvent() / divider, hasEventPackets);
+    multi_reader::publishSlotBasis(*slot);
 }
 
 void MultiReaderImpl::clearGateReadinessLocked()
@@ -809,7 +771,7 @@ void MultiReaderImpl::publishProducerGateLocked()
         if (!slot->isUsed())
         {
             // Data is dropped at the inactive port, so only the event flag matters; the ladder
-            // (drainUnusedSlotsLocked) maintains it and a producer can still raise it.
+            // (StateContext::drainUnusedSlots) maintains it and a producer can still raise it.
             slot->setReadyThresholdNative(Input::NeverReady);
             setSlotReadyLocked(slot, false);
             continue;
@@ -833,355 +795,6 @@ void MultiReaderImpl::publishProducerGateLocked()
             setSlotReadyLocked(slot, reader.getAvailableSamples() > 0);
         }
     }
-}
-
-void MultiReaderImpl::evaluateStateLadderLocked()
-{
-    // The full ladder can drain, drop segments or change state, so any availability the last
-    // fast pass cached is no longer authoritative. Clearing it here (the single funnel every full
-    // evaluation passes through) is what makes the cache safe to reuse across refreshDataPlaneLocked's
-    // early return: the cache is valid ONLY between a non-escalating synchronized fast pass and the
-    // next thing that runs, and that next thing is either another fast pass (which republishes it),
-    // the early return (nothing changed, so it stays exact), or a full evaluation (this, which clears it).
-    dataPlaneAvailableValid = false;
-
-    // 1. Error is terminal; inactivity gates everything else
-    if (invalid)
-    {
-        setStateLocked(ReaderState::Error, stateMessage.empty() ? "Reader is invalid" : stateMessage);
-        return;
-    }
-
-    drainUnusedSlotsLocked();
-
-    if (!isActive)
-    {
-        // Inactive readers are not monitored for data loss
-        for (SizeT i = 0; i < slots.size(); ++i)
-            dataLossMonitor->setMonitored(i, false);
-
-        // Terminology: ACTIVE/INACTIVE is the reader/port level switch (setActive) -
-        // "pause the whole reader". USED/UNUSED is per-input participation (setInputUsed) -
-        // "exclude this input from reading". The unused mechanism reuses port deactivation
-        // internally because that is what stops data while preserving events.
-        //
-        // Inactivity suspends data flow only: descriptor/gap events are enqueued regardless
-        // of the active flag and must still surface through reads (and through the
-        // dataAvailable callback, which is why the event bits are maintained here too).
-        // Unused inputs' events were already drained above (drainUnusedSlotsLocked).
-        std::vector<SizeT> inactiveEventInputs;
-        std::vector<SizeT> inactiveSlotIndices;
-        const auto inactiveReaders = collectUsedReaders(inactiveSlotIndices);
-        for (SizeT position = 0; position < inactiveReaders.size(); ++position)
-        {
-            const auto slotIndex = inactiveSlotIndices[position];
-            // Clear-then-drain (see step 3): clear before adopting so a concurrent
-            // lock-free arrival re-arms the flag instead of being stranded.
-            slots[slotIndex]->clearPacketPending();
-            slots[slotIndex]->adoptQueuedPackets();
-            if (!slots[slotIndex]->isConnected())
-            {
-                setSlotEventLocked(slots[slotIndex], false);
-                continue;
-            }
-
-            const bool hasEvents = inactiveReaders[position]->hasPendingEvents();
-            setSlotEventLocked(slots[slotIndex], hasEvents);
-            if (hasEvents)
-                inactiveEventInputs.push_back(slotIndex);
-        }
-        if (!inactiveEventInputs.empty())
-        {
-            invalidateSynchronizationLocked();
-            setStateWithAffectedLocked(ReaderState::EventPending, "Events pending on inputs", "", std::move(inactiveEventInputs));
-        }
-        else
-        {
-            setStateLocked(ReaderState::Inactive);
-        }
-        return;
-    }
-
-    // 2. Resolve the used set and the main input (the explicitly selected main input is
-    // never silently replaced)
-    std::vector<SizeT> slotIndices;
-    const auto usedReaders = collectUsedReaders(slotIndices);
-    if (usedReaders.empty())
-    {
-        invalidateSynchronizationLocked();
-        setStateLocked(ReaderState::WaitingForConnections, "No used inputs");
-        return;
-    }
-
-    SizeT mainPosition = 0;
-    if (mainInputId.assigned())
-    {
-        const auto mainSlot = mainSlotIndexLocked();
-        const auto position = std::find(slotIndices.begin(), slotIndices.end(), mainSlot);
-        if (mainSlot == notFound || position == slotIndices.end())
-        {
-            invalidateModelLocked();
-            setStateLocked(ReaderState::WaitingForConnections,
-                           "The selected main input is not among the used inputs",
-                           mainSlot == notFound ? std::vector<SizeT>{} : std::vector<SizeT>{mainSlot});
-            return;
-        }
-        mainPosition = static_cast<SizeT>(position - slotIndices.begin());
-    }
-
-    // 3. Adopt what the producers enqueued. Connectivity itself is NOT polled here: every
-    // connect/disconnect/reconnect reaches the slot as a port callback, and Input::attach replays
-    // the two callbacks the port skips for a port that was already connected when the listener was
-    // installed (adoption, and the reader's own createOrAdoptPorts connect). So isConnected() is
-    // authoritative; only the queue contents need collecting, because the lock-free producer path
-    // cannot hand them over itself.
-    {
-        std::vector<SizeT> unconnected;
-        for (const auto index : slotIndices)
-        {
-            // Clear the arrival flag BEFORE draining (clear-then-drain). The producer path is
-            // lock-free, so a packet enqueued after this clear re-arms the flag and is caught by
-            // the next pass; clearing AFTER the drain would instead wipe the flag of a packet
-            // enqueued in the drain->clear window without ever adopting it, stranding it on the
-            // connection (the availability-undercount race).
-            slots[index]->clearPacketPending();
-            slots[index]->adoptQueuedPackets();
-            if (!slots[index]->isConnected())
-                unconnected.push_back(index);
-        }
-        if (!unconnected.empty())
-        {
-            // Connections gate events: while a used input has no signal, no event is
-            // returnable, so the callback must not fire on the
-            // events already queued on the connected inputs
-            for (const auto index : slotIndices)
-                setSlotEventLocked(slots[index], false);
-
-            invalidateModelLocked();
-            setStateWithAffectedLocked(ReaderState::WaitingForConnections, "Inputs", " have no signal connected", std::move(unconnected));
-            return;
-        }
-    }
-
-    // Data-loss monitoring covers exactly the used, connected inputs of an active reader;
-    // everything else is unmonitored and disarmed
-    for (SizeT i = 0; i < slots.size(); ++i)
-    {
-        const bool monitored = slots[i]->isUsed() && slots[i]->isConnected();
-        dataLossMonitor->setMonitored(i, monitored);
-    }
-
-    // While synchronized, partial blocks in front of an event are silently discarded so
-    // the event can surface
-    if (syncManager->getCommonStart() != nullptr && syncManager->hasModel())
-        readCoordinator->discardLeftoverSegments(usedReaders, syncManager->getModel(), minReadCount);
-
-    // 4./5. Refresh queues; pending events preempt everything below
-    {
-        std::vector<SizeT> eventInputs;
-        bool handshakeInFlight = false;
-        for (SizeT position = 0; position < usedReaders.size(); ++position)
-        {
-            // packetPending was already cleared before the step-3 drain (clear-then-drain);
-            // clearing again here would re-open the drain->clear race, so it is intentionally
-            // not cleared in this pass.
-            const bool hasEvents = usedReaders[position]->hasPendingEvents();
-            if (hasEvents)
-                eventInputs.push_back(slotIndices[position]);
-            setSlotEventLocked(slots[slotIndices[position]], hasEvents);
-
-            // A connected input with neither descriptors nor events is still completing its
-            // connect handshake: the signal's initial descriptor event has not been enqueued
-            // yet (connections are constructed in steps and evaluations can run in between)
-            if (!hasEvents && !usedReaders[position]->getValueDescriptor().assigned() &&
-                !usedReaders[position]->getDomainDescriptor().assigned())
-            {
-                handshakeInFlight = true;
-            }
-        }
-        // While a connect handshake is in flight the reader is not yet event-ready: the
-        // in-flight input's initial descriptor event arrives momentarily and re-triggers
-        // evaluation, so both the dataAvailable callback and blocked reads see every
-        // input's initial event at once. The evaluation falls through to step 6, which
-        // truthfully reports the handshaking input as WaitingForDescriptors.
-        if (handshakeInFlight)
-        {
-            for (const auto index : slotIndices)
-                setSlotEventLocked(slots[index], false);
-        }
-        else if (!eventInputs.empty())
-        {
-            // Descriptors apply when leading events are consumed, so the cross-input model
-            // can be built opportunistically - accessors like getCommonSampleRate and
-            // getTickResolution work right after construction, like they always have
-            if (!syncManager->hasModel())
-            {
-                bool modelBuildable = true;
-                for (auto* reader : usedReaders)
-                {
-                    if (!reader->getValueDescriptor().assigned() || !reader->getDomainDescriptor().assigned() || !reader->isValid())
-                        modelBuildable = false;
-                }
-                if (modelBuildable)
-                    syncManager->buildCommonModel(usedReaders, slotIndices, mainPosition);
-            }
-
-            invalidateSynchronizationLocked();
-            setStateWithAffectedLocked(ReaderState::EventPending, "Events pending on inputs", "", std::move(eventInputs));
-            return;
-        }
-    }
-
-    // 6. Descriptors
-    {
-        std::vector<SizeT> missing;
-        for (SizeT position = 0; position < usedReaders.size(); ++position)
-        {
-            if (!usedReaders[position]->getValueDescriptor().assigned() || !usedReaders[position]->getDomainDescriptor().assigned())
-                missing.push_back(slotIndices[position]);
-        }
-        if (!missing.empty())
-        {
-            setStateWithAffectedLocked(ReaderState::WaitingForDescriptors, "Inputs", " have no descriptors yet", std::move(missing));
-            return;
-        }
-    }
-
-    refreshMainInputDescriptorsLocked();
-
-    // 7. Local validity
-    {
-        std::vector<SizeT> invalidInputs;
-        for (SizeT position = 0; position < usedReaders.size(); ++position)
-        {
-            if (!usedReaders[position]->isValid())
-                invalidInputs.push_back(slotIndices[position]);
-        }
-        if (!invalidInputs.empty())
-        {
-            invalidateModelLocked();
-            if (exposeBuriedEventsLocked(invalidInputs))
-            {
-                for (const auto index : invalidInputs)
-                    setSlotEventLocked(slots[index], slots[index]->getQueueReader().hasPendingEvents());
-                setStateWithAffectedLocked(ReaderState::EventPending, "Events pending on inputs", "", std::move(invalidInputs));
-                return;
-            }
-            setStateWithAffectedLocked(
-                ReaderState::Incompatible, "Inputs", " are not readable with the current descriptors", std::move(invalidInputs));
-            return;
-        }
-    }
-
-    // 9. Data-loss deadlines. In-band: an input's buffered pre-loss data stays readable
-    // (the producer went silent AFTER producing it),
-    // so the loss only becomes the reader state once the affected input can no longer
-    // contribute. Recovery is per input on its next packet, after which synchronization is
-    // re-established.
-    {
-        const auto lost = dataLossMonitor->lostSlots();
-        if (!lost.empty())
-        {
-            // "Can no longer contribute" is < one aligned block, not empty: block-aligned
-            // reads floor to whole blocks, so a residual sub-block (possible whenever an
-            // input's divider != blockLcm) is unreadable and, with the producer dead, no
-            // event will ever end its segment to let it drain. Gating on == 0 would stall
-            // the reader in Synchronized forever, never surfacing the loss.
-            const SizeT block = syncManager->hasModel() ? syncManager->getModel().blockLcm : 1;
-            std::vector<SizeT> drainedLost;
-            for (const auto index : lost)
-            {
-                if (slots[index]->getQueueReader().getAvailableSamples() < block)
-                    drainedLost.push_back(index);
-            }
-            if (!drainedLost.empty())
-            {
-                invalidateSynchronizationLocked();
-                setStateWithAffectedLocked(ReaderState::DataLost, "Inputs", " missed their packet deadline", std::move(drainedLost));
-                return;
-            }
-            // Lost but a full block still buffered: keep reading - the loss surfaces once the
-            // input can no longer fill a block
-        }
-    }
-
-    // Already synchronized: nothing further to establish
-    if (syncManager->getCommonStart() != nullptr)
-    {
-        setStateLocked(ReaderState::Synchronized);
-    }
-    else
-    {
-        // 8. Cross-input compatibility and the common model
-        auto setup = syncManager->buildCommonModel(usedReaders, slotIndices, mainPosition);
-        if (!setup.ok())
-        {
-            readCoordinator->invalidate();
-            if (exposeBuriedEventsLocked(setup.affectedInputs))
-            {
-                for (const auto index : setup.affectedInputs)
-                    setSlotEventLocked(slots[index], slots[index]->getQueueReader().hasPendingEvents());
-                setStateWithAffectedLocked(ReaderState::EventPending, "Events pending on inputs", "", std::move(setup.affectedInputs));
-                return;
-            }
-            setStateLocked(ReaderState::Incompatible, std::move(setup.message), std::move(setup.affectedInputs));
-            return;
-        }
-
-        // 10. Data on every input
-        {
-            std::vector<SizeT> empty;
-            for (SizeT position = 0; position < usedReaders.size(); ++position)
-            {
-                if (usedReaders[position]->getAvailableSamples() == 0)
-                    empty.push_back(slotIndices[position]);
-            }
-            if (!empty.empty())
-            {
-                setStateWithAffectedLocked(ReaderState::WaitingForData, "Waiting for data on inputs", "", std::move(empty));
-                return;
-            }
-        }
-
-        // 11. Alignment
-        auto result = syncManager->synchronize(usedReaders, slotIndices);
-        switch (result.outcome)
-        {
-            case SyncOutcome::Synchronized:
-                // 12. Configure the read pipelines
-                readCoordinator->configure(usedReaders, syncManager->getModel());
-                nextReadTick = currentReadOffsetLocked();
-                setStateLocked(ReaderState::Synchronized);
-                break;
-            case SyncOutcome::NeedMoreData:
-                setStateLocked(ReaderState::Synchronizing, std::move(result.message), std::move(result.affectedInputs));
-                break;
-            case SyncOutcome::EventPending:
-            {
-                // setStateLocked moved affectedInputs into the state; read them back from there
-                invalidateSynchronizationLocked();
-                auto affected = result.affectedInputs;
-                setStateLocked(ReaderState::EventPending, std::move(result.message), std::move(result.affectedInputs));
-                for (const auto index : affected)
-                    setSlotEventLocked(slots[index], true);
-                break;
-            }
-            case SyncOutcome::Failed:
-                // Synchronization failure no longer deactivates the reader.
-                // Unlike the Incompatible paths, we do NOT drop buffered data to surface a
-                // buried event here: on a sync failure each input's data is individually valid
-                // and readable (only the cross-input alignment failed), so the consumer's
-                // remedy is to exclude an input or pick a main input - not to lose that input's
-                // samples. A queued corrective descriptor surfaces the normal way once the
-                // offending input is excluded and re-enabled (dropForInactive on re-enable).
-                setStateLocked(ReaderState::SynchronizationFailed, std::move(result.message), std::move(result.affectedInputs));
-                break;
-        }
-    }
-
-    // 13. Readiness for the callback gate - the smallest servable request while synchronized,
-    // the first sample while still establishing - is published by publishProducerGateLocked,
-    // which every evaluateStateLocked exit path funnels through.
 }
 
 void MultiReaderImpl::updateCallbackStateLocked()
@@ -1551,36 +1164,6 @@ MultiReaderStatusPtr MultiReaderImpl::createStatusLocked(const DictPtr<IString, 
         cachedStatusOffset = offsetInt;
     }
     return status;
-}
-
-std::optional<std::int64_t> MultiReaderImpl::currentReadOffsetLocked() const
-{
-    const auto* start = syncManager->getCommonStart();
-    if (start == nullptr)
-        return std::nullopt;
-
-    switch (resolvedDomainReadType)
-    {
-        case SampleType::Int64:
-            if (const auto* typed = dynamic_cast<const DomainValueImpl<std::int64_t>*>(start))
-                return typed->getValue();
-            break;
-        case SampleType::UInt64:
-            if (const auto* typed = dynamic_cast<const DomainValueImpl<std::uint64_t>*>(start))
-                return static_cast<std::int64_t>(typed->getValue());
-            break;
-        case SampleType::Int32:
-            if (const auto* typed = dynamic_cast<const DomainValueImpl<std::int32_t>*>(start))
-                return typed->getValue();
-            break;
-        case SampleType::UInt32:
-            if (const auto* typed = dynamic_cast<const DomainValueImpl<std::uint32_t>*>(start))
-                return typed->getValue();
-            break;
-        default:
-            break;
-    }
-    return std::nullopt;
 }
 
 MultiReaderStatusPtr MultiReaderImpl::readEventsLocked()
