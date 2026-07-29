@@ -672,7 +672,7 @@ void MultiReaderImpl::evaluateStateLocked()
     dataPlaneAvailableValid = false;
 
     auto ctx = makeStateContextLocked();
-    evaluateStateLadder(ctx);
+    runStateEvaluation(ctx);
     applyStateOutcomeLocked(ctx);
 
     publishProducerGateLocked();
@@ -681,6 +681,7 @@ void MultiReaderImpl::evaluateStateLocked()
 StateContext MultiReaderImpl::makeStateContextLocked()
 {
     StateContext ctx(slots, *syncManager, *readCoordinator, *dataLossMonitor, nextReadTick, stateMessage);
+    ctx.currentState = state;
     ctx.invalid = invalid;
     ctx.isActive = isActive;
     ctx.minReadCount = minReadCount;

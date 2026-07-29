@@ -23,7 +23,7 @@
 #include <opendaq/multi_reader/notification_coordinator.h>
 #include <opendaq/multi_reader/read_coordinator.h>
 #include <opendaq/multi_reader/reader_state.h>
-#include <opendaq/multi_reader/state_context.h>
+#include <opendaq/multi_reader/state_machine.h>
 #include <opendaq/reader_config_ptr.h>
 #include <opendaq/reader_factory.h>
 #include <opendaq/reader_status_impl.h>
@@ -185,7 +185,7 @@ private:
     // --- State machine (state mutex held) ---
     /// Full state evaluation - the transition handler run by the paths that change state
     /// (connect/disconnect, used/active changes, topology, events, deadlines). Builds the
-    /// StateContext, runs the evaluation (multi_reader::evaluateStateLadder), applies its verdict
+    /// StateContext, runs the state machine (multi_reader::runStateEvaluation), applies its verdict
     /// and its deferred facade effects, then publishes the producer-facing gate state
     /// (publishProducerGateLocked).
     void evaluateStateLocked();

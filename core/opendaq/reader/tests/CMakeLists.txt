@@ -30,7 +30,7 @@ set(TEST_SOURCES test_factories.cpp
                  ../src/multi_reader/notification_coordinator.cpp
                  ../src/multi_reader/read_coordinator.cpp
                  ../src/multi_reader/state_context.cpp
-                 ../src/multi_reader/state_evaluation.cpp
+                 ../src/multi_reader/state_machine.cpp
                  ../src/multi_reader/data_loss_monitor.cpp
 )
 

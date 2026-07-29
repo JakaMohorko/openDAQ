@@ -32,20 +32,13 @@ void invalidateSynchronization(SynchronizationManager& syncManager,
     nextReadTick.reset();
 }
 
-void StateContext::setState(ReaderState state, std::string message, std::vector<SizeT> affected)
-{
-    outcome.state = state;
-    outcome.message = std::move(message);
-    outcome.affected = std::move(affected);
-}
-
-void StateContext::setStateWithAffected(ReaderState state,
-                                        const char* messagePrefix,
-                                        const char* messageSuffix,
-                                        std::vector<SizeT> affected)
+StateOutcome outcomeWithAffected(ReaderState state,
+                                 const char* messagePrefix,
+                                 const char* messageSuffix,
+                                 std::vector<SizeT> affected)
 {
     auto message = fmt::format("{} [{}]{}", messagePrefix, fmt::join(affected, ", "), messageSuffix);
-    setState(state, std::move(message), std::move(affected));
+    return {state, std::move(message), std::move(affected)};
 }
 
 std::vector<QueueReader*> StateContext::collectUsedReaders(std::vector<SizeT>& slotIndices) const

@@ -46,6 +46,49 @@ struct StateOutcome
     std::vector<SizeT> affected;
 };
 
+/// Formats "<messagePrefix> [i, j, ...]<messageSuffix>" from the affected indices before moving them
+/// into the outcome - never both format and move in one argument list (the evaluation order of
+/// function arguments is unspecified).
+StateOutcome outcomeWithAffected(ReaderState state,
+                                 const char* messagePrefix,
+                                 const char* messageSuffix,
+                                 std::vector<SizeT> affected);
+
+/// What the shared input guard concluded (see InputGuard).
+enum class GuardOutcome
+{
+    Validated,  ///< the inputs are readable; the guard's usedReaders/slotIndices/mainPosition apply
+    Blocked,    ///< some input blocks reading; the guard's blocker holds the substate to report
+    NotValid,   ///< the reader is invalid - ErrorState owns that
+    NotActive   ///< the reader is deactivated - InactiveState owns that
+};
+
+/**
+ * @brief Per-evaluation memo of the shared input guard: the rungs every state class has to
+ * re-derive before it can trust anything downstream (invalid, the unused-slot drain, active, the
+ * used set and main input, connections, events, descriptors, per-input validity).
+ *
+ * Every class runs the guard - the machine is level-triggered, so any of those conditions can appear
+ * at any time, whichever state the reader was in. It must run at most ONCE per evaluation though,
+ * which is what this memo is for: it drains queues and clears arrival flags, so a second run would
+ * be wasted work on the read path.
+ */
+struct InputGuard
+{
+    bool unusedSlotsDrained = false;
+    bool checked = false;
+    GuardOutcome outcome = GuardOutcome::Validated;
+
+    /// Assigned when the outcome is Blocked.
+    StateOutcome blocker;
+
+    /// Valid when the outcome is Validated: the used inputs in slot order, their slot indices and
+    /// the position of the main input among them.
+    std::vector<QueueReader*> usedReaders;
+    std::vector<SizeT> slotIndices;
+    SizeT mainPosition = 0;
+};
+
 /**
  * @brief Everything one state evaluation works on: the collaborators it drives, the configuration
  * it reads, and where its verdict goes. A view - it owns nothing and is built per evaluation.
@@ -87,6 +130,11 @@ struct StateContext
     /// explains why the reader became invalid.
     const std::string& currentMessage;
 
+    /// The substate the reader carries right now. Read for one purpose only: with isActive it says
+    /// which state class the evaluation starts from (stateClassOf) - never as an input to a rung,
+    /// which would make the derivation edge-triggered.
+    ReaderState currentState = ReaderState::WaitingForConnections;
+
     // --- Configuration, snapshotted per evaluation ---
     bool invalid = false;
     bool isActive = true;
@@ -110,12 +158,8 @@ struct StateContext
     bool modelInvalidated = false;
     bool mainDescriptorsStale = false;
 
-    // --- Verdict helpers ---
-    void setState(ReaderState state, std::string message = {}, std::vector<SizeT> affected = {});
-    /// Formats "<messagePrefix> [i, j, ...]<messageSuffix>" from the affected indices before moving
-    /// them into the outcome - never both format and move in one argument list (the evaluation
-    /// order of function arguments is unspecified).
-    void setStateWithAffected(ReaderState state, const char* messagePrefix, const char* messageSuffix, std::vector<SizeT> affected);
+    /// Memo of the shared input guard for this evaluation.
+    InputGuard guard;
 
     // --- Collaborator operations ---
     /// Used inputs in slot order plus their slot indices; main input is the first used slot.
@@ -147,18 +191,6 @@ struct StateContext
 void invalidateSynchronization(SynchronizationManager& syncManager,
                                ReadCoordinator& readCoordinator,
                                std::optional<std::int64_t>& nextReadTick);
-
-/**
- * @brief The state evaluation: derives the reader's substate from ground truth and performs the
- * side effects that belong to reaching it. Assigns @p ctx.outcome exactly once.
- *
- * A pure function of observable state, recomputed from ground truth on every call - not an
- * edge-triggered step function. See docs/multi_reader_state_refactor.md §2 before changing that.
- *
- * Owner thread, facade state mutex held; the caller publishes the producer-facing gate state
- * afterwards.
- */
-void evaluateStateLadder(StateContext& ctx);
 
 }  // namespace multi_reader
 

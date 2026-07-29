@@ -512,15 +512,51 @@ depending on the facade.
 §4 predate this phase. The ladder they point into now lives in `state_evaluation.cpp`; the rung
 comments (`// 1.`, `// 4./5.`, …) are the stable way to find each one.
 
-### Phase 2 — introduce the hierarchy, `checkTransitionCriteria` only
+### Phase 2 — introduce the hierarchy, `checkTransitionCriteria` only (**implemented**)
 
-Five classes, each holding the slice of the existing evaluation that its substates own. `slot*`
-methods present but implemented as `return Transition::reevaluate();` — i.e. exactly today's
-behaviour, in which every notification triggers a full re-derivation. Add the bounded loop of §3.3.
-Keep `StateContext::setState`/`setStateWithAffected` and the facade's `setStateLocked` intact as the
-substate applier.
+Five classes in `multi_reader/state_machine.*`, each owning the rungs its substates come from, plus
+`runStateEvaluation` — the bounded loop of §3.3. Verified against the golden traces, not by reading:
+all 16 unchanged.
 
-Highest-risk phase. The slicing must be verified against the golden trace, not by reading.
+**The class is derived, not stored.** `stateClassOf(substate, isActive)` is total — the classes are
+*defined* as a grouping of the substates, so the class is a pure function of the substate, with
+`EventPending` disambiguated by the active flag. There is therefore no `currentState` member: the
+runner starts from `stateFor(stateClassOf(ctx.currentState, ctx.isActive))`. Storing it would be
+storing a derived value, i.e. inventing a way for the class and the substate to disagree. (Adding the
+member back is one line if a later phase needs per-class data — the flyweights have none.)
+
+**Where the rungs went.** The order of §4 item 2 is preserved exactly; what changed is who owns each
+rung.
+
+| Owner | Rungs |
+|---|---|
+| shared input guard | invalid, the unused-slot drain, active, used set + main input (2), connections (3), the monitoring refresh and leftover-segment discard, events (4/5), descriptors (6), per-input validity (7) |
+| `ErrorState` | none — always settles on `Error`, keeping the message that explains why |
+| `InactiveState` | the inactive arm: disarm monitoring, clear-then-drain each used input, surface its events |
+| `WaitingForValidInputsState` | the guard is its own computation; on success it hands off |
+| `SynchronizingState` | data loss (9), the model (8), data (10), alignment (11/12) |
+| `ReadyState` | data loss (9) and the synchronized fast path |
+
+**The guard is shared because the machine is level-triggered.** Any of its conditions can appear at
+any time, whichever state the reader was in, so every downstream class has to re-derive it — a
+`ReadyState` that trusted "the inputs were fine last time" would be the classic FSM failure mode §2
+exists to prevent. It is memoized per evaluation (`StateContext::guard`) because it drains queues and
+clears arrival flags: correctness allows running it twice, the read path does not.
+
+**Two transition forms, which is what keeps one condition in one place.** A *hand-off*
+(`Transition::handOff`) names a class and no substate — the receiving class derives it, and the loop
+iterates. A *verdict* (`Transition::settled`) carries the substate and is final even when it names
+another class's substate, because the class follows from `stateClassOf`. So `Ready` reporting
+`DataLost` is one verdict, not a hand-off followed by a re-derivation.
+
+The loop is genuinely used (`Inactive` → `WaitingForValidInputs` → `Synchronizing` is the longest
+chain) and cannot cycle: hand-offs only ever run downstream. The bound turns an invariant break into a
+diagnosable `Error` naming the class that would not settle.
+
+**Deviation from the phase list:** the `slot*` edge virtuals are *not* added here. They would have no
+call site and no semantics until Phase 4 specializes them, and a virtual nobody calls is worse than a
+missing one — the facade's `slotConnected`/`slotDisconnected` still run the full evaluation, which is
+exactly what `reevaluate()` would have meant.
 
 ### Phase 3 — move side effects into `onEnter`/`onExit`
 
@@ -543,11 +579,17 @@ Guardrails: no new allocation and no new virtual dispatch on `Input`'s lock-free
 evaluation on the read path. Re-run `bench_multi_reader` (`stress`, `maxrate`) against the
 pre-refactor commit and require parity within noise.
 
-### Phase 5 — split the inactive arm
+### Phase 5 — split the inactive arm (**delivered by Phase 2**)
 
-Delete `if (!isActive)` from the ladder; `InactiveState::checkTransitionCriteria` owns it. This is
-the phase that pays off the original complaint. `setActive` becomes a class transition rather than a
-branch, and the two `EventPending` arrivals become two documented, separately-testable methods.
+Nothing is left of this phase: the slicing had to place the inactive arm somewhere, and the only
+honest place was `InactiveState::checkTransitionCriteria`. `if (!isActive)` is now a routing decision
+in the shared guard (`GuardOutcome::NotActive` → hand off to `InactiveState`) rather than a second
+inline ladder, and the two `EventPending` arrivals are two separate bodies — the inactive arm and the
+guard's event rung — each reachable on its own.
+
+What cannot go away is the `isActive` *test*: the machine is level-triggered, so every class has to
+re-derive whether the reader is still active. "`setActive` becomes a class transition" is true in the
+sense that matters (the arm is a class), not in the sense of the test disappearing.
 
 ### Phase 6 — documentation and cleanup
 
@@ -572,7 +614,8 @@ only if a measured cost appears.
 2. **`EventPending` in two classes** — accept as the honest encoding of the existing fork, or treat
    convergence as a follow-up?
 3. **Flat `ReaderState` substate enum** — keep (recommended: status mapping and `getInputStates`
-   depend on it) or split per class?
+   depend on it) or split per class? **Answered by phase 2:** keep. The flat enum is what makes the
+   class derivable (`stateClassOf`) instead of a second variable to keep in sync.
 4. **Where do the read-path transitions live?** `readInternal`'s commit failure → `Error` (`:1740`)
    and event surfacing in `readEventsLocked` (`:1588`) are state transitions driven by the read, not
    by a slot notification. Options: a `readCommitFailed(ctx)` edge on the base class; or leave them
