@@ -1,11 +1,12 @@
 # Multi Reader state machine refactor — specification and implementation plan
 
-**Status:** phases 0-3 and 5 are implemented; phases 4 and 6 remain, and §3.2/§3.3's sketch of the API
-is superseded by what the code does (see the phase notes in §5). Also implemented: the
-notification-completeness work of 2.1-2.2 (`Input::listen` / `Input::replayMissedPortCallbacks` /
-`Input::adoptQueuedPackets`), for which this document is the rationale.
+**Status:** phases 0-5 are implemented; only phase 6 (documentation and cleanup) remains, and
+§3.2/§3.3's sketch of the API is superseded by what the code does (see the phase notes in §5). Also
+implemented: the notification-completeness work of 2.1-2.2 (`Input::listen` /
+`Input::replayMissedPortCallbacks` / `Input::adoptQueuedPackets`), for which this document is the
+rationale.
 
-Read §5 top to bottom for what each phase actually found - three of them contradicted the plan in this
+Read §5 top to bottom for what each phase actually found - four of them contradicted the plan in this
 document, and those notes are the useful part.
 **Scope:** `MultiReaderImpl`'s state handling only. No change to `SynchronizationManager`,
 `QueueReader`, `ReadCoordinator`, `CallbackGate`, or any public interface.
@@ -595,16 +596,47 @@ rather than on the class, a pair of virtuals per class would be five empty overr
 user. Same reasoning as the `slot*` edges in Phase 2: a virtual nobody calls is worse than a missing
 one.
 
-### Phase 4 — specialize the edges (the only phase with a performance goal)
+### Phase 4 — measure, and specialize nothing (**implemented**)
 
-Replace `reevaluate()` with real implementations where a cheap edge is provably sufficient — most
-importantly `ReadyState::slotPacketReceived`, which is the steady-state hot path. Everything else
-may legitimately stay `reevaluate()` forever; that is a correct implementation, not a stub.
+**Parity, measured properly.** Baseline = the last commit before the refactor (Phase 0); head =
+Phase 3. Both binary sets kept side by side and run **alternately**, with the order flipped every
+repetition, 5 repetitions over 23 throughput points in 5 scenarios:
 
-Guardrails: no new allocation and no new virtual dispatch on `Input`'s lock-free producer path
-(which does not call into the reader's state machine at all); at most one virtual call per
-evaluation on the read path. Re-run `bench_multi_reader` (`stress`, `maxrate`) against the
-pre-refactor commit and require parity within noise.
+> median **+1.0 %**, mean **+0.7 %**, range −6.3 % … +13.8 %, and **not one point whose delta exceeds
+> its own run-to-run spread.**
+
+*Methodology matters more than the numbers here.* The first attempt ran all of head, then all of
+baseline. It reported a +7.7 % median "improvement" and one −22.3 % "regression" (`event_inputs/64`),
+both pure machine drift — that point's own repetition spread is 49–70 %. **Sequential A/B on this
+benchmark is not usable**; spreads reach 30 % on the small-packet points and 70 % on the 64-input
+event point. Anything measured without interleaving should be discarded.
+
+Scenario choice also differs from the plan. `stress` and `maxrate` are steady-state, which makes them
+the *least* sensitive scenarios to this refactor — the machine is not on that path at all (below). The
+runs above therefore add `events`, `event_inputs` and `resync`, which force a full evaluation per
+iteration and are where a regression would actually appear.
+
+**Nothing was specialized, because the edges that matter were never on the machine's path.**
+
+- The producer path does not enter the state machine: `Input::packetReceived` stamps the arrival,
+  raises its gate flags from an O(1) connection introspection and schedules only when the gate is
+  open. Phases 1-3 did not touch it.
+- The two steady-state consumer passes — `refreshDataPlaneLocked` (read and query) and
+  `updateCallbackStateLocked` (the coalesced task) — bypass the machine entirely, gated on
+  `state != Synchronized`. **They are the specialized `ReadyState` edges this phase was meant to
+  write**, they predate the refactor, and they are hand-written for the hot path.
+- So by the time a packet arrival reaches the machine, the machine is running *because* one of those
+  passes escalated: an event surfaced, a deadline expired, or the reader is not Ready. Those are
+  exactly the cases that require the full re-derivation, so a cheap `ReadyState::slotPacketArrived`
+  would have nothing to do.
+- Rewriting the escalation test as `stateClassOf(...) == StateId::Ready` would be *less* defensive for
+  zero gain: `Synchronized` maps to `Ready` regardless of the active flag, so the class test cannot see
+  `!isActive`, which the current three-clause guard checks explicitly.
+
+**Guardrail audit.** No new allocation and no new dispatch on the producer path (untouched). Virtual
+calls per evaluation: 2-3 (one per class in the hand-off chain) rather than the "at most one" the plan
+asked for — and zero on the steady read path, since the machine is not entered there. §7's predicted
+risk of "one extra indirection on the read path" did not materialize for the same reason.
 
 ### Phase 5 — split the inactive arm (**delivered by Phase 2**)
 
@@ -696,3 +728,34 @@ collapses to `currentState->isReady()`.
 
 The risks are one extra indirection on the read path, and the classic FSM failure mode — someone
 later trusting an edge instead of re-deriving. §2 exists to be cited in that review.
+
+### 7.1 Verdict after the fact
+
+That prediction was right, and understated. Of the four claimed wins above, one landed as described
+(the inactive fork is a class boundary), one was refuted (the side effects are not entry/exit
+invariants — §5 phase 3), one is available but unused (no test yet drives a `StateContext` without a
+reader), and one never applied (the gate's `steady` predicate is untouched, because the class is derived
+from the substate rather than stored). The extra read-path indirection did not materialize: the machine
+is not on that path at all.
+
+**So the class hierarchy of §3 is the part of this effort that pays least.** It cost `StateId`,
+`Transition`, five flyweights, a runner loop and a hand-off protocol - and the guard memo, which exists
+*only* because splitting the derivation across classes made the shared guard run more than once. The
+shape the code actually wanted is four named functions over the context:
+
+```
+if (invalid)      -> Error
+drainUnusedSlots()
+if (!isActive)    -> inactiveArm(ctx)
+switch (inputGuard(ctx)) { blocked -> the blocker; validated -> alignmentTail(ctx) }
+```
+
+which keeps every gain of phases 1 and 3 (the context extraction, the named pieces, the single substate
+invariant) and drops the rest, with the guard running exactly once by construction and no memo needed.
+**Collapsing phase 2 that way is the recommended next change** — the golden traces verify a collapse
+exactly as they verified the split. `stateClassOf` survives only if something wants the coarse grouping
+for diagnostics or the status; otherwise it goes with the classes.
+
+What was worth having, and is independent of all of the above: the characterization suite (§5, §5.1),
+the two behaviour fixes it produced, the evaluation moved out of the facade, and the corrections to the
+four false claims this document and the code used to make.
