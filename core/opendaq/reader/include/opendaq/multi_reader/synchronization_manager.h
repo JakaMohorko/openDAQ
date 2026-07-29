@@ -238,6 +238,28 @@ private:
     bool modelValid = false;
     CommonModel model;
 
+    /**
+     * @brief The start tick already decided on but not yet reached by every input - the latched
+     * synchronization target. This is why synchronize() is stateful across calls.
+     *
+     * NeedMoreData means "this target is right, some input has not received the packets to reach it
+     * yet", so the target must survive until it is reached. Recomputing it would let each retry
+     * derive a LATER start: a failed attempt leaves the inputs that did reach the target sitting on
+     * it, so the next round sees those advanced positions as its first samples and rounds up from
+     * them, ratcheting the common start forward a block at a time.
+     *
+     * Deliberately NOT a member of CommonModel: buildCommonModelImpl assigns `model = CommonModel{}`
+     * wholesale, and the state ladder rebuilds the model on every evaluation while commonStart is
+     * null - which is exactly the window this latch has to survive.
+     *
+     * Lifetime: set only on the NeedMoreData exit of synchronize(); consumed when the target is
+     * reached (moved into model.commonStart); dropped by everything that can move the grid or the
+     * data underneath it - invalidateModel (descriptor change / model rebuild), clearSynchronization
+     * (disconnect, used-set change, pending event, data loss, config change), an overshoot, or a
+     * reached value the grid did not predict.
+     */
+    std::unique_ptr<DomainValue> pendingCandidate;
+
     LoggerComponentPtr loggerComponent;
 };
 

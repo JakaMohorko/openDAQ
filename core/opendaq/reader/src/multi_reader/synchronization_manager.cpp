@@ -474,8 +474,13 @@ SynchronizationManager::AdvanceOutcomes SynchronizationManager::advanceAllInputs
 SyncResult SynchronizationManager::synchronize(const std::vector<QueueReader*>& inputs, const std::vector<SizeT>& slotIndices)
 {
     if (!modelValid || inputs.empty() || inputs.size() != slotIndices.size())
+    {
+        pendingCandidate = nullptr;
         return {SyncOutcome::Failed, SyncFailureReason::None, {}, "Synchronization requires a valid common model"};
+    }
 
+    // Clears the ESTABLISHED start only - not the latched target (pendingCandidate), which
+    // is what makes this function stateful across calls.
     model.commonStart = nullptr;
 
     // Alignment is a retry loop: each round inspects every input's first unread sample,
@@ -487,19 +492,31 @@ SyncResult SynchronizationManager::synchronize(const std::vector<QueueReader*>& 
     for (int iteration = 0; iteration < maxIterations; ++iteration)
     {
         // 1. Where does each input's unread data start, in the common domain?
+        //    An input with nothing unread is the soft case: return without touching the latched
+        //    target, so the decision already made survives until the data arrives.
         std::vector<std::unique_ptr<DomainValue>> firstSamples(inputs.size());
         if (auto waiting = collectFirstSamples(inputs, slotIndices, firstSamples))
             return *waiting;
 
         // 2. Do all inputs start close enough together to be synchronized at all?
         if (auto tooFar = checkSynchronizationDistance(firstSamples, slotIndices))
+        {
+            pendingCandidate = nullptr;
             return *tooFar;
+        }
 
-        // 3. Choose the start tick on the main input's grid.
-        auto pick = pickStartCandidate(firstSamples, slotIndices);
-        if (pick.failure)
-            return *pick.failure;
-        auto candidate = std::move(pick.value);
+        // 3. The start tick: the one already decided on if there is one, otherwise chosen on the
+        //    main input's grid. Taking the latch by move means every exit below except the
+        //    NeedMoreData one leaves it cleared, which is exactly the intended lifetime - only
+        //    "the target is right, the data has not arrived" re-latches it.
+        auto candidate = std::move(pendingCandidate);
+        if (!candidate)
+        {
+            auto pick = pickStartCandidate(firstSamples, slotIndices);
+            if (pick.failure)
+                return *pick.failure;
+            candidate = std::move(pick.value);
+        }
 
         // 4. Move every input's cursor forward onto the candidate.
         auto advanced = advanceAllInputs(inputs, slotIndices, *candidate);
@@ -510,6 +527,9 @@ SyncResult SynchronizationManager::synchronize(const std::vector<QueueReader*>& 
         }
         if (!advanced.needMoreDataInputs.empty())
         {
+            // Latch the target: the inputs that did reach it stay where they are, and the ones that
+            // did not are waited for against THIS tick rather than a freshly derived, later one.
+            pendingCandidate = std::move(candidate);
             return {SyncOutcome::NeedMoreData, SyncFailureReason::None, advanced.needMoreDataInputs,
                     "Waiting for data to reach the aligned start"};
         }
@@ -540,12 +560,20 @@ SyncResult SynchronizationManager::synchronize(const std::vector<QueueReader*>& 
 void SynchronizationManager::clearSynchronization()
 {
     model.commonStart = nullptr;
+    // Every hard event (disconnect, used-set change, pending event, data loss, config change)
+    // reaches us through here, and each of them can move the data or the grid the latched target
+    // was computed on - so the target goes with the established start. Only the soft case, an
+    // input that has not yet received the packets to reach the target, keeps it (see
+    // SynchronizationManager::pendingCandidate).
+    pendingCandidate = nullptr;
 }
 
 void SynchronizationManager::invalidateModel()
 {
     model = CommonModel{};
     modelValid = false;
+    // The latched target was computed on the grid this model defines; a rebuild can move the grid.
+    pendingCandidate = nullptr;
 }
 
 const DomainValue* SynchronizationManager::getCommonStart() const

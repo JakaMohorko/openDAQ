@@ -127,7 +127,8 @@ public:
 
     /**
      * @brief Advance the cursor to the first sample at or after domainValue (signal-domain target).
-     * Pending events block advancing (returns Error); the owner must pop them first.
+     * Pending events block advancing (returns Error); the owner must pop them first. This method
+     * advances the packet queue by discarding all packets that don't contain ticks >= domainValue.
      */
     AdvanceOutcome advanceToDomainValue(const DomainValue* domainValue);
     Int getSampleRate() const;
