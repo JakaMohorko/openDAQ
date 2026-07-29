@@ -606,10 +606,22 @@ repetition, 5 repetitions over 23 throughput points in 5 scenarios:
 > its own run-to-run spread.**
 
 *Methodology matters more than the numbers here.* The first attempt ran all of head, then all of
-baseline. It reported a +7.7 % median "improvement" and one −22.3 % "regression" (`event_inputs/64`),
-both pure machine drift — that point's own repetition spread is 49–70 %. **Sequential A/B on this
-benchmark is not usable**; spreads reach 30 % on the small-packet points and 70 % on the 64-input
-event point. Anything measured without interleaving should be discarded.
+baseline, and reported a +7.7 % median "improvement" plus one −22.3 % "regression"
+(`event_inputs/64`) — both artifacts. The whole-set offset had an identified external cause: the
+machine was unplugged and replugged between the two halves, so the two sets ran at different CPU
+frequency-scaling states. That is a one-off, not evidence that this benchmark cannot be run
+sequentially.
+
+Two things do generalize:
+
+- **Interleave anyway.** It is nearly free and it makes the comparison immune to any whole-set offset,
+  whatever the cause — power state, thermal, a background build. A sequential A/B is only as good as
+  your confidence that nothing changed in between, and that confidence is not verifiable after the
+  fact.
+- **Some points here are inherently too noisy to read individually.** In the interleaved run, with no
+  power event, `event_inputs/64` still spread 49–70 % between repetitions and the small-packet `stress`
+  points 30 %. A single-digit delta on those points means nothing in either direction; only the
+  population of 23 points supports a conclusion.
 
 Scenario choice also differs from the plan. `stress` and `maxrate` are steady-state, which makes them
 the *least* sensitive scenarios to this refactor — the machine is not on that path at all (below). The
