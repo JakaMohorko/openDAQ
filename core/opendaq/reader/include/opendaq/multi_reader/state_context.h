@@ -21,6 +21,7 @@
 #include <opendaq/multi_reader/synchronization_manager.h>
 #include <opendaq/sample_type.h>
 
+#include <atomic>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -32,12 +33,12 @@ namespace multi_reader
 {
 
 /**
- * @brief The single verdict of one state evaluation: the substate, its diagnostic message and the
+ * @brief The single verdict of one state derivation: the substate, its diagnostic message and the
  * inputs the message names.
  *
- * One evaluation produces exactly one outcome - every rung of the ladder assigns it and returns -
- * which is why the facade can apply it once, when the evaluation returns, instead of the evaluation
- * writing the facade's state directly.
+ * One derivation produces exactly one outcome - every rung returns as soon as it decides - which is
+ * why the facade applies it once, when the derivation returns, instead of the state code writing the
+ * facade's state directly.
  */
 struct StateOutcome
 {
@@ -54,65 +55,74 @@ StateOutcome outcomeWithAffected(ReaderState state,
                                  const char* messageSuffix,
                                  std::vector<SizeT> affected);
 
-/// What the shared input guard concluded (see InputGuard).
-enum class GuardOutcome
-{
-    Validated,  ///< the inputs are readable; the guard's usedReaders/slotIndices/mainPosition apply
-    Blocked,    ///< some input blocks reading; the guard's blocker holds the substate to report
-    NotValid,   ///< the reader is invalid - ErrorState owns that
-    NotActive   ///< the reader is deactivated - InactiveState owns that
-};
-
 /**
- * @brief Per-evaluation memo of the shared input guard: the rungs every state class has to
- * re-derive before it can trust anything downstream (invalid, the unused-slot drain, active, the
- * used set and main input, connections, events, descriptors, per-input validity).
+ * @brief The synchronized fast path's state: what the last pass adopted and published, plus the
+ * scratch it reuses so no availability query allocates.
  *
- * Every class runs the guard - the machine is level-triggered, so any of those conditions can appear
- * at any time, whichever state the reader was in. It must run at most ONCE per evaluation though,
- * which is what this memo is for: it drains queues and clears arrival flags, so a second run would
- * be wasted work on the read path.
+ * Owned by the facade because it has to survive across calls (the states maintain it, they do not own
+ * it). `dirty` is the one field a producer touches - Input's lock-free notification sets it - so it is
+ * atomic; everything else is owner-thread only under the state mutex.
+ *
+ * `availableCommon` and `slotAvailable` are valid ONLY while `availableValid`: a non-escalating
+ * synchronized pass sets it, and any escalation, non-synchronized pass or consuming read clears it,
+ * after which consumers fall back to a direct walk.
  */
-struct InputGuard
+struct DataPlane
 {
-    bool unusedSlotsDrained = false;
-    bool checked = false;
-    GuardOutcome outcome = GuardOutcome::Validated;
+    std::atomic_bool dirty{true};
+    /// A read consumed since the last pass, so a buried event may now be leading.
+    bool consumed = false;
 
-    /// Assigned when the outcome is Blocked.
-    StateOutcome blocker;
+    std::vector<SizeT> slotAvailable;
+    SizeT availableCommon = 0;
+    bool availableValid = false;
 
-    /// Valid when the outcome is Validated: the used inputs in slot order, their slot indices and
-    /// the position of the main input among them.
-    std::vector<QueueReader*> usedReaders;
-    std::vector<SizeT> slotIndices;
-    SizeT mainPosition = 0;
+    /// Reused across calls; kept separate from the read path's own scratch so the two never alias.
+    std::vector<QueueReader*> scratchReaders;
+    std::vector<SizeT> scratchSlotIndices;
 };
 
 /**
- * @brief Everything one state evaluation works on: the collaborators it drives, the configuration
- * it reads, and where its verdict goes. A view - it owns nothing and is built per evaluation.
+ * @brief Everything the state code works on: the collaborators it drives, the configuration it
+ * reads, and where its verdict goes. A view - it owns nothing and is built per operation.
  *
- * Deliberately not a back-pointer to the reader. What the evaluation may touch is exactly what is
- * reachable from here, which is what will let the state classes of the refactor be exercised
- * without a live reader (docs/multi_reader_state_refactor.md).
+ * Deliberately not a back-pointer to the reader: what the state code may touch is exactly what is
+ * reachable from here, which is what lets a behaviour be exercised without a live reader
+ * (docs/multi_reader_state_refactor.md).
  *
  * Threading: owner thread only, with the facade's state mutex held. Producers reach none of this.
  */
 struct StateContext
 {
+    // Every member is a reference, deliberately: the context is built on the read and query paths, so
+    // construction has to be a handful of pointer stores. Nothing is snapshotted, which also means a
+    // context stays correct across an escalation that changes the state under it.
     StateContext(const std::vector<Input*>& slots,
                  SynchronizationManager& syncManager,
                  ReadCoordinator& readCoordinator,
                  DataLossMonitor& dataLossMonitor,
+                 DataPlane& dataPlane,
                  std::optional<std::int64_t>& nextReadTick,
-                 const std::string& currentMessage)
+                 const std::string& currentMessage,
+                 const ReaderState& substate,
+                 const StringPtr& mainInputId,
+                 const bool& invalid,
+                 const bool& isActive,
+                 const SizeT& minReadCount,
+                 const SampleType& resolvedDomainReadType)
         : slots(slots)
         , syncManager(syncManager)
         , readCoordinator(readCoordinator)
         , dataLossMonitor(dataLossMonitor)
+        , dataPlane(dataPlane)
         , nextReadTick(nextReadTick)
         , currentMessage(currentMessage)
+        , substate(substate)
+        , mainInputId(mainInputId)
+        , invalid(invalid)
+        , isActive(isActive)
+        , minReadCount(minReadCount)
+        , resolvedDomainReadType(resolvedDomainReadType)
     {
     }
 
@@ -121,6 +131,7 @@ struct StateContext
     SynchronizationManager& syncManager;
     ReadCoordinator& readCoordinator;
     DataLossMonitor& dataLossMonitor;
+    DataPlane& dataPlane;
 
     /// Common-domain tick of the next unread output sample; assigned when the evaluation
     /// synchronizes, cleared whenever it invalidates the synchronization.
@@ -130,20 +141,20 @@ struct StateContext
     /// explains why the reader became invalid.
     const std::string& currentMessage;
 
-    /// The substate the reader carries right now. Read for one purpose only: with isActive it says
-    /// which state class the evaluation starts from (stateClassOf) - never as an input to a rung,
-    /// which would make the derivation edge-triggered.
-    ReaderState currentState = ReaderState::WaitingForConnections;
+    /// The substate the reader is currently reporting - its own published diagnosis, which a
+    /// behaviour may act on (holding unconsumed events is the case that matters). Not an input to the
+    /// derivation, which always starts from ground truth.
+    const ReaderState& substate;
 
-    // --- Configuration, snapshotted per evaluation ---
-    bool invalid = false;
-    bool isActive = true;
-    SizeT minReadCount = 1;
-    StringPtr mainInputId;  ///< explicitly selected main input; null -> first used input
-    SampleType resolvedDomainReadType = SampleType::Int64;
+    /// Explicitly selected main input; null -> first used input. By reference: the context is built
+    /// per operation, including on the read path, and a StringPtr copy is a refcount bump per read.
+    const StringPtr& mainInputId;
 
-    // --- Verdict ---
-    StateOutcome outcome;
+    // --- Configuration ---
+    const bool& invalid;
+    const bool& isActive;
+    const SizeT& minReadCount;
+    const SampleType& resolvedDomainReadType;
 
     /**
      * @brief Deferred facade effects. The status cache and the main-input descriptors are derived
@@ -157,9 +168,6 @@ struct StateContext
      */
     bool modelInvalidated = false;
     bool mainDescriptorsStale = false;
-
-    /// Memo of the shared input guard for this evaluation.
-    InputGuard guard;
 
     // --- Collaborator operations ---
     /// Used inputs in slot order plus their slot indices; main input is the first used slot.

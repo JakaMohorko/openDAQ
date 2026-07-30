@@ -113,7 +113,9 @@ const char* readStatusName(ReadStatus status)
 
 }  // namespace
 
-class MultiReaderStateTest : public ReaderTest<>
+/// Every scenario runs twice: once with each behaviour checking its own exit conditions, and once with
+/// the exhaustive derivation forced (the reference). Identical traces are what verify the narrow checks.
+class MultiReaderStateTest : public ReaderTest<>, public testing::WithParamInterface<bool>
 {
 public:
     using Super = ReaderTest<>;
@@ -328,6 +330,7 @@ private:
     {
         impl = dynamic_cast<MultiReaderImpl*>(multi.asPtr<IReaderConfig>().getObject());
         ASSERT_NE(impl, nullptr);
+        impl->setExhaustiveDerivationForTest(GetParam());
     }
 
     /// Lets any coalesced evaluation already scheduled by a producer finish, so an observation never
@@ -351,7 +354,7 @@ private:
 
 // --- Cold start ---------------------------------------------------------------------------------
 
-TEST_F(MultiReaderStateTest, ColdStartStaggeredConnects)
+TEST_P(MultiReaderStateTest, ColdStartStaggeredConnects)
 {
     addSignal();
     addSignal();
@@ -385,7 +388,7 @@ TEST_F(MultiReaderStateTest, ColdStartStaggeredConnects)
     });
 }
 
-TEST_F(MultiReaderStateTest, NoCallbackUntilEveryUsedInputHasSignal)
+TEST_P(MultiReaderStateTest, NoCallbackUntilEveryUsedInputHasSignal)
 {
     // Contract item 4, both halves. While a used input has no signal, every slot's event bit is
     // suppressed, so the events already queued on the connected inputs cannot fire the callback;
@@ -420,7 +423,7 @@ TEST_F(MultiReaderStateTest, NoCallbackUntilEveryUsedInputHasSignal)
 
 // --- Events: leading vs buried ------------------------------------------------------------------
 
-TEST_F(MultiReaderStateTest, BuriedEventSurfacesOnReadNotOnQuery)
+TEST_P(MultiReaderStateTest, BuriedEventSurfacesOnReadNotOnQuery)
 {
     // Contract item 6: the query path records a buried event for the gate but does not run the
     // ladder for it, so the reader stays Synchronized and simply reports nothing available past the
@@ -460,7 +463,7 @@ TEST_F(MultiReaderStateTest, BuriedEventSurfacesOnReadNotOnQuery)
     });
 }
 
-TEST_F(MultiReaderStateTest, LeadingEventPreemptsEveryRungBelowIt)
+TEST_P(MultiReaderStateTest, LeadingEventPreemptsEveryRungBelowIt)
 {
     // The same descriptor change with nothing buffered: the event leads immediately, so even the
     // query path's escalation lands on EventPending.
@@ -485,7 +488,7 @@ TEST_F(MultiReaderStateTest, LeadingEventPreemptsEveryRungBelowIt)
 
 // --- Incompatible descriptors -------------------------------------------------------------------
 
-TEST_F(MultiReaderStateTest, IncompatibleDescriptorAndRecovery)
+TEST_P(MultiReaderStateTest, IncompatibleDescriptorAndRecovery)
 {
     // Rung 7 (local validity) with a value type that cannot be converted to the read type, and the
     // recovery a later convertible descriptor brings. Incompatible is recoverable: the reader
@@ -521,7 +524,7 @@ TEST_F(MultiReaderStateTest, IncompatibleDescriptorAndRecovery)
     });
 }
 
-TEST_F(MultiReaderStateTest, RequiredRateNotDivisibleIsIncompatible)
+TEST_P(MultiReaderStateTest, RequiredRateNotDivisibleIsIncompatible)
 {
     // Rung 8 (the cross-input model) rather than rung 7: each input is individually readable, the
     // required common rate is what cannot be satisfied. Same substate, different producer - the
@@ -543,7 +546,7 @@ TEST_F(MultiReaderStateTest, RequiredRateNotDivisibleIsIncompatible)
 
 // --- Alignment ----------------------------------------------------------------------------------
 
-TEST_F(MultiReaderStateTest, AlignmentIsIterativeAndSynchronizingIsTransient)
+TEST_P(MultiReaderStateTest, AlignmentIsIterativeAndSynchronizingIsTransient)
 {
     // Rung 11: the alignment step is iterative. The start tick is chosen from the latest first
     // sample, and an input that has not received the packets to reach it yet leaves the reader in
@@ -599,7 +602,7 @@ TEST_F(MultiReaderStateTest, AlignmentIsIterativeAndSynchronizingIsTransient)
     });
 }
 
-TEST_F(MultiReaderStateTest, SynchronizationDistanceExceededAndRemedy)
+TEST_P(MultiReaderStateTest, SynchronizationDistanceExceededAndRemedy)
 {
     // Rung 11's failure exit: the inputs start ten seconds apart with a five second threshold. The
     // early input is named, the reader stays active and valid, and - unlike the Incompatible paths -
@@ -631,7 +634,7 @@ TEST_F(MultiReaderStateTest, SynchronizationDistanceExceededAndRemedy)
 
 // --- Data loss ----------------------------------------------------------------------------------
 
-TEST_F(MultiReaderStateTest, DataLossOnlyOnceTheInputCannotContribute)
+TEST_P(MultiReaderStateTest, DataLossOnlyOnceTheInputCannotContribute)
 {
     // Contract item 12, first half: the loss is in-band. An input whose producer went silent after
     // delivering a readable block keeps the reader Synchronized until that block is consumed.
@@ -667,7 +670,7 @@ TEST_F(MultiReaderStateTest, DataLossOnlyOnceTheInputCannotContribute)
     });
 }
 
-TEST_F(MultiReaderStateTest, DataLossWithSubBlockResidual)
+TEST_P(MultiReaderStateTest, DataLossWithSubBlockResidual)
 {
     // Contract item 12, second half: "can no longer contribute" is < one aligned block, not empty.
     // Input 0 runs at 750 Hz (divider 2) and input 1 at 500 Hz (divider 3), so the aligned block is
@@ -698,7 +701,7 @@ TEST_F(MultiReaderStateTest, DataLossWithSubBlockResidual)
 
 // --- setActive: the second arm of the ladder ----------------------------------------------------
 
-TEST_F(MultiReaderStateTest, InactiveArmHasItsOwnReducedVocabulary)
+TEST_P(MultiReaderStateTest, InactiveArmHasItsOwnReducedVocabulary)
 {
     // The inactive arm is the fork the refactor turns into a class boundary, and its vocabulary is
     // exactly {Inactive, EventPending}: it consumes and reports events, but it never validates
@@ -747,7 +750,7 @@ TEST_F(MultiReaderStateTest, InactiveArmHasItsOwnReducedVocabulary)
 
 // --- setInputUsed -------------------------------------------------------------------------------
 
-TEST_F(MultiReaderStateTest, UnusedInputStaysObservableAndRecovers)
+TEST_P(MultiReaderStateTest, UnusedInputStaysObservableAndRecovers)
 {
     // An unused input is excluded from reading but stays observable: its queued events are still
     // adopted and reported as its per-input state, which is the recovery signal a consumer answers
@@ -794,7 +797,7 @@ TEST_F(MultiReaderStateTest, UnusedInputStaysObservableAndRecovers)
     });
 }
 
-TEST_F(MultiReaderStateTest, ExcludingAnInputDropsWhatItHasAdopted)
+TEST_P(MultiReaderStateTest, ExcludingAnInputDropsWhatItHasAdopted)
 {
     // Why the exclusion drops immediately instead of on the way back in: InputState::Event is derived
     // from hasPendingEvents(), which is leading-only, so an event arriving behind the input's own
@@ -826,9 +829,46 @@ TEST_F(MultiReaderStateTest, ExcludingAnInputDropsWhatItHasAdopted)
     });
 }
 
+TEST_P(MultiReaderStateTest, ConnectingAnUnusedInputLeavesTheReaderSynchronized)
+{
+    // A signal appearing on an input that is excluded from reading cannot change a model built from the
+    // used inputs, so ReadyState answers this connect without invalidating anything
+    // (ReadyState::slotConnected). What the consumer sees is the reader carrying on, with the new
+    // input's descriptor event reported as that input's state - the recovery signal it would answer
+    // with setInputUsed(id, true).
+    addSignal();
+    addSignal();
+    addSignal();
+    buildFromPorts();
+
+    connect(0);
+    connect(1);
+    setInputUsed(2, false);
+    readEvents("read initial events");
+
+    send(0);
+    send(1);
+    probe("data on the used inputs");
+
+    connect(2);
+    probe("unused input connected");
+
+    const auto status = readData("read the block", 10);
+    EXPECT_EQ(inputState(status, 2), InputState::Event);
+    EXPECT_EQ(inputState(status, 0), InputState::Ok);
+
+    expectTrace({
+        "read initial events -> WaitingForData[0,1] status=Event events=2",
+        "data on the used inputs -> Synchronized[] avail=10",
+        // Still synchronized, still the same ten samples: the connect did not disturb the alignment
+        "unused input connected -> Synchronized[] avail=10",
+        "read the block -> Synchronized[] status=Ok count=10",
+    });
+}
+
 // --- Disconnect ---------------------------------------------------------------------------------
 
-TEST_F(MultiReaderStateTest, DisconnectDropsToWaitingForConnections)
+TEST_P(MultiReaderStateTest, DisconnectDropsToWaitingForConnections)
 {
     addSignal();
     addSignal();
@@ -861,7 +901,7 @@ TEST_F(MultiReaderStateTest, DisconnectDropsToWaitingForConnections)
     });
 }
 
-TEST_F(MultiReaderStateTest, DisconnectDiscardsWhatTheSlotHasAdopted)
+TEST_P(MultiReaderStateTest, DisconnectDiscardsWhatTheSlotHasAdopted)
 {
     // A disconnect throws away everything the slot adopted from that connection - queued samples,
     // pending events and the cached descriptors (QueueReader::updateConnection, keyed on connection
@@ -901,7 +941,7 @@ TEST_F(MultiReaderStateTest, DisconnectDiscardsWhatTheSlotHasAdopted)
 
 // --- Error --------------------------------------------------------------------------------------
 
-TEST_F(MultiReaderStateTest, ErrorIsTerminalAndOutranksEverything)
+TEST_P(MultiReaderStateTest, ErrorIsTerminalAndOutranksEverything)
 {
     // Contract item 1: invalid <=> Error, checked before inactivity and everything else, and
     // terminal - no trigger can leave it.
@@ -937,3 +977,9 @@ TEST_F(MultiReaderStateTest, ErrorIsTerminalAndOutranksEverything)
         "reactivated after error -> Error[] avail=0",
     });
 }
+
+INSTANTIATE_TEST_SUITE_P(StateDerivation,
+                         MultiReaderStateTest,
+                         testing::Values(false, true),
+                         [](const testing::TestParamInfo<bool>& info)
+                         { return info.param ? "Exhaustive" : "PerBehaviour"; });

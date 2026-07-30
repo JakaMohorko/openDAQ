@@ -517,180 +517,38 @@ SizeT MultiReaderImpl::mainSlotIndexLocked() const
     return findSlotByIdLocked(mainInputId);
 }
 
-void MultiReaderImpl::refreshDataPlaneLocked(bool escalateOnEvent)
+void MultiReaderImpl::refreshDataPlaneLocked(StateContext& ctx, bool escalateOnEvent)
 {
-    // Establishment phases (waiting/synchronizing/failed) still run the full evaluation -
-    // progress toward synchronization is exactly what those states are doing. The fast path
-    // below is the synchronized steady state: no checks until an event is
-    // encountered or a deadline expires; data packets only ever add availability.
-    if (invalid || !isActive || state != ReaderState::Synchronized)
-    {
-        // The full ladder decides everything here (and clears the availability cache).
+    if (currentState->refreshDataPlane(ctx, escalateOnEvent))
         evaluateStateLocked();
-        return;
-    }
-
-    // Nothing to do if nothing changed since the last pass: no packet arrived (dataPlaneDirty)
-    // and no read consumed (dataPlaneConsumed), and no deadline is pending. A buried event can
-    // only surface through an arrival or a consumption, so there is nothing to re-check - this
-    // collapses the repeated refreshes of a poll-then-read loop to one real pass. Any cached
-    // availability stays valid across this early return: with nothing arrived and nothing
-    // consumed the counts cannot have moved.
-    const bool arrived = dataPlaneDirty.exchange(false, std::memory_order_acquire);
-    if (!arrived && !dataPlaneConsumed && !dataLossMonitor->hasLostSlots())
-        return;
-    dataPlaneConsumed = false;
-
-    // This pass recomputes each used input's availability (below), so the read path can plan and
-    // lower readiness from the cached counts instead of walking every input again in createPlan
-    // and in the post-commit readiness update. The slot count is fixed after construction; size
-    // the cache lazily.
-    if (dataPlaneSlotAvailable.size() != slots.size())
-        dataPlaneSlotAvailable.assign(slots.size(), 0);
-
-    const bool haveModel = syncManager->hasModel();
-    // The gate's ready threshold is the smallest servable aligned request - the same minimum
-    // the availability alignment and the leftover-segment discard enforce - so an open gate
-    // always means a read can actually return samples.
-    const SizeT gateMinimum = haveModel ? ReadCoordinator::effectiveMinimum(syncManager->getModel(), minReadCount) : 0;
-
-    bool escalate = false;
-    bool anyEvent = false;
-    SizeT availableCommon = std::numeric_limits<SizeT>::max();
-    for (SizeT i = 0; i < slots.size(); ++i)
-    {
-        auto* slot = slots[i];
-        const bool packetsArrived = slot->clearPacketPending();
-
-        if (!slot->isUsed())
-        {
-            // Only events can arrive on an unused input's inactive port
-            if (packetsArrived)
-            {
-                slot->adoptQueuedPackets();
-                if (slot->isConnected())
-                {
-                    auto& reader = slot->getQueueReader();
-                    reader.drain();
-                    publishSlotBasisLocked(slot);
-                    setSlotEventLocked(slot, reader.hasPendingEvents());
-                }
-            }
-            continue;
-        }
-
-        auto& reader = slot->getQueueReader();
-
-        // The drain (the expensive step - adopts queued packets) is gated on arrival: a slot
-        // with no new packet has nothing new to adopt.
-        if (packetsArrived)
-            reader.drain();
-
-        // The event check runs EVERY cycle, not only on arrival: a leading event must be
-        // reported (EventPending), and a buried event needs the full evaluation so the
-        // partial segment in front of it can be discarded and the event can surface
-        // (discardLeftoverSegments). A buried event becomes reachable through the reader's
-        // own consumption (a read advancing the frontier past the data ahead of it) with no
-        // new packet arriving, so gating this on packetsArrived would miss it. Both queries
-        // are O(1) (empty-check / sticky adoption flag), so per-cycle is cheap.
-        const bool hasEvent = reader.hasPendingEvents() || reader.hasQueuedEventPackets();
-        publishSlotBasisLocked(slot);
-        if (hasEvent)
-        {
-            // The read/query path escalates so the full ladder transitions to EventPending and
-            // discards residuals; the callback path only records the event for the gate -
-            // buried-inclusive, so a sub-block residual before a buried event still fires the
-            // callback - and re-arms dataPlaneDirty (below) so the next read/query runs the ladder.
-            if (escalateOnEvent)
-                escalate = true;
-            else
-            {
-                setSlotEventLocked(slot, true);
-                anyEvent = true;
-            }
-            continue;
-        }
-
-        // The read/query path leaves event bits to evaluateStateLocked; the callback path owns
-        // them here, so clear a stale bit once the slot's events have drained away.
-        if (!escalateOnEvent)
-            setSlotEventLocked(slot, false);
-
-        // Availability is O(1) here (the queue reader maintains it incrementally across drains
-        // and reads), so recomputing it for every used slot each real pass is cheap - and it is
-        // exactly the count createPlan needs, so caching it removes createPlan's separate walk.
-        // Readiness is derived from the same value: a slot is ready with the smallest servable
-        // aligned request buffered before its next event.
-        if (haveModel)
-        {
-            const SizeT avail = reader.getAvailableSamplesUntilEvent();
-            dataPlaneSlotAvailable[i] = avail;
-            availableCommon = std::min(availableCommon, avail);
-            setSlotReadyLocked(slot, avail >= gateMinimum);
-        }
-    }
-
-    // Deadlines are maintained by the monitor's waiter thread; an unresolved loss must
-    // re-enter the full evaluation (it decides when the loss becomes visible)
-    if (!escalate && dataLossMonitor->hasLostSlots())
-        escalate = true;
-
-    if (escalate)
-    {
-        // The full evaluation can drop partial segments or change state, so the availability
-        // gathered above is not authoritative; it clears the cache and consumers fall back to a
-        // direct walk.
-        evaluateStateLocked();
-        return;
-    }
-
-    if (anyEvent)
-    {
-        // The callback path recorded an event for the gate but did not run the ladder. Re-arm
-        // dataPlaneDirty so the next read/query does a full pass (escalateOnEvent) that surfaces
-        // it, and do not publish the partial availability gathered above.
-        dataPlaneDirty.store(true, std::memory_order_release);
-        dataPlaneAvailableValid = false;
-        return;
-    }
-
-    // Steady synchronized state: publish the availability this pass computed. The sentinel
-    // survives only when no input is used, which maps to nothing available.
-    dataPlaneAvailableCommon = availableCommon == std::numeric_limits<SizeT>::max() ? 0 : availableCommon;
-    dataPlaneAvailableValid = haveModel;
 }
 
 void MultiReaderImpl::evaluateStateLocked()
 {
-    // The full evaluation can drain, drop segments or change state, so any availability the last
-    // fast pass cached is no longer authoritative. Clearing it here (the single funnel every full
-    // evaluation passes through) is what makes the cache safe to reuse across
-    // refreshDataPlaneLocked's early return: the cache is valid ONLY between a non-escalating
-    // synchronized fast pass and the next thing that runs, and that next thing is either another
-    // fast pass (which republishes it), the early return (nothing changed, so it stays exact), or a
-    // full evaluation (this, which clears it).
-    dataPlaneAvailableValid = false;
-
-    auto ctx = makeStateContextLocked();
-    runStateEvaluation(ctx);
-    applyStateOutcomeLocked(ctx);
-
-    publishProducerGateLocked();
+    // The behaviour checks its own exit conditions; the exhaustive derivation is the reference the
+    // tests cross-check that against.
+    settleLocked([this](StateContext& ctx)
+                 { return exhaustiveDerivationForTest ? deriveState(ctx) : currentState->reassess(ctx); });
 }
 
 StateContext MultiReaderImpl::makeStateContextLocked()
 {
-    StateContext ctx(slots, *syncManager, *readCoordinator, *dataLossMonitor, nextReadTick, stateMessage);
-    ctx.currentState = state;
-    ctx.invalid = invalid;
-    ctx.isActive = isActive;
-    ctx.minReadCount = minReadCount;
-    ctx.mainInputId = mainInputId;
-    ctx.resolvedDomainReadType = resolvedDomainReadType;
-    return ctx;
+    return StateContext(slots,
+                        *syncManager,
+                        *readCoordinator,
+                        *dataLossMonitor,
+                        dataPlane,
+                        nextReadTick,
+                        stateMessage,
+                        state,
+                        mainInputId,
+                        invalid,
+                        isActive,
+                        minReadCount,
+                        resolvedDomainReadType);
 }
 
-void MultiReaderImpl::applyStateOutcomeLocked(StateContext& ctx)
+void MultiReaderImpl::applyStateOutcomeLocked(StateContext& ctx, StateOutcome outcome)
 {
     // The evaluation cannot reach these, so it flagged them instead. The order is the order the
     // ladder used to run them in: the descriptor refresh sits above the rungs that invalidate the
@@ -702,7 +560,11 @@ void MultiReaderImpl::applyStateOutcomeLocked(StateContext& ctx)
 
     // One evaluation, one verdict - so the InputsFailed latch in setStateLocked still sees exactly
     // one transition per evaluation, and still compares against the state it is replacing.
-    setStateLocked(ctx.outcome.state, std::move(ctx.outcome.message), std::move(ctx.outcome.affected));
+    setStateLocked(outcome.state, std::move(outcome.message), std::move(outcome.affected));
+
+    // The behaviour follows the substate (stateIdFor). Cached rather than recomputed per call because
+    // every read and query dispatches through it; this is the single place it is written.
+    currentState = &stateFor(stateIdFor(state, isActive));
 }
 
 void MultiReaderImpl::setSlotReadyLocked(Input* slot, bool ready)
@@ -741,122 +603,11 @@ void MultiReaderImpl::clearGateReadinessLocked()
     }
 }
 
-void MultiReaderImpl::publishProducerGateLocked()
-{
-    // The steady Synchronized state is the only one where producers gate their own scheduling;
-    // everywhere else every packet forces an evaluation (wakeOnAnyPacket), which preserves the
-    // classic liveness of the establishment, failure and recovery paths - a DataLost slot's
-    // reviving packet or a Synchronizing slot's alignment progress never waits on the gate.
-    const bool steady = state == ReaderState::Synchronized && syncManager->hasModel();
-    const SizeT gateMinimum = steady ? ReadCoordinator::effectiveMinimum(syncManager->getModel(), minReadCount) : 0;
-
-    for (auto* slot : slots)
-    {
-        slot->setWakeOnAnyPacket(!steady);
-
-        if (!slot->isConnected())
-        {
-            slot->publishGateBasis(0, false);
-            slot->setReadyThresholdNative(Input::NeverReady);
-            setSlotReadyLocked(slot, false);
-            setSlotEventLocked(slot, false);
-            continue;
-        }
-
-        auto& reader = slot->getQueueReader();
-        const SizeT divider = reader.getSampleRateDivider() > 0 ? reader.getSampleRateDivider() : 1;
-        const bool hasEventPackets = reader.hasPendingEvents() || reader.hasQueuedEventPackets();
-        const SizeT untilEventCommon = reader.getAvailableSamplesUntilEvent();
-        slot->publishGateBasis(untilEventCommon / divider, hasEventPackets);
-
-        if (!slot->isUsed())
-        {
-            // Data is dropped at the inactive port, so only the event flag matters; the ladder
-            // (StateContext::drainUnusedSlots) maintains it and a producer can still raise it.
-            slot->setReadyThresholdNative(Input::NeverReady);
-            setSlotReadyLocked(slot, false);
-            continue;
-        }
-
-        if (steady)
-        {
-            // Ground truth while synchronized: ready with the smallest servable request buffered
-            // before the next event, event buried-inclusive (a sub-block residual in front of a
-            // buried event must still open the gate so a read can surface it).
-            slot->setReadyThresholdNative(gateMinimum / divider);
-            setSlotReadyLocked(slot, untilEventCommon >= gateMinimum);
-            setSlotEventLocked(slot, hasEventPackets);
-        }
-        else
-        {
-            // Establishment semantics: the first sample marks the slot ready (the gate then
-            // wakes the consumer as the last input starts delivering); event flags stay
-            // exactly as the ladder decided for the current state.
-            slot->setReadyThresholdNative(1);
-            setSlotReadyLocked(slot, reader.getAvailableSamples() > 0);
-        }
-    }
-}
-
 void MultiReaderImpl::updateCallbackStateLocked()
 {
-    // Establishment and data loss need the full ladder; only the steady synchronized state takes
-    // the light callback pass below.
-    if (invalid || !isActive || state != ReaderState::Synchronized || dataLossMonitor->hasLostSlots())
-    {
+    auto ctx = makeStateContextLocked();
+    if (currentState->updateCallbackState(ctx))
         evaluateStateLocked();
-        return;
-    }
-
-    const bool haveModel = syncManager->hasModel();
-    const SizeT gateMinimum = haveModel ? ReadCoordinator::effectiveMinimum(syncManager->getModel(), minReadCount) : 0;
-
-    for (SizeT i = 0; i < slots.size(); ++i)
-    {
-        auto* slot = slots[i];
-        const bool used = slot->isUsed();
-        auto& gateFlags = slot->gateFlags();
-
-        // A slot that already satisfies the callback gate cannot stop satisfying it until a read
-        // consumes it (the read path lowers the flag then), so the callback pass never needs to
-        // re-touch it. Readiness only participates in the gate for used inputs; for an unused input
-        // only its event participates (the recovery signal), so a stale ready flag must not skip it.
-        // Skipping also leaves packetPending set, so the read/query path still adopts data queued
-        // behind the slot.
-        if (gateFlags.event() || (used && gateFlags.ready()))
-            continue;
-
-        // Nothing new here: a slot that does not already satisfy the gate and received no packet
-        // cannot have risen to either.
-        if (!slot->clearPacketPending())
-            continue;
-
-        if (!used)
-        {
-            // Only events can arrive on an unused input's inactive port (the recovery signal a
-            // consumer answers with setInputUsed(id, true)).
-            slot->adoptQueuedPackets();
-            if (slot->isConnected())
-            {
-                auto& reader = slot->getQueueReader();
-                reader.drain();
-                publishSlotBasisLocked(slot);
-                setSlotEventLocked(slot, reader.hasPendingEvents());
-            }
-            continue;
-        }
-
-        auto& reader = slot->getQueueReader();
-        reader.drain();
-        publishSlotBasisLocked(slot);
-
-        // Buried-inclusive: a sub-block residual before a buried event still fires the callback so
-        // the consumer reads and the read path surfaces the event.
-        const bool hasEvent = reader.hasPendingEvents() || reader.hasQueuedEventPackets();
-        setSlotEventLocked(slot, hasEvent);
-        if (!hasEvent && haveModel)
-            setSlotReadyLocked(slot, reader.getAvailableSamplesUntilEvent() >= gateMinimum);
-    }
 }
 
 void MultiReaderImpl::onCoalescedEvaluation()
@@ -913,8 +664,7 @@ void MultiReaderImpl::slotConnected(SizeT slotIndex)
         if (slotIndex < slots.size())
         {
             slots[slotIndex]->rebindConnection();
-            invalidateModelLocked();
-            evaluateStateLocked();
+            settleLocked([this, slotIndex](StateContext& ctx) { return currentState->slotConnected(ctx, slotIndex); });
         }
     }
     notifyCondition.notify_all();
@@ -938,13 +688,8 @@ void MultiReaderImpl::slotDisconnected(SizeT slotIndex)
         const auto ownerPass = notificationCoordinator->beginOwnerPass();
         if (slotIndex < slots.size())
         {
-            // Disarm immediately - the state evaluation may return before its monitor
-            // refresh while other inputs are unconnected, and a stale arrival must not
-            // count toward a deadline after a reconnect
-            dataLossMonitor->setMonitored(slotIndex, false);
             slots[slotIndex]->rebindConnection();
-            invalidateModelLocked();
-            evaluateStateLocked();
+            settleLocked([this, slotIndex](StateContext& ctx) { return currentState->slotDisconnected(ctx, slotIndex); });
         }
     }
     notifyCondition.notify_all();
@@ -961,7 +706,7 @@ void MultiReaderImpl::slotPacketReceived(SizeT slotIndex, bool forceEvaluation)
     // Bounded producer path: no state mutex, no queue access, no mutex at all - the slot has
     // already raised its gate flags from a minimal connection introspection.
     // Mark the data plane changed before the notify below, so a consumer woken by it sees it.
-    dataPlaneDirty.store(true, std::memory_order_release);
+    dataPlane.dirty.store(true, std::memory_order_release);
     dataLossMonitor->onPacket(slotIndex);
 
     // An evaluation task is scheduled only when the callback gate is open - any event flag,
@@ -1222,13 +967,14 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
         return skip ? OPENDAQ_IGNORED : OPENDAQ_SUCCESS;
     }
 
-    refreshDataPlaneLocked(true);
+    auto ctx = makeStateContextLocked();
+    refreshDataPlaneLocked(ctx, true);
 
     // Zero-count handshake: report events or the current state without consuming data.
     // With a timeout the call waits for events to arrive instead of returning immediately.
     if (*count == 0)
     {
-        if (timeoutMs > 0 && state != ReaderState::EventPending)
+        if (timeoutMs > 0 && !currentState->readWaitSatisfied(ctx, 0))
         {
             notifyCondition.wait_for(lock,
                                      milliseconds(timeoutMs),
@@ -1236,12 +982,12 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
                                      {
                                          if (invalid)
                                              return true;
-                                         refreshDataPlaneLocked(true);
-                                         return state == ReaderState::EventPending;
+                                         refreshDataPlaneLocked(ctx, true);
+                                         return currentState->readWaitSatisfied(ctx, 0);
                                      });
         }
         MultiReaderStatusPtr statusPtr =
-            state == ReaderState::EventPending ? readEventsLocked() : createStatusLocked();
+            currentState->planRead(ctx) == ReadAction::ReturnEvents ? readEventsLocked() : createStatusLocked();
         if (status)
             *status = statusPtr.detach();
         return OPENDAQ_SUCCESS;
@@ -1258,26 +1004,8 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
                                  {
                                      if (invalid)
                                          return true;
-                                     refreshDataPlaneLocked(true);
-                                     if (state == ReaderState::EventPending)
-                                         return true;
-                                     if (state != ReaderState::Synchronized)
-                                         return false;
-
-                                     const auto& waitModel = syncManager->getModel();
-                                     // The refresh above just published availability on the fast
-                                     // path; reuse it rather than walking the inputs again.
-                                     SizeT available;
-                                     if (dataPlaneAvailableValid)
-                                         available = ReadCoordinator::alignAvailable(dataPlaneAvailableCommon, waitModel, minReadCount);
-                                     else
-                                     {
-                                         collectUsedReadersInto(availScratchUsed, availScratchSlotIndices);
-                                         available = readCoordinator->getAvailableCount(availScratchUsed, waitModel, minReadCount);
-                                     }
-                                     const SizeT block = waitModel.blockLcm;
-                                     const SizeT alignedRequest = requested / block * block;
-                                     return alignedRequest > 0 && available >= alignedRequest;
+                                     refreshDataPlaneLocked(ctx, true);
+                                     return currentState->readWaitSatisfied(ctx, requested);
                                  });
         if (invalid)
         {
@@ -1286,10 +1014,11 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
             *count = 0;
             return OPENDAQ_SUCCESS;
         }
-        refreshDataPlaneLocked(true);
+        refreshDataPlaneLocked(ctx, true);
     }
 
-    if (state == ReaderState::EventPending)
+    const auto action = currentState->planRead(ctx);
+    if (action == ReadAction::ReturnEvents)
     {
         auto statusPtr = readEventsLocked();
         if (status)
@@ -1298,7 +1027,7 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
         return OPENDAQ_SUCCESS;
     }
 
-    if (state != ReaderState::Synchronized)
+    if (action == ReadAction::ReportState)
     {
         if (status)
             *status = createStatusLocked().detach();
@@ -1317,7 +1046,7 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
     // whether that cache is usable now so both the plan and the post-commit readiness update can
     // reuse it instead of re-walking every input (nothing between here and the commit mutates a
     // queue, so the cached counts stay exact under the held mutex).
-    const bool availableCached = dataPlaneAvailableValid;
+    const bool availableCached = dataPlane.availableValid;
 
     readScratchValueBuffers.assign(used.size(), nullptr);
     readScratchDomainBuffers.assign(used.size(), nullptr);
@@ -1330,7 +1059,7 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
     }
 
     const SizeT alignedAvailable = availableCached
-        ? ReadCoordinator::alignAvailable(dataPlaneAvailableCommon, model, minReadCount)
+        ? ReadCoordinator::alignAvailable(dataPlane.availableCommon, model, minReadCount)
         : readCoordinator->getAvailableCount(used, model, minReadCount);
 
     const auto plan = readCoordinator->createPlan(requested,
@@ -1369,7 +1098,7 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
         for (SizeT position = 0; position < used.size(); ++position)
         {
             const SizeT remaining = availableCached
-                ? dataPlaneSlotAvailable[slotIndices[position]] - plan.commonCount
+                ? dataPlane.slotAvailable[slotIndices[position]] - plan.commonCount
                 : used[position]->getAvailableSamplesUntilEvent();
             auto* slot = slots[slotIndices[position]];
             // Refresh the full producer-visible basis (availability AND adopted-event state) from
@@ -1382,8 +1111,8 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
         // The read advanced the frontier, so the cached counts are now stale and a previously
         // buried event may be leading: invalidate the cache and force the next data-plane refresh
         // to run its full pass rather than skip (see refreshDataPlaneLocked).
-        dataPlaneAvailableValid = false;
-        dataPlaneConsumed = true;
+        dataPlane.availableValid = false;
+        dataPlane.consumed = true;
     }
 
     NumberPtr offsetNumber = offsetTick.has_value() ? NumberPtr(*offsetTick) : NumberPtr(0);
@@ -1456,40 +1185,12 @@ ErrCode MultiReaderImpl::getAvailableCount(SizeT* count)
     if (invalid)
         return OPENDAQ_SUCCESS;
 
-    // The query does not run the state ladder for events (escalateOnEvent = false); it drains,
-    // maintains the callback flags, and lets the read path surface any event.
-    refreshDataPlaneLocked(false);
-    if (state == ReaderState::Synchronized)
-    {
-        // A leading pending event on any used input blocks a synchronized data read until it is
-        // handled, and getAvailableSamplesUntilEvent cannot see it (it lives in a separate queue),
-        // so report nothing available. Buried events need no guard here - the count naturally
-        // stops at them.
-        bool leadingEvent = false;
-        for (auto* slot : slots)
-        {
-            if (slot->isUsed() && slot->getQueueReader().hasPendingEvents())
-            {
-                leadingEvent = true;
-                break;
-            }
-        }
-
-        if (!leadingEvent)
-        {
-            // The refresh above published availability on the fast path; reuse it rather than
-            // walking every input again. Fall back to a direct count only when it is not valid.
-            if (dataPlaneAvailableValid)
-            {
-                *count = ReadCoordinator::alignAvailable(dataPlaneAvailableCommon, syncManager->getModel(), minReadCount);
-            }
-            else
-            {
-                collectUsedReadersInto(availScratchUsed, availScratchSlotIndices);
-                *count = readCoordinator->getAvailableCount(availScratchUsed, syncManager->getModel(), minReadCount);
-            }
-        }
-    }
+    // The query does not surface events (escalateOnEvent = false); it drains, maintains the callback
+    // flags, and lets the read path surface any event. It can change the state, so the count is asked
+    // of whichever behaviour it leaves behind.
+    auto ctx = makeStateContextLocked();
+    refreshDataPlaneLocked(ctx, false);
+    *count = currentState->availableCount(ctx);
     return OPENDAQ_SUCCESS;
 }
 
@@ -1689,7 +1390,7 @@ ErrCode MultiReaderImpl::setActive(Bool isActive)
                     slot->getQueueReader().dropForInactive();
             }
         }
-        evaluateStateLocked();
+        settleLocked([this](StateContext& ctx) { return currentState->activeChanged(ctx); });
     }
     notifyCondition.notify_all();
     return OPENDAQ_SUCCESS;
@@ -1751,8 +1452,7 @@ ErrCode MultiReaderImpl::addInput(IComponent* input)
             firstNewSlot = slots.size();
             createSlots(ports);
 
-            invalidateModelLocked();
-            evaluateStateLocked();
+            settleLocked([this](StateContext& ctx) { return currentState->inputSetChanged(ctx); });
         }
         // Unlocked: the new slots install themselves as listeners and replay the port's missing
         // callbacks, which re-enter this reader through slotConnected/slotPacketReceived.
@@ -1802,8 +1502,7 @@ ErrCode MultiReaderImpl::removeInput(IString* id)
     // inputs keep their readiness/event flags and armed data-loss deadlines
     dataLossMonitor->erase(position);
 
-    invalidateModelLocked();
-    evaluateStateLocked();
+    settleLocked([this](StateContext& ctx) { return currentState->inputSetChanged(ctx); });
     return OPENDAQ_SUCCESS;
 }
 
@@ -1844,8 +1543,7 @@ ErrCode MultiReaderImpl::setInputUsed(IString* id, Bool isUsed)
         slot->getQueueReader().dropForInactive();
     }
 
-    invalidateModelLocked();
-    evaluateStateLocked();
+    settleLocked([this](StateContext& ctx) { return currentState->inputSetChanged(ctx); });
     return OPENDAQ_SUCCESS;
 }
 
@@ -1885,10 +1583,9 @@ ErrCode MultiReaderImpl::setMainInput(IString* id)
 
         mainInputId = newId;
 
-        // The main input defines the output grid identity - changing it invalidates the
-        // synchronization; the next evaluation realigns on the new grid
-        invalidateModelLocked();
-        evaluateStateLocked();
+        // The main input defines the output grid identity, so this invalidates the model like any
+        // other change to the used-input set; the next derivation realigns on the new grid
+        settleLocked([this](StateContext& ctx) { return currentState->inputSetChanged(ctx); });
     }
     notifyCondition.notify_all();
     return OPENDAQ_SUCCESS;

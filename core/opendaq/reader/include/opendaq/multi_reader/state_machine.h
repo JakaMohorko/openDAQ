@@ -16,78 +16,51 @@
 #pragma once
 #include <opendaq/multi_reader/state_context.h>
 
-#include <optional>
-
 BEGIN_NAMESPACE_OPENDAQ
 
 namespace multi_reader
 {
 
 /**
- * @brief The state classes of the multi reader. Each groups the ReaderState substates that share a
- * class invariant, and owns the rungs that produce them (docs/multi_reader_state_refactor.md §3.1).
+ * @brief The reader's behaviours. Each names a set of circumstances in which the reader behaves one
+ * way - how it reads, what it reports available, how it gates producers, how it reacts to the world
+ * changing - and the ReaderState substates that share that behaviour.
+ *
+ * The partition is the public ReadStatus, which is not a coincidence: that enum is the consumer's
+ * view of exactly this question.
  */
 enum class StateId
 {
-    Error,                  ///< Error. Terminal, latched, no exit
-    Inactive,               ///< Inactive, EventPending. Deactivated: no data flow, events still surface
-    WaitingForValidInputs,  ///< WaitingForConnections, WaitingForDescriptors, Incompatible, EventPending
-    Synchronizing,          ///< WaitingForData, Synchronizing, SynchronizationFailed, DataLost
-    Ready                   ///< Synchronized
+    Error,         ///< Error. Every operation fails; terminal and latched
+    Inactive,      ///< Inactive. No data flow; events are still adopted and surfaced
+    Establishing,  ///< WaitingForConnections/Descriptors/Data, Synchronizing. Nothing readable yet
+    InputsFailed,  ///< Incompatible, SynchronizationFailed, DataLost. Persistent, needs consumer action
+    Ready          ///< Synchronized. Aligned blocks readable; the only state with a data-plane fast path
 };
 
-/**
- * @brief The class a substate belongs to.
- *
- * The class is a pure function of the substate plus the active flag - the classes are defined as a
- * grouping of the substates, so there is nothing to store and nothing that can desynchronize. The
- * one substate reachable from two classes is EventPending, which the active flag disambiguates: an
- * inactive reader still surfaces events, but its vocabulary is only {Inactive, EventPending}.
- */
-StateId stateClassOf(ReaderState substate, bool isActive);
-
-const char* stateClassName(StateId id);
+const char* stateName(StateId id);
 
 /**
- * @brief What one criteria check concluded: either the verdict for this evaluation, or a hand-off to
- * the class that owns the rungs still to be run.
+ * @brief The behaviour a substate belongs to.
  *
- * A hand-off carries no substate on purpose - the receiving class derives it, which is what keeps
- * one condition in one place. A verdict carries the substate, and the class it belongs to follows
- * from stateClassOf, so a verdict is final even when it names another class's substate.
+ * EventPending is deliberately absent from the table: holding unconsumed events is a condition every
+ * behaviour answers from within (its read returns them, its availability is zero, its gate opens on
+ * the event flag), not a behaviour of its own. Reporting it always clears the synchronization, so what
+ * remains is re-establishment - or the inactive behaviour, if the reader is deactivated.
  */
-struct Transition
+StateId stateIdFor(ReaderState substate, bool isActive);
+
+/// What kind of read this is, decided by the behaviour and executed by the facade (which owns the
+/// status caches and the read pipelines).
+enum class ReadAction
 {
-    static Transition settled(StateOutcome outcome)
-    {
-        Transition transition;
-        transition.outcome = std::move(outcome);
-        return transition;
-    }
-
-    static Transition settled(ReaderState substate, std::string message = {}, std::vector<SizeT> affected = {})
-    {
-        return settled(StateOutcome{substate, std::move(message), std::move(affected)});
-    }
-
-    static Transition handOff(StateId target)
-    {
-        Transition transition;
-        transition.target = target;
-        return transition;
-    }
-
-    bool isHandOff() const
-    {
-        return target.has_value();
-    }
-
-    std::optional<StateId> target;
-    StateOutcome outcome;
+    ReportState,   ///< nothing to return but the current state and its diagnostics
+    ReturnEvents,  ///< unconsumed events must be returned before any data
+    ServeData      ///< plan and commit against the aligned availability
 };
 
 /**
- * @brief One state class of the multi reader.
+ * @brief One behaviour of the multi reader.
  *
  * Stateless flyweights: one instance per class (stateFor), all mutable data reached through the
  * StateContext. Owner thread only, with the facade's state mutex held.
@@ -99,34 +72,96 @@ public:
 
     virtual StateId id() const = 0;
 
+    // The base implementations below are the conservative ones: nothing is readable, every packet
+    // forces a full derivation, and the gate uses establishment semantics. ReadyState is the only
+    // behaviour that can do better, because it is the only one where a read can provably return
+    // samples - so it is the only one that overrides them.
+
     /**
-     * @brief Level-triggered re-derivation from ground truth: does this class still apply, with
-     * which substate, and if not, which class owns the rest?
+     * @brief Publish the producer-facing gate policy for every slot: each slot's basis (adopted
+     * availability until its next event, plus whether any event packet is adopted), its ready
+     * threshold, and whether every packet must force an evaluation.
      *
-     * This is the authority on what state the reader is in. It is not an optimization over an
-     * edge-triggered step - there is no edge-triggered step. See §2 of the refactor spec: producers
-     * are lock-free, so arbitrary amounts of data and any number of events can arrive between two
-     * evaluations with no ordered notification the owner observes, and the input set is mutable at
-     * runtime.
+     * This is how the lock-free producer path becomes state-aware without calling into the state:
+     * the policy is published to the slots, and Input::packetReceived reads it.
      */
-    virtual Transition checkTransitionCriteria(StateContext& ctx) const = 0;
+    virtual void publishProducerGate(StateContext& ctx) const;
+
+    /**
+     * @brief The data-plane pass of the read and query paths: adopt what arrived, maintain the gate
+     * flags, and publish the availability the read path plans from.
+     *
+     * @param escalateOnEvent the read path surfaces events (true); the query path only records them
+     *        for the gate and leaves the surfacing to the next read.
+     * @return true when the caller must run the full derivation afterwards.
+     */
+    virtual bool refreshDataPlane(StateContext& ctx, bool escalateOnEvent) const;
+
+    /**
+     * @brief The coalesced task's pass: decides only whether onDataAvailable should fire. Maintains
+     * the gate flags without deriving the state, and skips any slot that already satisfies the gate.
+     * @return true when the caller must run the full derivation instead.
+     */
+    virtual bool updateCallbackState(StateContext& ctx) const;
+
+    /// Samples a read can return right now, in common-rate samples.
+    virtual SizeT availableCount(StateContext& ctx) const;
+
+    /**
+     * @brief What a read gets from this state. Holding unconsumed events is answered here rather than
+     * being a state of its own: every behaviour returns them before anything else.
+     */
+    virtual ReadAction planRead(StateContext& ctx) const;
+
+    /**
+     * @brief The timed read's wait predicate: can this state serve @p requested samples now? A
+     * request of zero is the event handshake, which only events can satisfy.
+     */
+    virtual bool readWaitSatisfied(StateContext& ctx, SizeT requested) const;
+
+    /**
+     * @brief Is this still the right behaviour, and with which substate?
+     *
+     * Checks this behaviour's own exit conditions against ground truth - not the whole precedence
+     * order, which is what makes it cheaper than deriving from scratch. Level-triggered all the same:
+     * it re-reads ground truth, it never trusts what a notification said earlier.
+     *
+     * The base implementation is the exhaustive derivation, which is the correct answer for any
+     * behaviour that has no cheaper way to prove it still applies - a state whose whole job is looking
+     * for progress cannot shortcut the search. Leaving a behaviour is always a full derivation: the
+     * conditions below the one that changed have not been looked at since.
+     */
+    virtual StateOutcome reassess(StateContext& ctx) const;
+
+    // --- How this behaviour responds to the world changing --------------------------------------
+    // Each returns the substate to report, like reassess. The base reactions invalidate what the
+    // change can have invalidated and then derive from scratch, which is the right answer whenever
+    // the change can move a cross-input conclusion.
+
+    /// A signal was connected to a slot's port (which may also be a signal REPLACING another - the
+    /// port reports no disconnect for that).
+    virtual StateOutcome slotConnected(StateContext& ctx, SizeT slot) const;
+    virtual StateOutcome slotDisconnected(StateContext& ctx, SizeT slot) const;
+    /// setActive, after the facade has switched the ports and dropped what deactivation drops.
+    virtual StateOutcome activeChanged(StateContext& ctx) const;
+    /// addInput, removeInput, setInputUsed, setMainInput.
+    virtual StateOutcome inputSetChanged(StateContext& ctx) const;
 };
 
-/// The flyweight for a class; the same instance for every reader, since they hold no data.
+/// The flyweight for a behaviour; the same instance for every reader, since they hold no data.
 const MultiReaderState& stateFor(StateId id);
 
 /**
- * @brief Run the machine to a verdict and assign @p ctx.outcome exactly once.
+ * @brief Derive the reader's substate from ground truth and perform the side effects of reaching it.
  *
- * Starts from the class the reader's current substate belongs to and follows hand-offs until a class
- * settles. Bounded: a hand-off chain can only ever run downstream (Error/Inactive from anywhere,
- * WaitingForValidInputs -> Synchronizing -> Ready), so it cannot cycle; the bound is a backstop for
- * an invariant break, not a truncation.
+ * Exhaustive: it re-derives every condition in precedence order, whatever state the reader was in.
+ * That makes it the reference answer, which is why it stays even once the behaviours narrow their own
+ * reassessment to their own exit conditions - the characterization tests cross-check against it.
  *
- * Owner thread, facade state mutex held; the caller applies the outcome and publishes the
- * producer-facing gate state afterwards.
+ * Owner thread, facade state mutex held. The caller applies the outcome, updates the current
+ * behaviour and publishes the producer gate.
  */
-void runStateEvaluation(StateContext& ctx);
+StateOutcome deriveState(StateContext& ctx);
 
 }  // namespace multi_reader
 

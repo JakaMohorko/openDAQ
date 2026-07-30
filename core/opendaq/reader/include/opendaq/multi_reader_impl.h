@@ -114,6 +114,15 @@ public:
         dataLossMonitor->setClockForTest(std::move(clock));
     }
 
+    /// Test hook: derive the state exhaustively instead of asking the current behaviour for its own
+    /// (narrower) reassessment. Running every characterization scenario both ways and comparing the
+    /// traces is what verifies the narrow exit conditions - see docs/multi_reader_state_refactor.md §2.
+    void setExhaustiveDerivationForTest(bool enabled)
+    {
+        std::lock_guard lock(mutex);
+        exhaustiveDerivationForTest = enabled;
+    }
+
     struct StateSnapshotForTest
     {
         ReaderState state;
@@ -187,28 +196,41 @@ private:
     /// (connect/disconnect, used/active changes, topology, events, deadlines). Builds the
     /// StateContext, runs the state machine (multi_reader::runStateEvaluation), applies its verdict
     /// and its deferred facade effects, then publishes the producer-facing gate state
-    /// (publishProducerGateLocked).
+    /// (MultiReaderState::publishProducerGate).
     void evaluateStateLocked();
     /// The collaborator bundle the evaluation works on; a view, rebuilt per evaluation.
     multi_reader::StateContext makeStateContextLocked();
+    /**
+     * @brief Run one state decision and settle: build the context, let @p decide produce the verdict,
+     * apply it (which selects the new behaviour) and publish that behaviour's producer-gate policy.
+     *
+     * The single funnel every evaluation and every notification edge passes through, which is what
+     * keeps the gate publication and the availability-cache invalidation impossible to forget.
+     */
+    template <typename Decide>
+    void settleLocked(Decide&& decide)
+    {
+        // Whatever the decision is, the fast pass's cached availability is no longer authoritative:
+        // deriving can drain, drop segments or change state.
+        dataPlane.availableValid = false;
+
+        auto ctx = makeStateContextLocked();
+        applyStateOutcomeLocked(ctx, decide(ctx));
+        currentState->publishProducerGate(ctx);
+    }
     /// Apply what the evaluation decided: its deferred facade effects first (in the order the
     /// evaluation would have run them inline), then the substate through setStateLocked.
-    void applyStateOutcomeLocked(multi_reader::StateContext& ctx);
-    /**
-     * @brief Publish the producer-facing callback-gate state after a full evaluation: per-slot
-     * basis (adopted availability-until-event + adopted events), the ready threshold, the
-     * wake-on-any-packet mode, and - while synchronized - the ground-truth ready/event flags.
-     * Outside the steady Synchronized state every packet forces an evaluation, so only the
-     * flags the ladder maintains matter there.
-     */
-    void publishProducerGateLocked();
+    void applyStateOutcomeLocked(multi_reader::StateContext& ctx, multi_reader::StateOutcome outcome);
     /// Data-plane pass for the read and query paths: while synchronized, drains the slots that
     /// received packets, publishes the availability cache, and maintains the readiness bits. With
     /// escalateOnEvent (the read path) it escalates to evaluateStateLocked when an event surfaces so
     /// the reader transitions to EventPending; without it (the query path) it records the event and
     /// re-arms dataPlaneDirty so the next read surfaces it. A deadline or a non-synchronized state
     /// escalates in either mode.
-    void refreshDataPlaneLocked(bool escalateOnEvent);
+    /// Takes the context rather than building one: a public call builds it once and threads it
+    /// through, which keeps the query and read paths free of repeated construction. Safe to reuse
+    /// across an escalation because the context holds only references.
+    void refreshDataPlaneLocked(multi_reader::StateContext& ctx, bool escalateOnEvent);
     /// Callback pass for the coalesced evaluation: decides only whether onDataAvailable should fire.
     /// It maintains the event/ready bits but skips any slot that already satisfies the gate (ready
     /// or event - only a read clears that) and any slot with no pending packet, so it is O(slots
@@ -274,12 +296,18 @@ private:
     std::condition_variable notifyCondition;
 
     bool invalid{false};  // only the Error state and disposal
+    bool exhaustiveDerivationForTest{false};
     ReaderState state{ReaderState::WaitingForConnections};
     std::string stateMessage;
     std::vector<SizeT> stateAffectedInputs;
 
     std::vector<ObjectPtr<IInputPortNotifications>> slotObjects;  // strong refs (ports hold weak listener refs)
     std::vector<multi_reader::Input*> slots;                                // parallel implementation pointers
+
+    /// The reader's current behaviour: which state class handles its reads, queries, gate policy and
+    /// notifications. Follows the substate (multi_reader::stateIdFor) and is written in exactly one
+    /// place, applyStateOutcomeLocked.
+    const multi_reader::MultiReaderState* currentState{&multi_reader::stateFor(multi_reader::StateId::Establishing)};
 
     std::unique_ptr<multi_reader::SynchronizationManager> syncManager;
     std::unique_ptr<multi_reader::ReadCoordinator> readCoordinator;
@@ -291,32 +319,10 @@ private:
     std::vector<void*> readScratchValueBuffers;
     std::vector<void*> readScratchDomainBuffers;
 
-    /// Availability-query scratch (getAvailableCount and the read timeout predicate), reused to
-    /// avoid a per-call heap allocation. Kept separate from the read scratch above so the two
-    /// never alias, though both are only ever live under the mutex within one call.
-    std::vector<multi_reader::QueueReader*> availScratchUsed;
-    std::vector<SizeT> availScratchSlotIndices;
-
-    /// Data-plane change tracking for the synchronized fast path. refreshDataPlaneLocked can skip
-    /// its whole per-slot pass when nothing has changed since the last one: no packet has arrived
-    /// (dataPlaneDirty, set on the producer path) and no read has consumed (dataPlaneConsumed, set
-    /// under the mutex) - a buried event can only surface through an arrival or a consumption, so
-    /// there is nothing to re-check. This collapses the repeated getAvailableCount/read refreshes
-    /// of a poll-then-read loop to one real pass. Any full evaluateStateLocked re-arms dataPlaneDirty.
-    std::atomic_bool dataPlaneDirty{true};
-    bool dataPlaneConsumed{false};
-
-    /// Availability captured by the last non-escalating synchronized fast pass of
-    /// refreshDataPlaneLocked, so the read path can plan and lower readiness without a second
-    /// walk over every input (dedup of the refresh and createPlan availability passes). The
-    /// per-slot counts (common-rate equivalent, until the next event) are indexed by slot-vector
-    /// index; dataPlaneAvailableCommon is their raw minimum over used slots (pre-alignment).
-    /// Valid only while dataPlaneAvailableValid: the fast pass sets it, and any escalation,
-    /// non-synchronized refresh, or consuming read clears it (consumers then fall back to a
-    /// direct getAvailableCount walk).
-    std::vector<SizeT> dataPlaneSlotAvailable;
-    SizeT dataPlaneAvailableCommon{0};
-    bool dataPlaneAvailableValid{false};
+    /// The synchronized fast path's tracking and cache, maintained by ReadyState (which is the only
+    /// state that has a fast path) and threaded into it through the StateContext. `dirty` is the one
+    /// field a producer touches, from Input's lock-free notification.
+    multi_reader::DataPlane dataPlane;
 
     /// Common-domain tick of the next unread output sample while synchronized.
     std::optional<std::int64_t> nextReadTick;
