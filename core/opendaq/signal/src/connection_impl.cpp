@@ -261,6 +261,7 @@ ErrCode INTERFACE_FUNC ConnectionImpl::dequeueAll(IList** packets)
             }
             samplesCnt = 0;
             eventPacketsCnt = 0;
+            gapPacketsCnt = 0;
             this->packets.clear();
 
             *packets = packetsPtr.detach();
@@ -692,6 +693,7 @@ void ConnectionImpl::countPackets()
 {
     eventPacketsCnt = 0;
     samplesCnt = 0;
+    gapPacketsCnt = 0;
     for (const auto& packet : packets)
     {
         const auto packetType = packet.getType();
@@ -702,7 +704,11 @@ void ConnectionImpl::countPackets()
         }
         else if (packetType == PacketType::Event)
         {
-            eventPacketsCnt++;
+            auto eventPacket = packet.asPtr<IEventPacket>(true);
+            if (eventPacket.getEventId() == event_packet_id::IMPLICIT_DOMAIN_GAP_DETECTED)
+                gapPacketsCnt++;
+            else
+                eventPacketsCnt++;
         }
     }
 }
@@ -716,9 +722,17 @@ void ConnectionImpl::onPacketEnqueued(const PacketPtr& packet)
     }
     else if (packet.getType() == PacketType::Event)
     {
-        eventPacketsCnt++;
         auto eventPacket = packet.asPtr<IEventPacket>(true);
-        if (!(eventPacket.getEventId() == event_packet_id::DATA_DESCRIPTOR_CHANGED))
+        if (eventPacket.getEventId() == event_packet_id::IMPLICIT_DOMAIN_GAP_DETECTED)
+        {
+            gapPacketsCnt++;
+            return;
+        }
+
+        // Every non-gap event counts here, unrecognized ids included: getSamplesUntilNextEventPacket
+        // stops at any event packet, so its counter fast path has to be disabled by any event packet.
+        eventPacketsCnt++;
+        if (eventPacket.getEventId() != event_packet_id::DATA_DESCRIPTOR_CHANGED)
             return;
 
         const auto params = eventPacket.getParameters();
@@ -749,15 +763,14 @@ void ConnectionImpl::onPacketDequeued(const PacketPtr& packet)
     }
     else if (packet.getType() == PacketType::Event)
     {
+        // Mirrors onPacketEnqueued and countPackets: every event packet is counted exactly once,
+        // as a gap if it is one and as an event otherwise. An id none of the three recognizes must
+        // still be discounted here, or eventPacketsCnt only ever grows.
         auto eventPacket = packet.asPtr<IEventPacket>(true);
-        if (eventPacket.getEventId() == event_packet_id::DATA_DESCRIPTOR_CHANGED)
-        {
-            eventPacketsCnt--;
-        }
-        else if (eventPacket.getEventId() == event_packet_id::IMPLICIT_DOMAIN_GAP_DETECTED)
-        {
+        if (eventPacket.getEventId() == event_packet_id::IMPLICIT_DOMAIN_GAP_DETECTED)
             gapPacketsCnt--;
-        }  
+        else
+            eventPacketsCnt--;
     }
 }
 

@@ -4,12 +4,36 @@
 #include <opendaq/packet_factory.h>
 #include <opendaq/context_factory.h>
 #include <opendaq/connection_factory.h>
+#include <opendaq/connection_internal.h>
 #include <opendaq/data_descriptor_factory.h>
 #include <opendaq/sample_type_traits.h>
 #include <opendaq/event_packet_params.h>
 
+#include <vector>
+
 using namespace daq;
 using namespace testing;
+
+/**
+ * @brief Drain up to `count` packets through IConnectionInternal::dequeueUpTo - the batch path the
+ * multi reader's QueueReader adopts with, and the only one that recounts the connection's cached
+ * counters instead of decrementing them per packet.
+ * @return how many packets were actually handed over.
+ */
+static SizeT batchDequeue(const ConnectionPtr& connection, SizeT count)
+{
+    const auto connectionInternal = connection.asPtr<IConnectionInternal>(true);
+
+    std::vector<IPacket*> buffer(count, nullptr);
+    SizeT dequeued = count;
+    connectionInternal->dequeueUpTo(buffer.data(), &dequeued);
+
+    // dequeueUpTo detaches, so the caller owns a reference to every packet it returned.
+    for (SizeT i = 0; i < dequeued; ++i)
+        PacketPtr::Adopt(buffer[i]);
+
+    return dequeued;
+}
 
 template <class DT>
 class GapCheckTest : public Test
@@ -26,6 +50,24 @@ protected:
             domainDescBuilder.setRule(LinearDataRule(10, 2));
 
         return {valueDesc, domainDescBuilder.build()};
+    }
+
+    /**
+     * @brief Queue up [descriptor][data 10][gap][data 10] on a gap-checking connection: the second
+     * data packet starts at 200 where 100 was expected, so the connection synthesizes a gap packet
+     * in front of it. Leaves samplesCnt = 20, eventPacketsCnt = 1, gapPacketsCnt = 1.
+     */
+    void enqueueGapSequence(const ConnectionPtr& connection)
+    {
+        auto [valueDesc, domainDesc] = getDescriptors();
+
+        connection.enqueue(DataDescriptorChangedEventPacket(valueDesc, domainDesc));
+
+        const auto domainPacket1 = DataPacket(domainDesc, 10, 0);
+        connection.enqueue(DataPacketWithDomain(domainPacket1, valueDesc, 10));
+
+        const auto domainPacket2 = DataPacket(domainDesc, 10, 200);
+        connection.enqueue(DataPacketWithDomain(domainPacket2, valueDesc, 10));
     }
 };
 
@@ -339,4 +381,95 @@ TYPED_TEST(GapCheckTest, MultiplePackets)
     connection.enqueue(packet7);
     pkt = connection.dequeue();
     ASSERT_EQ(pkt, packet7);
+}
+
+TYPED_TEST(GapCheckTest, CountersDecrementOnDequeue)
+{
+    // Counter bookkeeping across the three drain paths
+    const auto ctx = NullContext();
+
+    MockInputPort::Strict inputPort;
+    MockSignal::Strict signal;
+
+    EXPECT_CALL(inputPort.mock(), getGapCheckingEnabled(testing::_)).WillOnce(GetBool(True));
+
+    const auto connection = Connection(inputPort.ptr, signal.ptr, ctx);
+
+    // Incremental dequeue
+    this->enqueueGapSequence(connection);
+    ASSERT_EQ(connection.getPacketCount(), 4u);
+    ASSERT_EQ(connection.getAvailableSamples(), 20u);
+    ASSERT_TRUE(connection.hasEventPacket());
+    ASSERT_TRUE(connection.hasGapPacket());
+
+    // The reference path: onPacketDequeued decrements the counter matching each packet's kind.
+    while (connection.dequeue().assigned())
+    {
+    }
+
+    ASSERT_EQ(connection.getPacketCount(), 0u);
+    ASSERT_EQ(connection.getAvailableSamples(), 0u);
+    ASSERT_FALSE(connection.hasEventPacket());
+    ASSERT_FALSE(connection.hasGapPacket());
+
+    this->enqueueGapSequence(connection);
+    ASSERT_EQ(connection.getPacketCount(), 4u);
+
+    // dequeueUpTo removes packets without onPacketDequeued and calls countPackets() to rebuild the
+    // counters from what is left. The rebuild has to cover gapPacketsCnt too - a gap packet drained
+    // through this path otherwise leaves it non-zero forever, and hasEventPacket() (which is
+    // eventPacketsCnt != 0 || gapPacketsCnt != 0) then reports true on an empty queue.
+    ASSERT_EQ(batchDequeue(connection, 8), 4u);
+
+    ASSERT_EQ(connection.getPacketCount(), 0u);
+    ASSERT_EQ(connection.getAvailableSamples(), 0u);
+    ASSERT_FALSE(connection.hasEventPacket());
+    ASSERT_FALSE(connection.hasGapPacket());
+
+    this->enqueueGapSequence(connection);
+
+    ASSERT_EQ(batchDequeue(connection, 2), 2u);
+
+    ASSERT_EQ(connection.getPacketCount(), 2u);
+    ASSERT_EQ(connection.getAvailableSamples(), 10u);
+    ASSERT_TRUE(connection.hasGapPacket());
+    ASSERT_TRUE(connection.hasEventPacket());
+    // Both stop at the leading gap; the descriptor is gone, so nothing bounds that count.
+    ASSERT_EQ(connection.getSamplesUntilNextEventPacket(), 0u);
+    ASSERT_EQ(connection.getSamplesUntilNextGapPacket(), 0u);
+    ASSERT_EQ(connection.getSamplesUntilNextDescriptor(), 10u);
+
+    // Draining the remainder must clear everything the recount is responsible for.
+    ASSERT_EQ(batchDequeue(connection, 8), 2u);
+
+    ASSERT_EQ(connection.getPacketCount(), 0u);
+    ASSERT_EQ(connection.getAvailableSamples(), 0u);
+    ASSERT_FALSE(connection.hasEventPacket());
+    ASSERT_FALSE(connection.hasGapPacket());
+
+    this->enqueueGapSequence(connection);
+    ASSERT_EQ(connection.getPacketCount(), 4u);
+
+    // dequeueAll empties the queue in one go and zeroes the counters directly - gapPacketsCnt
+    // included, or it leaks exactly the way the batch path used to.
+    ASSERT_EQ(connection.dequeueAll().getCount(), 4u);
+
+    ASSERT_EQ(connection.getPacketCount(), 0u);
+    ASSERT_EQ(connection.getAvailableSamples(), 0u);
+    ASSERT_FALSE(connection.hasEventPacket());
+    ASSERT_FALSE(connection.hasGapPacket());
+
+    // A fourth kind of packet: an event the connection does not recognize. Enqueue counts it as an
+    // event (getSamplesUntilNextEventPacket stops at any event packet, so any event packet has to
+    // disable its counter fast path), which means every drain path has to discount it again. Miss
+    // it and eventPacketsCnt only ever grows, leaving hasEventPacket() true on an empty queue -
+    // the same failure as the gap counter, on the other counter.
+    connection.enqueue(EventPacket("test", Dict<IString, IString>()));
+    ASSERT_TRUE(connection.hasEventPacket());
+
+    ASSERT_TRUE(connection.dequeue().assigned());
+
+    ASSERT_EQ(connection.getPacketCount(), 0u);
+    ASSERT_FALSE(connection.hasEventPacket());
+    ASSERT_FALSE(connection.hasGapPacket());
 }
