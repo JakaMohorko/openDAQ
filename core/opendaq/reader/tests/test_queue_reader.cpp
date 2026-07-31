@@ -1039,12 +1039,12 @@ TEST_F(QueueReaderTest, AvailableUntilEventMatchesSegment)
 
     reader.popFrontEvent(); // Initial descriptor event
 
-    // Both counts stop at the event boundary, in common-rate equivalent
-    ASSERT_EQ(reader.getAvailableSamplesUntilEvent(), 10u);
-    ASSERT_EQ(reader.getAvailableSamples(), reader.getAvailableSamplesUntilEvent());
+    // The count stops at the event boundary - the two packets in front of the descriptor change,
+    // not the third behind it - and is in common-rate equivalent
+    ASSERT_EQ(reader.getAvailableSamples(), 10u);
 
     reader.setSampleRateDivider(2);
-    ASSERT_EQ(reader.getAvailableSamplesUntilEvent(), 20u);
+    ASSERT_EQ(reader.getAvailableSamples(), 20u);
 }
 
 TEST_F(QueueReaderTest, VectorValueSignalLayout)

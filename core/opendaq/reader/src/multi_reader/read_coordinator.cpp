@@ -55,7 +55,7 @@ SizeT ReadCoordinator::getAvailableCount(const std::vector<QueueReader*>& inputs
     for (auto* input : inputs)
     {
         // Common-rate equivalent, stopping at the input's earliest event boundary.
-        availableCommon = std::min(availableCommon, input->getAvailableSamplesUntilEvent());
+        availableCommon = std::min(availableCommon, input->getAvailableSamples());
     }
 
     return alignAvailable(availableCommon, model, minReadCount);

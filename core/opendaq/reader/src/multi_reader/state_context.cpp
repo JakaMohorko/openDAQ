@@ -81,7 +81,7 @@ void StateContext::drainUnusedSlots()
         slot->adoptQueuedPackets();
         if (!slot->isConnected())
         {
-            slot->publishGateBasis(0, false);
+            slot->publishAvailability(0, false);
             setSlotEvent(*slot, false);
             continue;
         }
@@ -89,7 +89,7 @@ void StateContext::drainUnusedSlots()
         slot->clearPacketPending();
         auto& reader = slot->getQueueReader();
         reader.drain();
-        publishSlotBasis(*slot);
+        publishSlotAvailability(*slot);
         setSlotEvent(*slot, reader.hasPendingEvents());
     }
 }

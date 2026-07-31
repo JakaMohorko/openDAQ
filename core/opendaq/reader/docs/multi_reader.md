@@ -140,7 +140,7 @@ The facade owns one instance of each component and is the only thing that holds 
 |---|---|---|
 | **`MultiReaderImpl`** (facade) | `multi_reader_impl.*` | Public API, input ordering, the entry point of the `ReaderState` machine (`evaluateStateLocked`), the data-plane paths (§8), and status creation. Holds the single state mutex. |
 | **State machine** | `multi_reader/state_context.*`, `multi_reader/state_machine.*` | The `ReaderState` derivation, as state classes over a `StateContext` - the collaborator bundle (slots, sync manager, read coordinator, data-loss monitor) plus the configuration it reads and the single `StateOutcome` it produces. It never touches the facade, so the two effects that are the facade's (the status caches, the main-input descriptors) come back as flags the facade applies when the evaluation returns. Being reworked - see [`multi_reader_state_refactor.md`](multi_reader_state_refactor.md). |
-| **`Input`** (slot) | `multi_reader/input.*` | One input port + its `QueueReader`. Receives port notifications on the producer thread, holds `packetPending`, and reports connect/disconnect/packet up to the facade via `IInputListener`. |
+| **`Input`** (slot) | `multi_reader/input.*` | One input port + its `QueueReader`. Receives port notifications on the producer thread, holds `packetPending`, and reports connect/disconnect/packet up to the facade via `IInputListener`. Owns the slot's availability: `getAvailableSamples` (adopted + still on the connection), a settable `minReadCount`, and `hasDataToRead` over the two (§9.4). |
 | **`QueueReader`** | `multi_reader/queue_reader.*` | Per-input queue over one connection: adopts packets (`drain`), tracks value/domain descriptors and events, computes available samples, and executes the actual value/domain copy on `read`/`skip`. |
 | **`SynchronizationManager`** | `multi_reader/synchronization_manager.*` | All cross-input math: builds the `CommonModel` (common sample rate, per-input dividers, `blockLcm`, tick resolution) and aligns every input to a common start tick. |
 | **`ReadCoordinator`** | `multi_reader/read_coordinator.*` | Availability, planning, and committing a read/skip under one set of alignment rules. Produces a `ReadPlan` and executes it across all inputs; a partial commit is impossible by construction. |
@@ -216,7 +216,7 @@ transition does not affect when the callback fires.
 
 **`getAvailableCount` event guard.** Because the query no longer transitions to `EventPending`, it
 guards the one count that would otherwise be wrong: a **leading** pending event on any used input
-means no synchronized read can proceed until it is handled, but `getAvailableSamplesUntilEvent`
+means no synchronized read can proceed until it is handled, but `QueueReader::getAvailableSamples`
 counts the data queued *behind* that event (the event has moved to a separate queue). So
 `getAvailableCount` returns 0 whenever any used input has a pending event. Buried events need no
 guard — the count naturally stops at them.
@@ -228,20 +228,32 @@ guard — the count naturally stops at them.
 ### 9.1 Producer path and `clear-then-drain`
 
 Packet delivery is **lock-free**: `Input::packetReceived` (producer thread) sets the input's
-`packetPending` atomic and `dataPlaneDirty`, updates the input's gate flags from a minimal O(1)
-connection introspection (its published basis plus the connection's own until-event / has-event
-counters), and schedules the coalesced evaluation **only when the callback gate is open** — or
+`packetPending` atomic and `dataPlaneDirty`, raises the input's ready flag when
+`Input::hasDataToRead()` says so — a minimal O(1) connection introspection: the owner-published basis
+plus the connection's own until-event / has-event counters — and schedules the coalesced evaluation
+**only when the callback gate is open** — or
 unconditionally when the reader is not in the steady synchronized state or the snapshot could not be
 trusted (`forceEvaluation`). It takes no mutex at all. This is the core of the "don't schedule until
 we know we want the callback" design: in steady state, a data packet that does not complete a
 readable block for every input costs one atomic flag update and no scheduler round-trip.
 
-Producers only ever **raise** flags, and only the **ready** flag (the common data-packet case).
-Events are rare and always leave the steady state, so any event indication forces a full evaluation
-instead; event flags are set exclusively by the owner under the state lock. A producer raise is
-therefore advisory: it can cost at most one spurious evaluation (which reconciles against ground
-truth before any user callback fires) and can never cause a spurious `onDataAvailable`, nor suppress
-one that is due.
+Producers only ever **raise** flags, and they raise **both**: `ready` when an aligned block is
+queued, `event` when an event is (adopted or still on the connection, buried-inclusive — the same
+rule `publishProducerGate` applies, and the two must agree or the bit oscillates). `forceEvaluation`
+is reserved for a snapshot the slot cannot trust — a non-quiet or moved epoch, an unassigned
+connection — and for every state but steady `Synchronized` (`wakeOnAnyPacket`). It is deliberately
+*not* the mechanism for events: an event is a condition the slot can state, so it belongs in the
+flag system like readiness.
+
+Both raises are sound for the same reason: under a quiet, unchanged epoch neither condition can
+become false, because only an owner pass consumes samples or events and an owner pass moves the
+epoch. A raise is therefore advisory only in the sense that it may be redundant — it can cost at
+most one spurious evaluation, which reconciles against ground truth, and can never suppress a
+wake-up that is due.
+
+Note the producer's event rule is deliberately weaker than "the next thing to read is an event": an
+event behind a readable block still raises it, because that block may not be servable (every other
+input needs one too) and the consumer must still be woken to discover the event.
 
 Consumers adopt queued packets by **clearing `packetPending` before draining**, never after. A
 packet that arrives after the clear re-arms the flag and is caught on the next pass (at-least-once);
@@ -251,8 +263,8 @@ already reset — that was the "availability undercount" race and is why the ord
 ### 9.2 Availability and planning (`ReadCoordinator`)
 
 - `getAvailableCount(inputs, model, minReadCount)` = the min over inputs of
-  `getAvailableSamplesUntilEvent`, floored to whole blocks, dropped to 0 below the effective
-  minimum (`alignAvailable`).
+  `QueueReader::getAvailableSamples` (which stops at the next event), floored to whole blocks,
+  dropped to 0 below the effective minimum (`alignAvailable`).
 - `createPlan(...)` rounds the request down to whole blocks and clamps to availability, producing a
   `ReadPlan` (a `commonCount` plus non-owning views of the caller's per-input buffers). An overload
   takes an already-computed availability so the read path does not walk every input twice.
@@ -284,19 +296,45 @@ i.e. fire when any input has an event (used or unused — the recovery signal), 
 wake is latched (an `InputsFailed` transition that carries no data or event), or when every used
 input has a readable block. `ready >= used` (rather than `==`) tolerates a transient straggler flag
 on a slot leaving the used set; the scheduled evaluation reconciles to ground truth before the user
-callback fires. Readiness while synchronized means "the smallest servable aligned request
-(`effectiveMinimum`) before the next event"; while establishing it means "the first sample." The gate
-never reads `ReaderState`.
+callback fires. The gate never reads `ReaderState`.
+
+**What "ready" means is one number.** A slot is ready when it has data to read: its available samples
+against a minimum the owner sets with `setMinReadCount`. That minimum is the *entire* difference
+between the gate policies: `1` while establishing ("the first sample"), the smallest servable aligned
+request (`effectiveMinimum`) while synchronized, and `NeverReadable` on an unused or unconnected slot.
+`publishSlotGatePolicy` is the one loop; each state only chooses the number.
+
+**Two predicates, one minimum.** `Input::hasDataToRead()` counts the adopted queue *plus* what the
+connection still holds — the producer's question, since it sees packets the owner has not adopted yet.
+`Input::hasAdoptedDataToRead()` counts the adopted half alone — the owner's question, since a read
+serves from the adopted queue. Wherever the owner asks, the two agree: it drains and republishes
+first, so the connection holds nothing the basis does not already count. The split is not cosmetic —
+reaching the connection needs a `getConnection()`, a recursive component config lock, which measured
+at **~180 ns per input per read** on `bench_multi_reader profile` (a third of the whole read at 4, 16
+and 64 inputs). Owner paths must use the adopted form.
+
+Counts and the minimum are common-rate equivalents, the owner's unit, so `blockLcm` and
+`minReadCount` go in unconverted. The minimum is *stored* natively, converted once in the setter
+(rounding **up** — a truncated zero would make `hasDataToRead()` unconditionally true) on the owner
+thread, using the `QueueReader`'s divider. That is what keeps the producer path comparing native
+against native: it never has to read that divider, which is ordinary non-atomic owner state. The
+consequence is an ordering rule — **`setMinReadCount` must run after anything that changes the
+divider**, which `settleLocked` already guarantees by publishing the gate after the model is built.
 
 **Who writes the flags.** The owner sets both flags authoritatively during every full evaluation
 (`publishProducerGateLocked`, the single funnel every `evaluateStateLocked` exit passes through) and
-during the light callback/read passes. Producers additionally raise the **ready** flag on the packet
-path (lock-free), self-gating steady-state data packets. To keep producer raises trustworthy the
+during the light callback/read passes. Producers additionally raise **both** flags on the packet
+path (lock-free), self-gating steady-state arrivals. To keep producer raises trustworthy the
 owner brackets every state-lock section that moves or consumes samples with a `CallbackGate::PassGuard`
 (an odd/even **epoch**); a producer that observes a non-quiet or changed epoch does not trust its
 arithmetic and forces an evaluation instead. Slot removal calls `SlotGateFlags::disarm()`, which
 atomically retires that slot's counter contributions and turns every later producer raise into a
 no-op, so a packet racing a removal can never leave the counters drifted.
+
+The producer cannot read the adopted queue, so the owner has to hand it the adopted half:
+**every owner pass that moves or consumes samples on a slot must end in `publishSlotAvailability`**
+(the same set of passes a `PassGuard` brackets). Miss one and the slot keeps answering
+`hasDataToRead()` from the pre-drain basis.
 
 ### 9.5 Data loss (in-band)
 

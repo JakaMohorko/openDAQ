@@ -83,45 +83,43 @@ StateOutcome errorOutcome(StateContext& ctx)
 /// The inactive arm, defined with the other rungs below.
 StateOutcome deriveWhileInactive(StateContext& ctx);
 
-struct SlotGateBasis
-{
-    SizeT divider = 1;
-    SizeT untilEventCommon = 0;
-    bool hasEventPackets = false;
-};
-
 /**
- * @brief The part of the gate policy that is the same in every state, and the slot's published basis.
+ * @brief Publish one slot's gate policy: its availability basis and the minimum that turns that
+ * availability into readiness. The whole difference between the states is that minimum, so this is
+ * the entire gate policy and each state only chooses the number.
  *
  * An unconnected slot contributes nothing at all. An unused slot contributes only its event flag -
  * data is dropped at its inactive port, so a stale ready flag would let `ready >= used` open the gate
- * on data no read will ever touch.
+ * on data no read will ever touch. Both get a minimum nothing can meet, which also spares their
+ * producer path the connection queries behind hasDataToRead().
  *
- * @return false when the slot is fully handled here and the state's own policy does not apply.
+ * @param minimumCommon the state's minimum, common-rate equivalent.
+ * @return false when the slot is fully handled here and the state's own event policy does not apply.
  */
-bool publishSlotGateBasis(Input& slot, SlotGateBasis& basis)
+bool publishSlotGatePolicy(Input& slot, SizeT minimumCommon)
 {
     if (!slot.isConnected())
     {
-        slot.publishGateBasis(0, false);
-        slot.setReadyThresholdNative(Input::NeverReady);
+        slot.publishAvailability(0, false);
+        slot.setMinReadCount(Input::NeverReadable);
         setSlotReady(slot, false);
         setSlotEvent(slot, false);
         return false;
     }
 
-    auto& reader = slot.getQueueReader();
-    basis.divider = reader.getSampleRateDivider() > 0 ? reader.getSampleRateDivider() : 1;
-    basis.hasEventPackets = reader.hasPendingEvents() || reader.hasQueuedEventPackets();
-    basis.untilEventCommon = reader.getAvailableSamplesUntilEvent();
-    slot.publishGateBasis(basis.untilEventCommon / basis.divider, basis.hasEventPackets);
+    publishSlotAvailability(slot);
 
     if (!slot.isUsed())
     {
-        slot.setReadyThresholdNative(Input::NeverReady);
+        slot.setMinReadCount(Input::NeverReadable);
         setSlotReady(slot, false);
         return false;
     }
+
+    // Order matters: the minimum is stored natively, converted with the divider the model just
+    // pushed down, so it has to be set after any model rebuild and before readiness is derived.
+    slot.setMinReadCount(minimumCommon);
+    setSlotReady(slot, slot.hasDataToRead());
     return true;
 }
 
@@ -136,7 +134,7 @@ void adoptUnusedSlotEvents(Input& slot)
 
     auto& reader = slot.getQueueReader();
     reader.drain();
-    publishSlotBasis(slot);
+    publishSlotAvailability(slot);
     setSlotEvent(slot, reader.hasPendingEvents());
 }
 
@@ -147,20 +145,16 @@ void adoptUnusedSlotEvents(Input& slot)
  *
  * Forcing an evaluation per packet is what preserves the liveness of the establishment, failure and
  * recovery paths: a DataLost slot's reviving packet, or a Synchronizing slot's alignment progress,
- * must never wait on a gate whose threshold cannot be met yet.
+ * must never wait on a gate whose minimum cannot be met yet.
  */
 void publishGateWhileEstablishing(StateContext& ctx)
 {
     for (auto* slot : ctx.slots)
     {
         slot->setWakeOnAnyPacket(true);
-
-        SlotGateBasis basis;
-        if (!publishSlotGateBasis(*slot, basis))
-            continue;
-
-        slot->setReadyThresholdNative(1);
-        setSlotReady(*slot, slot->getQueueReader().getAvailableSamples() > 0);
+        // A minimum of one: there is no model to derive a block from, so the first sample is what
+        // makes a slot interesting.
+        publishSlotGatePolicy(*slot, 1);
     }
 }
 
@@ -331,16 +325,14 @@ public:
         {
             slot->setWakeOnAnyPacket(false);
 
-            SlotGateBasis basis;
-            if (!publishSlotGateBasis(*slot, basis))
+            // Ground truth: ready with the smallest servable request buffered before the next event.
+            if (!publishSlotGatePolicy(*slot, gateMinimum))
                 continue;
 
-            // Ground truth: ready with the smallest servable request buffered before the next event,
-            // event buried-inclusive (a sub-block residual in front of a buried event must still open
-            // the gate so a read can surface it).
-            slot->setReadyThresholdNative(gateMinimum / basis.divider);
-            setSlotReady(*slot, basis.untilEventCommon >= gateMinimum);
-            setSlotEvent(*slot, basis.hasEventPackets);
+            // Event buried-inclusive: a sub-block residual in front of a buried event must still
+            // open the gate so a read can surface it.
+            auto& reader = slot->getQueueReader();
+            setSlotEvent(*slot, reader.hasPendingEvents() || reader.hasQueuedEventPackets());
         }
     }
 
@@ -368,11 +360,11 @@ public:
         if (plane.slotAvailable.size() != ctx.slots.size())
             plane.slotAvailable.assign(ctx.slots.size(), 0);
 
-        const bool haveModel = ctx.syncManager.hasModel();
-        // The gate's ready threshold is the smallest servable aligned request - the same minimum the
+        // Each slot's minimum is the smallest servable aligned request - the same minimum the
         // availability alignment and the leftover-segment discard enforce - so an open gate always
-        // means a read can actually return samples.
-        const SizeT gateMinimum = haveModel ? ReadCoordinator::effectiveMinimum(ctx.syncManager.getModel(), ctx.minReadCount) : 0;
+        // means a read can actually return samples. publishProducerGate already put it on the slots;
+        // this pass only re-derives readiness against it.
+        const bool haveModel = ctx.syncManager.hasModel();
 
         bool escalate = false;
         bool anyEvent = false;
@@ -403,7 +395,7 @@ public:
             // no new packet arriving, so gating this on packetsArrived would miss it. Both queries are
             // O(1) (empty-check / sticky adoption flag), so per-cycle is cheap.
             const bool hasEvent = reader.hasPendingEvents() || reader.hasQueuedEventPackets();
-            publishSlotBasis(*slot);
+            publishSlotAvailability(*slot);
             if (hasEvent)
             {
                 // The read path escalates so the derivation transitions to EventPending and discards
@@ -427,13 +419,14 @@ public:
 
             // Availability is O(1) here (the queue reader maintains it incrementally across drains and
             // reads), so recomputing it for every used slot each real pass is cheap - and it is exactly
-            // the count createPlan needs. Readiness is derived from the same value.
+            // the count createPlan needs. Readiness comes from the slot, against the minimum
+            // publishProducerGate put on it, so the gate rule is not restated here.
             if (haveModel)
             {
-                const SizeT avail = reader.getAvailableSamplesUntilEvent();
+                const SizeT avail = reader.getAvailableSamples();
                 plane.slotAvailable[i] = avail;
                 availableCommon = std::min(availableCommon, avail);
-                setSlotReady(*slot, avail >= gateMinimum);
+                setSlotReady(*slot, slot->hasAdoptedDataToRead());
             }
         }
 
@@ -471,7 +464,6 @@ public:
             return true;
 
         const bool haveModel = ctx.syncManager.hasModel();
-        const SizeT gateMinimum = haveModel ? ReadCoordinator::effectiveMinimum(ctx.syncManager.getModel(), ctx.minReadCount) : 0;
 
         for (auto* slot : ctx.slots)
         {
@@ -500,14 +492,18 @@ public:
 
             auto& reader = slot->getQueueReader();
             reader.drain();
-            publishSlotBasis(*slot);
+            publishSlotAvailability(*slot);
 
             // Buried-inclusive: a sub-block residual before a buried event still fires the callback so
             // the consumer reads and the read path surfaces the event.
             const bool hasEvent = reader.hasPendingEvents() || reader.hasQueuedEventPackets();
             setSlotEvent(*slot, hasEvent);
+            // The minimum is whatever publishProducerGate last put on the slot, which is this state's
+            // effective minimum - so the slot answers for itself instead of the gate rule living here.
+            // Adopted-only: the drain above is what the answer is about, and the connection-inclusive
+            // form would cost a getConnection() per slot.
             if (!hasEvent && haveModel)
-                setSlotReady(*slot, reader.getAvailableSamplesUntilEvent() >= gateMinimum);
+                setSlotReady(*slot, slot->hasAdoptedDataToRead());
         }
         return false;
     }
@@ -515,7 +511,7 @@ public:
     SizeT availableCount(StateContext& ctx) const override
     {
         // A leading pending event on any used input blocks a synchronized data read until it is
-        // handled, and getAvailableSamplesUntilEvent cannot see it (it lives in a separate queue), so
+        // handled, and getAvailableSamples cannot see it (it lives in a separate queue), so
         // report nothing available. This is Ready holding an event from within, rather than the event
         // being a state of its own. Buried events need no guard - the count stops at them.
         for (auto* slot : ctx.slots)

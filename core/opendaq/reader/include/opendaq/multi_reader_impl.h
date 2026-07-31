@@ -280,7 +280,7 @@ private:
     /// Used-flag change with gate accounting: adjusts the used count and drops a stale ready flag.
     void applySlotUsedLocked(multi_reader::Input* slot, bool used);
     /// Publish one slot's adopted basis (availability-until-event + adopted events) for producers.
-    void publishSlotBasisLocked(multi_reader::Input* slot);
+    void publishSlotAvailabilityLocked(multi_reader::Input* slot);
     /// Lowers every slot's ready/event flag (synchronization invalidated, reader deactivated).
     void clearGateReadinessLocked();
 

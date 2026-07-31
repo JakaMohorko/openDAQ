@@ -589,9 +589,9 @@ void MultiReaderImpl::applySlotUsedLocked(Input* slot, bool used)
         setSlotReadyLocked(slot, false);
 }
 
-void MultiReaderImpl::publishSlotBasisLocked(Input* slot)
+void MultiReaderImpl::publishSlotAvailabilityLocked(Input* slot)
 {
-    multi_reader::publishSlotBasis(*slot);
+    multi_reader::publishSlotAvailability(*slot);
 }
 
 void MultiReaderImpl::clearGateReadinessLocked()
@@ -1087,25 +1087,21 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
     if (plan.commonCount > 0 && nextReadTick.has_value() && model.ticksPerCommonSample() > 0)
         nextReadTick = *nextReadTick + static_cast<std::int64_t>(plan.commonCount) * model.ticksPerCommonSample();
 
-    // The commit consumed exactly plan.commonCount from every used input (a whole number of
-    // blocks, never crossing an event), so each input's availability-until-event simply drops by
-    // that amount. When the fast pass cached the pre-commit counts we derive the new readiness by
-    // subtraction; otherwise (cache not valid this cycle) we query the now-decremented count
-    // directly. This is the "fall on read" half of readiness maintenance.
+    // The commit consumed exactly plan.commonCount from every used input (a whole number of blocks,
+    // never crossing an event), so every input's availability has dropped and readiness has to be
+    // re-derived against the frontier the read left behind. This is the "fall on read" half of
+    // readiness maintenance.
     if (plan.commonCount > 0)
     {
-        const SizeT gateMinimum = ReadCoordinator::effectiveMinimum(model, minReadCount);
         for (SizeT position = 0; position < used.size(); ++position)
         {
-            const SizeT remaining = availableCached
-                ? dataPlane.slotAvailable[slotIndices[position]] - plan.commonCount
-                : used[position]->getAvailableSamplesUntilEvent();
             auto* slot = slots[slotIndices[position]];
-            // Refresh the full producer-visible basis (availability AND adopted-event state) from
-            // the consumed frontier, so a late async packetReceived never self-gates against a
-            // stale event basis and raises a phantom ready/forces a needless evaluation.
-            publishSlotBasisLocked(slot);
-            setSlotReadyLocked(slot, remaining >= gateMinimum);
+            // Republish the full producer-visible availability (samples AND adopted-event state) from
+            // the consumed frontier first, so a late async packetReceived never self-gates against a
+            // stale basis and raises a phantom ready/forces a needless evaluation - and so the slot's
+            // own answer below is computed from the post-commit truth.
+            publishSlotAvailabilityLocked(slot);
+            setSlotReadyLocked(slot, slot->hasAdoptedDataToRead());
         }
 
         // The read advanced the frontier, so the cached counts are now stale and a previously

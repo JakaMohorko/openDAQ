@@ -23,7 +23,7 @@
 #include <opendaq/signal_ptr.h>
 
 #include <atomic>
-#include <chrono>
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <vector>
@@ -69,13 +69,16 @@ struct IInputListener
  * implements IInputPortNotifications for that port, and holds the used/connected/pending flags
  * plus this slot's producer-facing callback-gate state.
  *
- * Gate state (all atomics, producer-readable):
+ * Availability and gate state (all atomics, producer-readable):
  * - gate flags (SlotGateFlags): this slot's ready/event contribution to the shared CallbackGate.
  * - basis: the adopted queue's availability-until-event (native samples) and whether any event
  *   packet is adopted - published by the owner after every pass that moves or consumes samples.
  *   The producer adds the connection's own O(1) counters on top to get the current truth.
- * - readyThresholdNative: the effective minimum (native samples) at which this slot becomes
- *   ready; NeverReady disables producer ready-raises (no model, unused, unconnected).
+ * - minReadNative: how much this slot must have before it counts as readable, in NATIVE samples.
+ *   Set through setMinReadCount, which takes the owner's common-rate unit and converts once, on
+ *   the owner thread, using the QueueReader's divider - which is why the producer path compares
+ *   native against native and never has to read that (non-atomic) divider. NeverReadable is a
+ *   minimum nothing can meet (no model, unused, unconnected).
  * - wakeOnAnyPacket: every packet forces an evaluation (any state but steady Synchronized).
  *
  * Threading contract:
@@ -90,10 +93,8 @@ struct IInputListener
 class Input final : public ImplementationOfWeak<IInputPortNotifications>
 {
 public:
-    using SteadyClock = std::chrono::steady_clock;
-
-    /// Sentinel threshold: the producer never raises the ready flag.
-    static constexpr SizeT NeverReady = std::numeric_limits<SizeT>::max();
+    /// A minimum nothing can meet: hasDataToRead() is false whatever the queues hold.
+    static constexpr SizeT NeverReadable = std::numeric_limits<SizeT>::max();
 
     explicit Input(SizeT index,
                        const InputPortConfigPtr& port,
@@ -190,9 +191,65 @@ public:
     bool isPacketPending() const;
     /// @return true if a packet was pending; re-arms slotPacketPending for the next arrival.
     bool clearPacketPending();
-    SteadyClock::time_point getLastPacketArrival() const;
 
     void setPortActive(bool active);
+
+    // --- Availability (owner state lock held unless noted) ---
+
+    /**
+     * @brief Samples this input can contribute right now, common-rate equivalent: what the
+     * QueueReader has already adopted plus what the connection still holds, stopping at the first
+     * event on either.
+     *
+     * The event boundary is where the samples are, not merely whether an event exists: data queued
+     * in FRONT of a buried event still counts, on both halves. Only an event in the adopted queue
+     * excludes the connection outright, because everything there is behind it in stream order.
+     *
+     * Owner thread only - it needs the QueueReader's divider to express the connection's native
+     * count in the common rate. Exact there, since the owner cannot race itself. Equal to
+     * getQueueReader().getAvailableSamples() immediately after a drain, which is what lets the read
+     * path keep planning off the adopted count alone.
+     */
+    SizeT getAvailableSamples() const;
+
+    /**
+     * @brief How many samples this input needs before it counts as readable, common-rate
+     * equivalent. 1 at construction, so any single sample is enough; the owner raises it to the
+     * effective minimum (max(blockLcm, minReadCount) rounded up to whole blocks) once a model
+     * exists, and to NeverReadable while the slot is unused or unconnected.
+     *
+     * NOT the reader's builder-level minReadCount - it is what ReadCoordinator::effectiveMinimum
+     * makes of it. Owner thread only: the value is stored natively, converted here with the
+     * QueueReader's current divider, so it must be re-set after anything changes that divider.
+     */
+    void setMinReadCount(SizeT countCommon);
+    SizeT getMinReadCount() const;
+
+    /**
+     * @brief getAvailableSamples() >= getMinReadCount(), and the question the PRODUCER path asks.
+     * Safe on any thread: both sides are native there, so no divider is involved.
+     *
+     * Off the owner thread the answer is advisory - the adopted basis and the connection counters
+     * are read without a lock, so an owner pass in between can make the sum stale. That can only
+     * cost a spurious evaluation, never a missed one; see tryRaiseGateFlags for the epoch guard
+     * that keeps it that way.
+     *
+     * Do NOT use this on the owner paths, even though it is correct there: reaching the connection
+     * costs a getConnection() (a recursive component config lock) per call, which measured at
+     * ~180 ns per input per read - a third of the whole read. Use hasAdoptedDataToRead().
+     */
+    bool hasDataToRead() const;
+
+    /**
+     * @brief The same minimum against the adopted half alone, and the question the OWNER paths ask.
+     * Two atomic loads, no connection, no lock.
+     *
+     * Identical to hasDataToRead() wherever the owner asks it, because the owner drains and
+     * republishes before asking, so the connection holds nothing the basis does not already count.
+     * It is also the more honest question there: a read serves from the adopted queue, so samples
+     * that are still on the connection cannot contribute to it.
+     */
+    bool hasAdoptedDataToRead() const;
 
     // --- Gate maintenance (owner state lock held unless noted) ---
 
@@ -205,10 +262,7 @@ public:
      * event (native samples) and whether any event packet (leading or buried) is adopted.
      * Owner-called after every pass that adopts or consumes samples on this slot.
      */
-    void publishGateBasis(SizeT availableNativeUntilEvent, bool hasEventPackets);
-
-    /// Native-sample threshold at which the producer raises the ready flag; NeverReady disables.
-    void setReadyThresholdNative(SizeT thresholdNative);
+    void publishAvailability(SizeT availableNativeUntilEvent, bool hasEventPackets);
 
     /// True in every state but steady Synchronized: each packet forces an evaluation.
     void setWakeOnAnyPacket(bool wake);
@@ -219,12 +273,28 @@ public:
 private:
     IInputListener* getListener() const;
     /**
-     * @brief Producer-side gate maintenance: raise this slot's ready/event flags from the
-     * published basis plus the connection's O(1) counters, guarded by the owner-pass epoch.
+     * @brief Producer-side gate maintenance, guarded by the owner-pass epoch: raise this slot's
+     * ready flag once it has an aligned block to read, or its event flag when the next thing to
+     * read is an event instead.
+     *
+     * Events go through the flag system like readiness - forcing an evaluation is reserved for a
+     * snapshot that cannot be trusted, not for a condition the slot can state.
+     *
      * @return false when the snapshot cannot be trusted (owner pass in flight, epoch moved,
      * connection unassigned) - the caller then forces an evaluation instead.
      */
     bool tryRaiseGateFlags();
+
+    /// Re-check the epoch, then raise the ready (event == false) or event flag.
+    /// @return false when an owner pass ran under the caller's snapshot.
+    bool raiseUnderEpoch(std::uint64_t epochBefore, bool event);
+
+    /**
+     * @brief Native samples until the first event: the owner-published adopted basis plus whatever
+     * the connection still holds. The shared core of getAvailableSamples and hasDataToRead, and
+     * the only one of the three that is safe to call off the owner thread.
+     */
+    SizeT availableNative() const;
 
     std::atomic<SizeT> index;
     const bool globalIdFromSignal;
@@ -239,13 +309,14 @@ private:
     std::atomic_bool used{true};
     std::atomic_bool connectedState{false};
     std::atomic_bool packetPending{false};
-    std::atomic<SteadyClock::time_point> lastPacketArrival{SteadyClock::time_point{}};
 
     std::shared_ptr<CallbackGate> callbackGate;
     SlotGateFlags flags;
-    std::atomic<SizeT> basisAvailableNative{0};
+    std::atomic<SizeT> availableNativeBasis{0};
     std::atomic_bool basisHasEventPackets{false};
-    std::atomic<SizeT> readyThresholdNative{NeverReady};
+    /// Native equivalent of the common-rate minimum handed to setMinReadCount. Defaults to 1:
+    /// until the first evaluation publishes a policy, any sample counts.
+    std::atomic<SizeT> minReadNative{1};
     /// Defaults to true: until the first full evaluation publishes a steady Synchronized
     /// state, every packet re-enters the state machine (classic behavior).
     std::atomic_bool wakeOnAnyPacket{true};
@@ -271,9 +342,10 @@ inline void setSlotEvent(Input& slot, bool event)
     slot.gateFlags().setEvent(event);
 }
 
-/// Publish one slot's producer-visible basis from its adopted queue: availability until the next
-/// event (native samples) plus whether any event packet is adopted.
-void publishSlotBasis(Input& slot);
+/// Publish one slot's producer-visible availability from its adopted queue: samples until the next
+/// event (native) plus whether any event packet is adopted. Every owner pass that moves or consumes
+/// samples on a slot has to end in one of these, or the producer arithmetic goes stale.
+void publishSlotAvailability(Input& slot);
 
 /// Used inputs in slot order plus their slot indices; reuses the vectors' capacity.
 void collectUsedReaders(const std::vector<Input*>& slots, std::vector<QueueReader*>& readers, std::vector<SizeT>& slotIndices);

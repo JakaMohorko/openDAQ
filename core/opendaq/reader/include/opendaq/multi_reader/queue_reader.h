@@ -142,17 +142,14 @@ public:
     void dropForInactive();
     
     /**
-     * @brief Get the Available Samples in common rate equivalent
-     * 
-     * @return SizeT Available samples multiplied by the sample rate divider.
+     * @brief Available samples from the cursor up to the next event packet or the queue end,
+     * in common rate equivalent (native samples multiplied by the sample rate divider).
+     *
+     * The count always stops at the next event: the adopted queue is a run of data packets followed
+     * by whatever event ends the segment, and nothing behind that event is readable until it has
+     * been consumed.
      */
     SizeT getAvailableSamples() const;
-
-    /**
-     * @brief Available samples (common rate equivalent) from the cursor up to the next event packet
-     * or queue end. Makes the until-event contract of the availability count explicit.
-     */
-    SizeT getAvailableSamplesUntilEvent() const;
 
     bool hasPendingEvents() const;
 

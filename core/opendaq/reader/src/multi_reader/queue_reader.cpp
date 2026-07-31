@@ -414,14 +414,8 @@ SizeT QueueReader::recomputeAvailableNative() const
 
 SizeT QueueReader::getAvailableSamples() const
 {
-    return getAvailableSamplesNative() * sampleRateDivider;
-}
-
-SizeT QueueReader::getAvailableSamplesUntilEvent() const
-{
-    // The native counter stops at the first non-data packet, so the available count
-    // already ends at the next event boundary; this alias makes that contract explicit.
-    // Counts are in the common-rate equivalent: the owner-facing unit.
+    // The native counter stops at the first non-data packet, so the count already ends at the next
+    // event boundary. Counts are in the common-rate equivalent: the owner-facing unit.
     return getAvailableSamplesNative() * sampleRateDivider;
 }
 

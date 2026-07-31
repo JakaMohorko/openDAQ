@@ -130,7 +130,7 @@ TEST_F(CallbackGateTest, DisarmRetiresContributions)
     ASSERT_FALSE(gate->isSatisfied());
 
     // A late producer raise on the disarmed slot is a no-op and cannot reopen the gate
-    ASSERT_FALSE(flags[0]->raiseEvent());
+    ASSERT_FALSE(flags[0]->raiseReady());
     ASSERT_FALSE(gate->isSatisfied());
 }
 

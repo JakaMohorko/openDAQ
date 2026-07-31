@@ -176,21 +176,6 @@ TEST_F(MultiReaderInputTest, PacketNotificationPerPacketAndPendingBit)
     ASSERT_FALSE(slot->clearPacketPending());
 }
 
-TEST_F(MultiReaderInputTest, LastPacketArrivalUpdates)
-{
-    RecordingSlotListener listener;
-    auto port = createPort();
-    createSlot(0, port, &listener);
-
-    ASSERT_EQ(slot->getLastPacketArrival(), Input::SteadyClock::time_point{});
-
-    const auto beforeSend = Input::SteadyClock::now();
-    port.connect(signal);
-    sendDataPacket(5, 100);
-
-    ASSERT_GE(slot->getLastPacketArrival(), beforeSend);
-}
-
 TEST_F(MultiReaderInputTest, AcceptsSignalForwardedAndDefaultAccept)
 {
     RecordingSlotListener listener;
@@ -266,6 +251,123 @@ TEST_F(MultiReaderInputTest, RebindConnectionDrainsQueue)
     ASSERT_EQ(queueReader.getAvailableSamples(), 5u);
 }
 
+TEST_F(MultiReaderInputTest, AvailabilityAndMinimumAcrossTheSlotLifecycle)
+{
+    // The slot's availability is the adopted queue plus whatever the connection still holds, and
+    // hasDataToRead() is that against a settable minimum. This walks the surface: the default
+    // minimum, the two halves of the count, the owner's publish carrying one into the other, the
+    // divider conversion, the event boundary, and the never-readable sentinel.
+    RecordingSlotListener listener;
+    auto port = createPort();
+    createSlot(0, port, &listener);
+    port.connect(signal);
+
+    slot->rebindConnection();
+    auto& reader = slot->getQueueReader();
+    ASSERT_TRUE(reader.hasPendingEvents());  // initial descriptor event
+    reader.popFrontEvent();
+    publishSlotAvailability(*slot);
+
+    // At construction any single sample is enough to read.
+    ASSERT_EQ(slot->getMinReadCount(), 1u);
+    ASSERT_EQ(slot->getAvailableSamples(), 0u);
+    ASSERT_FALSE(slot->hasDataToRead());
+
+    // The connection half: samples count before anything adopts them, which is what lets the
+    // producer decide whether an arrival is worth an evaluation without touching the queue.
+    sendDataPacket(5, 100);
+    ASSERT_EQ(reader.getAvailableSamples(), 0u);  // nothing adopted yet
+    ASSERT_EQ(slot->getAvailableSamples(), 5u);
+    ASSERT_TRUE(slot->hasDataToRead());
+
+    // Adopting moves the same samples from one half to the other. The count only survives the move
+    // because the owner republishes: the producer cannot read the queue, so an owner pass that
+    // moves samples and forgets to publish would strand the slot reporting the pre-drain basis.
+    reader.drain();
+    publishSlotAvailability(*slot);
+    ASSERT_EQ(reader.getAvailableSamples(), 5u);
+    ASSERT_EQ(slot->getAvailableSamples(), 5u);
+
+    // Raising the minimum is the whole difference between the establishing and synchronized gate
+    // policies - one number, not a second code path.
+    slot->setMinReadCount(10);
+    ASSERT_EQ(slot->getMinReadCount(), 10u);
+    ASSERT_FALSE(slot->hasDataToRead());
+
+    // Crossing it from the connection side, without adopting. 5 adopted + 5 queued.
+    sendDataPacket(5, 105);
+    ASSERT_EQ(slot->getAvailableSamples(), 10u);
+    ASSERT_TRUE(slot->hasDataToRead());
+
+    // Counts and minimum are both common-rate, so a divider rescales both: the same 10 native
+    // samples now read as 20, and the same minimum of 10 demands only 5 native ones.
+    reader.setSampleRateDivider(2);
+    publishSlotAvailability(*slot);
+    slot->setMinReadCount(10);
+    ASSERT_EQ(slot->getMinReadCount(), 10u);
+    ASSERT_EQ(slot->getAvailableSamples(), 20u);
+    ASSERT_TRUE(slot->hasDataToRead());
+
+    // An event BURIED on the connection bounds the count at itself, but the data queued in front of
+    // it stays readable and must still count. Connection::hasEventPacket() would say "yes" here -
+    // it means "an event is queued somewhere", not "the queue starts with one" - so it cannot be
+    // used to decide this.
+    signal.setDescriptor(DataDescriptorBuilder().setSampleType(SampleType::Int32).build());
+    ASSERT_TRUE(port.getConnection().hasEventPacket());
+    ASSERT_EQ(slot->getAvailableSamples(), 20u);  // unchanged: the event is behind all 10 samples
+
+    // Adopting pulls the event into the adopted queue (still buried behind the 10 samples). Now the
+    // basis is what bounds the count, and the whole connection queue is behind that event.
+    reader.drain();
+    publishSlotAvailability(*slot);
+    ASSERT_EQ(slot->getAvailableSamples(), 20u);
+
+    slot->setMinReadCount(40);
+    ASSERT_FALSE(slot->hasDataToRead());
+
+    // Nothing can meet NeverReadable, and it is a sentinel rather than a count, so the divider must
+    // not rescale it.
+    slot->setMinReadCount(Input::NeverReadable);
+    ASSERT_EQ(slot->getMinReadCount(), Input::NeverReadable);
+    ASSERT_FALSE(slot->hasDataToRead());
+}
+
+TEST_F(MultiReaderInputTest, MinimumConvertsToNativeRoundingUp)
+{
+    // A minimum of one common-rate sample on an input running at half the common rate is still one
+    // native sample to wait for. Truncating the conversion would store zero, and a zero minimum
+    // makes hasDataToRead() true on an empty slot - an input that is permanently, silently ready.
+    RecordingSlotListener listener;
+    auto port = createPort();
+    createSlot(0, port, &listener);
+    port.connect(signal);
+
+    slot->rebindConnection();
+    auto& reader = slot->getQueueReader();
+    reader.popFrontEvent();  // initial descriptor event
+    reader.setSampleRateDivider(2);
+    publishSlotAvailability(*slot);
+
+    slot->setMinReadCount(1);
+    ASSERT_EQ(slot->getAvailableSamples(), 0u);
+    ASSERT_FALSE(slot->hasDataToRead());
+
+    sendDataPacket(1, 100);
+    ASSERT_EQ(slot->getAvailableSamples(), 2u);  // one native sample, common-rate equivalent
+    ASSERT_TRUE(slot->hasDataToRead());
+}
+
+TEST_F(MultiReaderInputTest, UnconnectedSlotHasNothingAvailable)
+{
+    RecordingSlotListener listener;
+    auto port = createPort("unconnected");
+    createSlot(0, port, &listener);
+
+    ASSERT_FALSE(slot->isConnected());
+    ASSERT_EQ(slot->getAvailableSamples(), 0u);
+    ASSERT_FALSE(slot->hasDataToRead());
+}
+
 TEST_F(MultiReaderInputTest, ProducerForcesEvaluationInNonSteadyState)
 {
     // Default (wakeOnAnyPacket == true, the pre-first-evaluation state): every packet forces
@@ -297,11 +399,11 @@ TEST_F(MultiReaderInputTest, ProducerRaisesReadyFromConnectionCountersWhenSteady
     if (reader.hasPendingEvents())
         reader.popFrontEvent();
 
-    // Simulate the owner publishing a steady Synchronized gate: no wake-on-any, ready at 10
-    // native samples, empty adopted basis.
+    // Simulate the owner publishing a steady Synchronized gate: no wake-on-any, a minimum of 10
+    // samples (divider 1, so 10 native too), empty adopted basis.
     slot->setWakeOnAnyPacket(false);
-    slot->setReadyThresholdNative(10);
-    slot->publishGateBasis(0, false);
+    slot->setMinReadCount(10);
+    slot->publishAvailability(0, false);
     slot->gateFlags().setReady(false);
     slot->gateFlags().setEvent(false);
 
@@ -318,7 +420,7 @@ TEST_F(MultiReaderInputTest, ProducerRaisesReadyFromConnectionCountersWhenSteady
     ASSERT_TRUE(slot->gateFlags().ready());
 }
 
-TEST_F(MultiReaderInputTest, ProducerForcesEvaluationOnConnectionEventPacket)
+TEST_F(MultiReaderInputTest, ProducerRaisesEventOnAConnectionEventPacket)
 {
     RecordingSlotListener listener;
     auto port = createPort();
@@ -331,21 +433,86 @@ TEST_F(MultiReaderInputTest, ProducerForcesEvaluationOnConnectionEventPacket)
         reader.popFrontEvent();
 
     slot->setWakeOnAnyPacket(false);
-    slot->setReadyThresholdNative(10);
-    slot->publishGateBasis(0, false);
+    slot->setMinReadCount(10);
+    slot->publishAvailability(0, false);
     slot->gateFlags().setReady(false);
     slot->gateFlags().setEvent(false);
 
     listener.forcedCount = 0;
 
-    // Events are owner-managed: a producer that sees an event packet on the connection (via the
-    // O(1) hasEventPacket counter) does NOT raise the event flag itself - that would race the
-    // owner and risk a stale flag. It forces a full evaluation, which sets event flags under the
-    // state lock. So the slot's own event flag stays down; the listener is forced instead.
+    // An event arriving on the connection is something the consumer must be woken to collect. The
+    // producer states that in the flag system rather than falling back to forcing an evaluation -
+    // events are self-gated exactly like readiness.
     signal.setDescriptor(DataDescriptorBuilder().setSampleType(SampleType::Int32).build());
 
-    ASSERT_FALSE(slot->gateFlags().event());
-    ASSERT_GE(listener.forcedCount.load(), 1);
+    ASSERT_TRUE(slot->gateFlags().event());
+    ASSERT_EQ(listener.forcedCount, 0);
+    // One event on any input opens the shared gate - that is what wakes the consumer to collect it.
+    ASSERT_TRUE(gate->isSatisfied());
+}
+
+TEST_F(MultiReaderInputTest, ProducerRaisesEventEvenBehindAReadableBlock)
+{
+    // The event bit is buried-inclusive, matching the owner's rule: an event queued BEHIND a
+    // readable block still raises it. A stricter "the next thing to read is an event" would raise
+    // only ready here - and if another input has nothing, the gate would then stay shut and the
+    // consumer would never be woken to discover this event.
+    RecordingSlotListener listener;
+    auto port = createPort();
+    createSlot(0, port, &listener);
+    port.connect(signal);
+
+    slot->rebindConnection();
+    auto& reader = slot->getQueueReader();
+    if (reader.hasPendingEvents())
+        reader.popFrontEvent();
+
+    slot->setWakeOnAnyPacket(false);
+    slot->setMinReadCount(10);
+    slot->publishAvailability(0, false);
+    slot->gateFlags().setReady(false);
+    slot->gateFlags().setEvent(false);
+    listener.forcedCount = 0;
+
+    // A full block is readable before the event even reaches the queue.
+    sendDataPacket(10, 100);
+    ASSERT_TRUE(slot->hasDataToRead());
+    ASSERT_TRUE(slot->gateFlags().ready());
+
+    signal.setDescriptor(DataDescriptorBuilder().setSampleType(SampleType::Int32).build());
+
+    ASSERT_TRUE(slot->gateFlags().event());
+    ASSERT_EQ(listener.forcedCount, 0);
+}
+
+TEST_F(MultiReaderInputTest, ProducerRaisesEventOnAnAdoptedEvent)
+{
+    RecordingSlotListener listener;
+    auto port = createPort();
+    createSlot(0, port, &listener);
+    port.connect(signal);
+
+    slot->rebindConnection();
+    auto& reader = slot->getQueueReader();
+    if (reader.hasPendingEvents())
+        reader.popFrontEvent();
+
+    slot->setWakeOnAnyPacket(false);
+    slot->setMinReadCount(10);
+    // The owner published an adopted event (buried-inclusive, as publishSlotAvailability reports
+    // it) alongside a readable-looking basis: the event still outranks the samples, because the
+    // read cannot cross it.
+    slot->publishAvailability(50, true);
+    slot->gateFlags().setReady(false);
+    slot->gateFlags().setEvent(false);
+
+    listener.forcedCount = 0;
+
+    sendDataPacket(5, 100);
+
+    ASSERT_TRUE(slot->gateFlags().event());
+    ASSERT_FALSE(slot->gateFlags().ready());
+    ASSERT_EQ(listener.forcedCount, 0);
 }
 
 TEST_F(MultiReaderInputTest, ProducerFallsBackToForceDuringOwnerPass)
@@ -361,8 +528,8 @@ TEST_F(MultiReaderInputTest, ProducerFallsBackToForceDuringOwnerPass)
         reader.popFrontEvent();
 
     slot->setWakeOnAnyPacket(false);
-    slot->setReadyThresholdNative(10);
-    slot->publishGateBasis(0, false);
+    slot->setMinReadCount(10);
+    slot->publishAvailability(0, false);
 
     slot->clearPacketPending();
     listener.forcedCount = 0;

@@ -91,7 +91,6 @@ ErrCode Input::packetReceived(IInputPort* /*inputPort*/)
 {
     return daqTry([&]
     {
-        lastPacketArrival.store(SteadyClock::now());
         packetPending = true;
 
         // Steady Synchronized state: raise the gate flags from a minimal introspection and let
@@ -107,53 +106,125 @@ ErrCode Input::packetReceived(IInputPort* /*inputPort*/)
     });
 }
 
+SizeT Input::availableNative() const
+{
+    // The adopted basis already stops at the first event in the adopted queue. If there is one, the
+    // whole connection queue is behind it in stream order - leading or buried makes no difference -
+    // so nothing there is available until that event has been consumed.
+    const SizeT adopted = availableNativeBasis.load();
+    if (basisHasEventPackets.load())
+        return adopted;
+
+    const auto connection = port.getConnection();
+    if (!connection.assigned())
+        return adopted;  // mid-(dis)connect
+
+    // No guard on Connection::hasEventPacket() here: that means "an event is queued somewhere", not
+    // "the queue starts with one", so it would drop the data packets in FRONT of a buried event -
+    // which are readable. getSamplesUntilNextEventPacket already stops exactly at the boundary.
+    //
+    // It is an O(1) counter read while no event is queued and a deque walk otherwise. The producer
+    // path never pays the walk: tryRaiseGateFlags checks hasEventPacket itself and forces a full
+    // evaluation before it ever gets here, so the walk only happens on an owner-thread query.
+    return adopted + static_cast<SizeT>(connection.getSamplesUntilNextEventPacket());
+}
+
+SizeT Input::getAvailableSamples() const
+{
+    const SizeT divider = queueReader.getSampleRateDivider();
+    return availableNative() * (divider > 0 ? divider : 1);
+}
+
+void Input::setMinReadCount(SizeT countCommon)
+{
+    if (countCommon == NeverReadable)
+    {
+        minReadNative.store(NeverReadable);
+        return;
+    }
+
+    const SizeT divider = queueReader.getSampleRateDivider();
+    // Rounded UP, not truncated: one common-rate sample on an input running at half the common
+    // rate is still one native sample to wait for, and a minimum of zero would make hasDataToRead
+    // unconditionally true. Exact for every real minimum anyway - effectiveMinimum is a multiple
+    // of blockLcm, and blockLcm is a multiple of every divider.
+    const SizeT effectiveDivider = divider > 0 ? divider : 1;
+    minReadNative.store((countCommon + effectiveDivider - 1) / effectiveDivider);
+}
+
+SizeT Input::getMinReadCount() const
+{
+    const SizeT minimum = minReadNative.load();
+    if (minimum == NeverReadable)
+        return NeverReadable;
+
+    const SizeT divider = queueReader.getSampleRateDivider();
+    return minimum * (divider > 0 ? divider : 1);
+}
+
+bool Input::hasDataToRead() const
+{
+    const SizeT minimum = minReadNative.load();
+    return minimum != NeverReadable && availableNative() >= minimum;
+}
+
+bool Input::hasAdoptedDataToRead() const
+{
+    const SizeT minimum = minReadNative.load();
+    return minimum != NeverReadable && availableNativeBasis.load() >= minimum;
+}
+
+bool Input::raiseUnderEpoch(std::uint64_t epochBefore, bool event)
+{
+    // The owner's end-of-pass truth wins: if a pass ran between the snapshot this raise was
+    // computed from and now, the arithmetic is not trustworthy and the caller forces an evaluation.
+    if (callbackGate->passEpoch() != epochBefore)
+        return false;
+
+    if (event)
+        flags.raiseEvent();
+    else
+        flags.raiseReady();
+    return true;
+}
+
 bool Input::tryRaiseGateFlags()
 {
-    // Epoch guard (see CallbackGate): an owner pass can move samples from the connection into
-    // the adopted queue between our reads, making basis + connection undercount. A raise can
-    // never be wrong for long (the evaluation reconciles), but a SKIPPED raise could silence
-    // the gate forever - so anything inconsistent returns false and the caller forces an
-    // evaluation instead.
+    // Epoch guard (see CallbackGate): an owner pass can move samples or events between our reads,
+    // so nothing computed across one is trustworthy. A raise can never be wrong for long (the
+    // evaluation reconciles), but a SKIPPED raise could silence the gate forever - so anything
+    // inconsistent returns false and the caller forces an evaluation instead.
     const auto epochBefore = callbackGate->passEpoch();
     if (!CallbackGate::epochQuiet(epochBefore))
         return false;
 
-    // A set event flag already holds the gate open; the caller schedules via gateSatisfied.
+    // Already holding the gate open for this slot; the caller schedules via gateSatisfied.
     if (flags.event())
         return true;
 
-    // Events are rare and always transition the reader out of the steady synchronized state.
-    // Producers never touch the event counter (that would race the owner and risk a stale flag
-    // the owner's gate-skip logic would perpetuate); instead any event indication - adopted
-    // (basis) or still on the connection - forces a full evaluation, which sets event flags
-    // authoritatively under the state lock. Only readiness, the common data-packet case, is
-    // self-gated here.
+    // An event already adopted, leading or buried. Raised, not forced: an event is a condition the
+    // slot can state, and forcing an evaluation is reserved for a snapshot it cannot trust.
+    //
+    // Buried-inclusive, which is exactly the owner's rule for this bit (publishProducerGate), and
+    // the two must agree or the flag oscillates between them. That is deliberately weaker than
+    // "the next thing to read is an event": an event behind a readable block still raises it,
+    // because the block may not be servable - the other inputs also have to have one - and the
+    // consumer must still be woken to discover the event.
     if (basisHasEventPackets.load())
-        return false;
+        return raiseUnderEpoch(epochBefore, true);
 
     const auto connection = port.getConnection();
     if (!connection.assigned())
         return false;  // mid-(dis)connect: let the evaluation sort it out
 
-    // Both connection queries are O(1) counter reads under the connection's own lock, which the
-    // enqueue that triggered this notification has already released.
+    // Same rule on the connection side. Checking it before the availability query also keeps that
+    // query O(1): getSamplesUntilNextEventPacket walks the deque only when an event is queued.
     if (connection.hasEventPacket())
-        return false;
+        return raiseUnderEpoch(epochBefore, true);
 
-    if (!flags.ready())
-    {
-        const SizeT threshold = readyThresholdNative.load();
-        if (threshold != NeverReady)
-        {
-            const SizeT available = basisAvailableNative.load() + static_cast<SizeT>(connection.getSamplesUntilNextEventPacket());
-            if (available >= threshold)
-            {
-                if (callbackGate->passEpoch() != epochBefore)
-                    return false;  // an owner pass ran under us; its end-of-pass truth wins
-                flags.raiseReady();
-            }
-        }
-    }
+    if (!flags.ready() && hasDataToRead())
+        return raiseUnderEpoch(epochBefore, false);
+
     return true;
 }
 
@@ -235,11 +306,6 @@ bool Input::clearPacketPending()
     return packetPending.exchange(false);
 }
 
-Input::SteadyClock::time_point Input::getLastPacketArrival() const
-{
-    return lastPacketArrival.load();
-}
-
 void Input::setPortActive(bool active)
 {
     port.setActive(active);
@@ -250,15 +316,10 @@ SlotGateFlags& Input::gateFlags()
     return flags;
 }
 
-void Input::publishGateBasis(SizeT availableNativeUntilEvent, bool hasEventPackets)
+void Input::publishAvailability(SizeT availableNativeUntilEvent, bool hasEventPackets)
 {
-    basisAvailableNative.store(availableNativeUntilEvent);
+    availableNativeBasis.store(availableNativeUntilEvent);
     basisHasEventPackets.store(hasEventPackets);
-}
-
-void Input::setReadyThresholdNative(SizeT thresholdNative)
-{
-    readyThresholdNative.store(thresholdNative);
 }
 
 void Input::setWakeOnAnyPacket(bool wake)
@@ -278,12 +339,13 @@ IInputListener* Input::getListener() const
 
 // --- Operations over a slot vector -------------------------------------------------------------
 
-void publishSlotBasis(Input& slot)
+void publishSlotAvailability(Input& slot)
 {
     auto& reader = slot.getQueueReader();
     const SizeT divider = reader.getSampleRateDivider() > 0 ? reader.getSampleRateDivider() : 1;
+    // Buried-inclusive: a queued event behind data still bounds what the connection can add.
     const bool hasEventPackets = reader.hasPendingEvents() || reader.hasQueuedEventPackets();
-    slot.publishGateBasis(reader.getAvailableSamplesUntilEvent() / divider, hasEventPackets);
+    slot.publishAvailability(reader.getAvailableSamples() / divider, hasEventPackets);
 }
 
 void collectUsedReaders(const std::vector<Input*>& slots, std::vector<QueueReader*>& readers, std::vector<SizeT>& slotIndices)

@@ -147,8 +147,19 @@ private:
  * slot's contribution - a producer raise racing the owner's removal either lands before the
  * disarm (and is subtracted by it) or loses the CAS and sees the slot disarmed.
  *
- * Producers use raiseReady/raiseEvent only (flags only ever go up on the producer path);
- * the owner sets flags in either direction while holding its state lock.
+ * Producers use raiseReady/raiseEvent only (flags only ever go up on the producer path); the owner
+ * sets both in either direction while holding its state lock.
+ *
+ * Both flags are producer-raisable because a slot can answer both questions locally, and both are
+ * monotone under a quiet, unchanged epoch: samples and events only accumulate until an owner pass
+ * consumes them, and an owner pass moves the epoch. Readiness is "leading samples reach the
+ * minimum"; the event bit is "the next thing to read is an event". Neither is suppressed while a
+ * producer may raise it - the cross-input event suppressions (deriveInputBlocker) belong to states
+ * that are not Synchronized, and a slot only self-gates while it is (wakeOnAnyPacket == false).
+ *
+ * The owner remains the authority: it publishes both flags from ground truth at every full
+ * evaluation, so a producer raise is at worst one spurious wake-up that the next read reconciles,
+ * and never a missed one.
  */
 class SlotGateFlags
 {
