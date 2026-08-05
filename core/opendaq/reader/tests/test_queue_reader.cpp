@@ -154,7 +154,8 @@ TEST_F(QueueReaderTest, AdvancePastEnd)
 
     ASSERT_TRUE(reader.hasPendingEvents());
 
-    ASSERT_EQ(reader.getAvailableSamples(), 3u * packetSize);
+    // A pending event is a boundary at the cursor: nothing is available until it is popped.
+    ASSERT_EQ(reader.getAvailableSamples(), 0u);
 
     auto start = reader.getFirstSampleDomainValue();
     auto* startP = dynamic_cast<DomainValueImpl<Int>*>(start.get());
@@ -174,6 +175,9 @@ TEST_F(QueueReaderTest, AdvancePastEnd)
     const DataDescriptorPtr domainFromEvent = params[event_packet_param::DOMAIN_DATA_DESCRIPTOR];
     ASSERT_EQ(domainFromEvent.getTickResolution().getDenominator(), sampleRate);
     ASSERT_FALSE(reader.hasPendingEvents());
+
+    // The boundary is gone; the count now reaches everything the three packets queued.
+    ASSERT_EQ(reader.getAvailableSamples(), 3u * packetSize);
 
     outcome = reader.advanceToDomainValue(domainValue.get());
     ASSERT_EQ(outcome.result, AdvanceResult::Success);
@@ -222,7 +226,8 @@ TEST_F(QueueReaderTest, DomainChangeDetection)
 
     ASSERT_TRUE(reader.hasPendingEvents());
 
-    ASSERT_EQ(reader.getAvailableSamples(), packetSize);
+    // A pending event is a boundary at the cursor: nothing is available until it is popped.
+    ASSERT_EQ(reader.getAvailableSamples(), 0u);
 
     auto start = reader.getFirstSampleDomainValue();
     auto* startP = dynamic_cast<DomainValueImpl<Int>*>(start.get());
@@ -234,6 +239,7 @@ TEST_F(QueueReaderTest, DomainChangeDetection)
     // The descriptor change event when the sig was connected to port; must be popped before advancing
     auto eventPacket = reader.popFrontEvent();
     ASSERT_FALSE(reader.hasPendingEvents());
+    ASSERT_EQ(reader.getAvailableSamples(), packetSize);
 
     std::unique_ptr<DomainValue> domainValue = std::make_unique<DomainValueImpl<Int>>(reader.getDomainInfo(), 512);
     auto outcome = reader.advanceToDomainValue(domainValue.get());
@@ -613,10 +619,13 @@ TEST_F(QueueReaderTest, CheckAdvanceDomainEdgeCases)
     
     // Initial data segment
     ASSERT_TRUE(reader.hasPendingEvents());
-    ASSERT_EQ(reader.getAvailableSamples(), 3 * packetSize); // First three packets worth of samples
-    
+    // A pending event is a boundary at the cursor: nothing is available until it is popped.
+    ASSERT_EQ(reader.getAvailableSamples(), 0u);
+
     auto event = reader.popFrontEvent();
     ASSERT_FALSE(reader.hasPendingEvents());
+    // First three packets worth of samples; the count stops at the next descriptor change.
+    ASSERT_EQ(reader.getAvailableSamples(), 3 * packetSize);
 
     DataDescriptorPtr descriptor = event.getParameters()[event_packet_param::DOMAIN_DATA_DESCRIPTOR];
     NumberPtr delta = descriptor.getRule().getParameters()["delta"];

@@ -119,7 +119,10 @@ bool publishSlotGatePolicy(Input& slot, SizeT minimumCommon)
     // Order matters: the minimum is stored natively, converted with the divider the model just
     // pushed down, so it has to be set after any model rebuild and before readiness is derived.
     slot.setMinReadCount(minimumCommon);
-    setSlotReady(slot, slot.hasDataToRead());
+    // Adopted-only, like every other owner-side readiness site: the publish above just refreshed
+    // the basis from the drained queue, so the connection-inclusive form would answer the same
+    // while paying a getConnection() (a recursive component config lock) per slot.
+    setSlotReady(slot, slot.hasAdoptedDataToRead());
     return true;
 }
 
@@ -329,15 +332,19 @@ public:
             if (!publishSlotGatePolicy(*slot, gateMinimum))
                 continue;
 
-            // Event buried-inclusive: a sub-block residual in front of a buried event must still
-            // open the gate so a read can surface it.
+            // Data-first: the event bit means "blocked on an event at the cursor" - nothing
+            // servable before the boundary. An event buried behind a readable block stays quiet
+            // and surfaces in stream order once the data ahead of it is consumed; with nothing
+            // servable, the residual can never grow past the boundary (availability stops at it),
+            // so the event - leading or buried - is the only possible wake and must open the gate.
             auto& reader = slot->getQueueReader();
-            setSlotEvent(*slot, reader.hasPendingEvents() || reader.hasQueuedEventPackets());
+            setSlotEvent(*slot,
+                         !slot->hasAdoptedDataToRead() && (reader.hasPendingEvents() || reader.hasQueuedEventPackets()));
         }
     }
 
     /**
-     * @brief The synchronized fast path: no state derivation until an event is encountered or a
+     * @brief The synchronized fast path: no state derivation until an event blocks an input or a
      * deadline expires, because data packets only ever add availability.
      */
     bool refreshDataPlane(StateContext& ctx, bool escalateOnEvent) const override
@@ -388,20 +395,26 @@ public:
             if (packetsArrived)
                 reader.drain();
 
-            // The event check runs EVERY cycle, not only on arrival: a leading event must be reported,
-            // and a buried event needs the full derivation so the partial segment in front of it can
-            // be discarded and the event can surface. A buried event becomes reachable through the
-            // reader's own consumption (a read advancing the frontier past the data ahead of it) with
-            // no new packet arriving, so gating this on packetsArrived would miss it. Both queries are
-            // O(1) (empty-check / sticky adoption flag), so per-cycle is cheap.
+            // The blocked check runs EVERY cycle, not only on arrival: a slot becomes blocked
+            // through the reader's own consumption (a read advancing the frontier down to the event
+            // boundary) with no new packet arriving, so gating this on packetsArrived would miss
+            // it. The queries are O(1) (empty-check / sticky adoption flag / boundary-stopped
+            // count against the published basis), so per-cycle is cheap.
+            //
+            // Data-first: an event buried behind a servable block blocks nothing - the data ahead
+            // of it is served normally and the event surfaces in stream order once that data is
+            // consumed. Blocked means an event with nothing servable before the boundary: leading
+            // at the cursor, or buried behind a sub-minimum residual that can never grow past it.
+            // Only that needs the full derivation (to discard the residual and surface the event),
+            // and only that may open the gate through the event bit.
             const bool hasEvent = reader.hasPendingEvents() || reader.hasQueuedEventPackets();
             publishSlotAvailability(*slot);
-            if (hasEvent)
+            const bool blocked = hasEvent && (!haveModel || !slot->hasAdoptedDataToRead());
+            if (blocked)
             {
-                // The read path escalates so the derivation transitions to EventPending and discards
-                // residuals; the query path only records the event for the gate - buried-inclusive, so
-                // a sub-block residual before a buried event still fires the callback - and re-arms
-                // dirty (below) so the next read runs the derivation.
+                // The read path escalates so the derivation transitions to EventPending and
+                // discards residuals; the query path only records the event for the gate and
+                // re-arms dirty (below) so the next read runs the derivation.
                 if (escalateOnEvent)
                     escalate = true;
                 else
@@ -413,7 +426,8 @@ public:
             }
 
             // The read path leaves event bits to the derivation; the query path owns them here, so
-            // clear a stale bit once the slot's events have drained away.
+            // clear a stale bit once the slot's events have drained away or gained a servable block
+            // in front of them.
             if (!escalateOnEvent)
                 setSlotEvent(*slot, false);
 
@@ -494,16 +508,20 @@ public:
             reader.drain();
             publishSlotAvailability(*slot);
 
-            // Buried-inclusive: a sub-block residual before a buried event still fires the callback so
-            // the consumer reads and the read path surfaces the event.
-            const bool hasEvent = reader.hasPendingEvents() || reader.hasQueuedEventPackets();
-            setSlotEvent(*slot, hasEvent);
+            // Data-first, the same rule as publishProducerGate: a servable block raises readiness
+            // and keeps any event buried behind it quiet - it surfaces in stream order once the
+            // data ahead of it is consumed. With nothing servable, an event - leading at the
+            // cursor, or behind a sub-minimum residual that can never grow past the boundary - is
+            // the only possible wake, so it fires the callback.
+            //
             // The minimum is whatever publishProducerGate last put on the slot, which is this state's
             // effective minimum - so the slot answers for itself instead of the gate rule living here.
             // Adopted-only: the drain above is what the answer is about, and the connection-inclusive
             // form would cost a getConnection() per slot.
-            if (!hasEvent && haveModel)
-                setSlotReady(*slot, slot->hasAdoptedDataToRead());
+            if (haveModel && slot->hasAdoptedDataToRead())
+                setSlotReady(*slot, true);
+            else
+                setSlotEvent(*slot, reader.hasPendingEvents() || reader.hasQueuedEventPackets());
         }
         return false;
     }
@@ -511,9 +529,11 @@ public:
     SizeT availableCount(StateContext& ctx) const override
     {
         // A leading pending event on any used input blocks a synchronized data read until it is
-        // handled, and getAvailableSamples cannot see it (it lives in a separate queue), so
-        // report nothing available. This is Ready holding an event from within, rather than the event
-        // being a state of its own. Buried events need no guard - the count stops at them.
+        // handled, so report nothing available. The direct walk would answer 0 by itself (the queue
+        // reader's count stops at every event boundary, pending included), but the cached fast path
+        // below cannot: updateCallbackState drains slots - which can make an event pending -
+        // without invalidating the cache. This is Ready holding an event from within, rather than
+        // the event being a state of its own. Buried events need no guard - the count stops at them.
         for (auto* slot : ctx.slots)
         {
             if (slot->isUsed() && slot->getQueueReader().hasPendingEvents())
@@ -533,7 +553,8 @@ public:
     {
         // Ready cannot be holding a returnable event: reporting one clears the synchronization, which
         // is what takes the reader out of this state (stateIdFor). A buried event is reached through
-        // refreshDataPlane, which escalates for exactly that reason.
+        // refreshDataPlane, which escalates once the data ahead of it is consumed and the slot
+        // becomes blocked.
         return ctx.substate == ReaderState::EventPending ? ReadAction::ReturnEvents : ReadAction::ServeData;
     }
 

@@ -451,12 +451,13 @@ TEST_F(MultiReaderInputTest, ProducerRaisesEventOnAConnectionEventPacket)
     ASSERT_TRUE(gate->isSatisfied());
 }
 
-TEST_F(MultiReaderInputTest, ProducerRaisesEventEvenBehindAReadableBlock)
+TEST_F(MultiReaderInputTest, ProducerGateIsDataFirstAcrossAnEventsJourney)
 {
-    // The event bit is buried-inclusive, matching the owner's rule: an event queued BEHIND a
-    // readable block still raises it. A stricter "the next thing to read is an event" would raise
-    // only ready here - and if another input has nothing, the gate would then stay shut and the
-    // consumer would never be woken to discover this event.
+    // Data-first, followed through one event's journey down the pipeline: while a servable block
+    // sits in front of the event the producer raises only ready - the consumer sits at the common
+    // cursor and receives events in stream order, once the data ahead of them is consumed. Only
+    // when nothing servable remains before the boundary does the event become the only possible
+    // wake and raise the event bit.
     RecordingSlotListener listener;
     auto port = createPort();
     createSlot(0, port, &listener);
@@ -474,45 +475,47 @@ TEST_F(MultiReaderInputTest, ProducerRaisesEventEvenBehindAReadableBlock)
     slot->gateFlags().setEvent(false);
     listener.forcedCount = 0;
 
-    // A full block is readable before the event even reaches the queue.
+    // Stage 1: a full block is readable, then the event arrives on the connection BEHIND it. The
+    // block raised ready; the event stays quiet - it is in the consumer's future, and the raised
+    // ready flag already holds this slot's gate contribution.
     sendDataPacket(10, 100);
     ASSERT_TRUE(slot->hasDataToRead());
     ASSERT_TRUE(slot->gateFlags().ready());
 
-    signal.setDescriptor(DataDescriptorBuilder().setSampleType(SampleType::Int32).build());
+    // Same sample type, different unit: still a descriptor-change event, but the fixture's
+    // sendDataPacket keeps writing Float64 samples into later packets.
+    signal.setDescriptor(
+        DataDescriptorBuilder().setSampleType(SampleType::Float64).setUnit(Unit("V", -1, "volt", "voltage")).build());
 
-    ASSERT_TRUE(slot->gateFlags().event());
+    ASSERT_FALSE(slot->gateFlags().event());
     ASSERT_EQ(listener.forcedCount, 0);
-}
 
-TEST_F(MultiReaderInputTest, ProducerRaisesEventOnAnAdoptedEvent)
-{
-    RecordingSlotListener listener;
-    auto port = createPort();
-    createSlot(0, port, &listener);
-    port.connect(signal);
-
-    slot->rebindConnection();
-    auto& reader = slot->getQueueReader();
-    if (reader.hasPendingEvents())
-        reader.popFrontEvent();
-
-    slot->setWakeOnAnyPacket(false);
-    slot->setMinReadCount(10);
-    // The owner published an adopted event (buried-inclusive, as publishSlotAvailability reports
-    // it) alongside a readable-looking basis: the event still outranks the samples, because the
-    // read cannot cross it.
+    // Stage 2: the owner adopted the queue and republished - the event is now in the adopted
+    // basis with a servable block still in front of it. A further packet still raises only
+    // ready: adopted or not, an event behind servable data is not a wake.
     slot->publishAvailability(50, true);
     slot->gateFlags().setReady(false);
     slot->gateFlags().setEvent(false);
 
-    listener.forcedCount = 0;
+    sendDataPacket(5, 200);
 
-    sendDataPacket(5, 100);
+    ASSERT_TRUE(slot->gateFlags().ready());
+    ASSERT_FALSE(slot->gateFlags().event());
+    ASSERT_EQ(listener.forcedCount, 0);
+
+    // Stage 3: reads consumed down to a sub-minimum residual in front of the event. The residual
+    // can never grow past the boundary (availability stops at it), so the event is the only
+    // possible wake - now it raises, and it alone opens the shared gate.
+    slot->publishAvailability(5, true);
+    slot->gateFlags().setReady(false);
+    slot->gateFlags().setEvent(false);
+
+    sendDataPacket(5, 300);
 
     ASSERT_TRUE(slot->gateFlags().event());
     ASSERT_FALSE(slot->gateFlags().ready());
     ASSERT_EQ(listener.forcedCount, 0);
+    ASSERT_TRUE(gate->isSatisfied());
 }
 
 TEST_F(MultiReaderInputTest, ProducerFallsBackToForceDuringOwnerPass)

@@ -1101,7 +1101,15 @@ ErrCode MultiReaderImpl::readInternal(void** valueBuffers,
             // stale basis and raises a phantom ready/forces a needless evaluation - and so the slot's
             // own answer below is computed from the post-commit truth.
             publishSlotAvailabilityLocked(slot);
-            setSlotReadyLocked(slot, slot->hasAdoptedDataToRead());
+            const bool slotReady = slot->hasAdoptedDataToRead();
+            setSlotReadyLocked(slot, slotReady);
+            // Data-first, the same rule as publishProducerGate: the event bit was deliberately down
+            // while a servable block sat in front of the event, so consuming down to the boundary
+            // (or to a sub-minimum residual) is what turns the slot blocked - and this pass is the
+            // only one guaranteed to run then. A producer that never sends another packet would
+            // never re-raise it, leaving the gate silent on an event it owes the consumer.
+            setSlotEventLocked(slot,
+                               !slotReady && (used[position]->hasPendingEvents() || used[position]->hasQueuedEventPackets()));
         }
 
         // The read advanced the frontier, so the cached counts are now stale and a previously

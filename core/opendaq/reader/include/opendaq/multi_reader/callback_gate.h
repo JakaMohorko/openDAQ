@@ -152,10 +152,13 @@ private:
  *
  * Both flags are producer-raisable because a slot can answer both questions locally, and both are
  * monotone under a quiet, unchanged epoch: samples and events only accumulate until an owner pass
- * consumes them, and an owner pass moves the epoch. Readiness is "leading samples reach the
- * minimum"; the event bit is "the next thing to read is an event". Neither is suppressed while a
- * producer may raise it - the cross-input event suppressions (deriveInputBlocker) belong to states
- * that are not Synchronized, and a slot only self-gates while it is (wakeOnAnyPacket == false).
+ * consumes them, and an owner pass moves the epoch. The policy is data-first: readiness is
+ * "servable samples before the next event boundary reach the minimum", and the event bit is
+ * "blocked on an event - nothing servable before the boundary". The two are therefore mutually
+ * exclusive per slot and stable between owner passes: availability never counts across a boundary,
+ * so a ready block cannot shrink and a blocked slot cannot gain readable data until an owner pass
+ * consumes. The cross-input event suppressions (deriveInputBlocker) belong to states that are not
+ * Synchronized, and a slot only self-gates while it is (wakeOnAnyPacket == false).
  *
  * The owner remains the authority: it publishes both flags from ground truth at every full
  * evaluation, so a producer raise is at worst one spurious wake-up that the next read reconciles,

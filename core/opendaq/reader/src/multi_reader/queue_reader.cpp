@@ -382,6 +382,10 @@ void QueueReader::dropOutdatedPacketSegments()
 
 SizeT QueueReader::getAvailableSamplesNative() const
 {
+    if (hasPendingEvents())
+    {
+        return 0;
+    }
     if (availableNativeValid)
     {
         // Debug cross-check: any queue mutation that forgot to invalidateAvailable() would

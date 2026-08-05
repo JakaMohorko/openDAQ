@@ -190,14 +190,15 @@ things:
 `refreshDataPlaneLocked(escalateOnEvent)` is the shared core. While `Synchronized`, it drains the
 slots that received packets, maintains the readiness/event bits, and:
 
-- **`escalateOnEvent == true`** (READ / QUERY / timed-read predicate): on any event it escalates to
-  the full `evaluateStateLocked`, which transitions to `EventPending`, discards partial segments,
-  and surfaces the event.
-- **`escalateOnEvent == false`** (NOTIFY): on any event it only records the event bit for the
-  callback gate — **buried-inclusive** (`hasPendingEvents() || hasQueuedEventPackets()`), so a
-  sub-block residual before a buried event still fires the callback — and re-arms `dataPlaneDirty`
-  so the next READ/QUERY runs the ladder and surfaces the event. It never runs the ladder for
-  events.
+- **`escalateOnEvent == true`** (READ / QUERY / timed-read predicate): on a **blocked** input — an
+  event with nothing servable before it, i.e. leading at the cursor or buried behind a sub-minimum
+  residual — it escalates to the full `evaluateStateLocked`, which transitions to `EventPending`,
+  discards partial segments, and surfaces the event. An event buried behind a *servable* block
+  escalates nothing: the data ahead of it is served normally and the event surfaces in stream order
+  once that data is consumed.
+- **`escalateOnEvent == false`** (NOTIFY): on a blocked input it only records the event bit for the
+  callback gate and re-arms `dataPlaneDirty` so the next READ/QUERY runs the ladder and surfaces
+  the event. It never runs the ladder for events.
 
 In both modes, a **data-loss deadline** or a non-synchronized state escalates to the full ladder;
 unused inputs' queued events are still drained so they surface in the per-input states (this is the
@@ -216,10 +217,11 @@ transition does not affect when the callback fires.
 
 **`getAvailableCount` event guard.** Because the query no longer transitions to `EventPending`, it
 guards the one count that would otherwise be wrong: a **leading** pending event on any used input
-means no synchronized read can proceed until it is handled, but `QueueReader::getAvailableSamples`
-counts the data queued *behind* that event (the event has moved to a separate queue). So
-`getAvailableCount` returns 0 whenever any used input has a pending event. Buried events need no
-guard — the count naturally stops at them.
+means no synchronized read can proceed until it is handled. The direct walk answers 0 by itself
+(`QueueReader::getAvailableSamples` stops at every event boundary, pending included), but the
+cached fast path cannot: NOTIFY drains slots — which can make an event pending — without
+invalidating the cache. So `getAvailableCount` returns 0 whenever any used input has a pending
+event. Buried events need no guard — the count naturally stops at them.
 
 ---
 
@@ -237,9 +239,10 @@ trusted (`forceEvaluation`). It takes no mutex at all. This is the core of the "
 we know we want the callback" design: in steady state, a data packet that does not complete a
 readable block for every input costs one atomic flag update and no scheduler round-trip.
 
-Producers only ever **raise** flags, and they raise **both**: `ready` when an aligned block is
-queued, `event` when an event is (adopted or still on the connection, buried-inclusive — the same
-rule `publishProducerGate` applies, and the two must agree or the bit oscillates). `forceEvaluation`
+Producers only ever **raise** flags, and the policy is **data-first** — the same rule
+`publishProducerGate` applies, and the two must agree or a bit oscillates: `ready` when a servable
+block is queued before the next event boundary, `event` only when the slot is **blocked** — an
+event (adopted or still on the connection) with nothing servable in front of it. `forceEvaluation`
 is reserved for a snapshot the slot cannot trust — a non-quiet or moved epoch, an unassigned
 connection — and for every state but steady `Synchronized` (`wakeOnAnyPacket`). It is deliberately
 *not* the mechanism for events: an event is a condition the slot can state, so it belongs in the
@@ -251,9 +254,13 @@ epoch. A raise is therefore advisory only in the sense that it may be redundant 
 most one spurious evaluation, which reconciles against ground truth, and can never suppress a
 wake-up that is due.
 
-Note the producer's event rule is deliberately weaker than "the next thing to read is an event": an
-event behind a readable block still raises it, because that block may not be servable (every other
-input needs one too) and the consumer must still be woken to discover the event.
+An event buried behind a readable block raises nothing: the consumer sits at the common cursor and
+receives events in **stream order**, once the data ahead of them is consumed. The two flags are
+therefore mutually exclusive per slot and stable between owner passes — availability never counts
+across an event boundary, so a blocked slot cannot gain readable data and a ready block cannot
+shrink until an owner pass consumes. The read path keeps this alive: its post-commit republish
+raises the event bit the moment consumption turns a slot blocked, because no further packet is
+guaranteed to arrive and re-raise it.
 
 Consumers adopt queued packets by **clearing `packetPending` before draining**, never after. A
 packet that arrives after the clear re-arms the flag and is caught on the next pass (at-least-once);
@@ -279,6 +286,9 @@ already reset — that was the "availability undercount" race and is why the ord
 - A **buried** event sits behind data. The data in front is readable; the event surfaces on the read
   that consumes past it. When the data in front is a partial (sub-block) residual that can never be
   read on its own, `discardLeftoverSegments` silently drops it so the event becomes leading.
+  While a *servable* block sits in front of it, a buried event neither opens the callback gate nor
+  escalates the data-plane refresh — only a **blocked** input does (an event with nothing servable
+  before it; §9.4).
 
 Event surfacing and `discardLeftoverSegments` happen only on the READ path (or the full ladder).
 

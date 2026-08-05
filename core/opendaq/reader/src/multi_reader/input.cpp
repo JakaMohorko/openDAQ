@@ -2,6 +2,8 @@
 
 #include <opendaq/connection_ptr.h>
 
+#include <cassert>
+
 BEGIN_NAMESPACE_OPENDAQ
 
 namespace multi_reader
@@ -124,8 +126,9 @@ SizeT Input::availableNative() const
     // which are readable. getSamplesUntilNextEventPacket already stops exactly at the boundary.
     //
     // It is an O(1) counter read while no event is queued and a deque walk otherwise. The producer
-    // path never pays the walk: tryRaiseGateFlags checks hasEventPacket itself and forces a full
-    // evaluation before it ever gets here, so the walk only happens on an owner-thread query.
+    // path pays the walk at most once per event episode: the first packet after an event queues
+    // raises one of the gate flags (data-first in tryRaiseGateFlags), and every later packet
+    // short-circuits on the raised flag before it ever gets here.
     return adopted + static_cast<SizeT>(connection.getSamplesUntilNextEventPacket());
 }
 
@@ -171,7 +174,19 @@ bool Input::hasDataToRead() const
 bool Input::hasAdoptedDataToRead() const
 {
     const SizeT minimum = minReadNative.load();
-    return minimum != NeverReadable && availableNativeBasis.load() >= minimum;
+    if (minimum == NeverReadable)
+        return false;  // unused or unconnected: no basis is maintained for these
+
+    // The producer can only ever see this snapshot - it has no lock and the adopted deque is
+    // owner-only - so every owner pass that moves samples has to republish it. Catching a missed
+    // publishSlotAvailability here names the pass that skipped it, instead of leaving a gate that
+    // goes quiet (or opens early) several passes later. Same shape as the stale-cache assert in
+    // QueueReader::getAvailableSamplesNative.
+    [[maybe_unused]] const SizeT divider = queueReader.getSampleRateDivider();
+    assert(availableNativeBasis.load() * (divider > 0 ? divider : 1) == queueReader.getAvailableSamples() &&
+           "stale availability basis - a pass moved samples without republishing it");
+
+    return availableNativeBasis.load() >= minimum;
 }
 
 bool Input::raiseUnderEpoch(std::uint64_t epochBefore, bool event)
@@ -198,18 +213,27 @@ bool Input::tryRaiseGateFlags()
     if (!CallbackGate::epochQuiet(epochBefore))
         return false;
 
-    // Already holding the gate open for this slot; the caller schedules via gateSatisfied.
-    if (flags.event())
+    // Either flag up means this slot's gate contribution is complete; the caller schedules via
+    // gateSatisfied. The two flags are mutually exclusive and stable between owner passes under
+    // the data-first rule below: availability never counts across an event boundary, so a ready
+    // block cannot shrink and a blocked slot cannot gain readable data until an owner pass
+    // consumes - and every owner pass republishes both flags from ground truth.
+    if (flags.ready() || flags.event())
         return true;
 
-    // An event already adopted, leading or buried. Raised, not forced: an event is a condition the
-    // slot can state, and forcing an evaluation is reserved for a snapshot it cannot trust.
-    //
-    // Buried-inclusive, which is exactly the owner's rule for this bit (publishProducerGate), and
-    // the two must agree or the flag oscillates between them. That is deliberately weaker than
-    // "the next thing to read is an event": an event behind a readable block still raises it,
-    // because the block may not be servable - the other inputs also have to have one - and the
-    // consumer must still be woken to discover the event.
+    // Data-first, which is exactly the owner's rule for these bits (publishProducerGate), and the
+    // two must agree or a flag oscillates between them. A servable block before the next event
+    // boundary raises readiness, and an event behind it stays quiet: the consumer sits at the
+    // common cursor and receives events in stream order, once the data ahead of them is consumed.
+    // The availability query stops at the boundary on both halves (the adopted basis and
+    // getSamplesUntilNextEventPacket), so this can never count across an event.
+    if (hasDataToRead())
+        return raiseUnderEpoch(epochBefore, false);
+
+    // No servable data before the boundary: an event - leading at the cursor, or buried behind a
+    // sub-minimum residual that can never grow past the boundary - is the only thing that can
+    // wake the consumer, so it opens the gate now. Raised, not forced: an event is a condition
+    // the slot can state, and forcing an evaluation is reserved for a snapshot it cannot trust.
     if (basisHasEventPackets.load())
         return raiseUnderEpoch(epochBefore, true);
 
@@ -217,13 +241,10 @@ bool Input::tryRaiseGateFlags()
     if (!connection.assigned())
         return false;  // mid-(dis)connect: let the evaluation sort it out
 
-    // Same rule on the connection side. Checking it before the availability query also keeps that
-    // query O(1): getSamplesUntilNextEventPacket walks the deque only when an event is queued.
+    // Same rule on the connection side: an event the owner has not adopted yet, with nothing
+    // servable in front of it anywhere.
     if (connection.hasEventPacket())
         return raiseUnderEpoch(epochBefore, true);
-
-    if (!flags.ready() && hasDataToRead())
-        return raiseUnderEpoch(epochBefore, false);
 
     return true;
 }
