@@ -2930,26 +2930,18 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::hasProperty(
 
     if (details::isChildProperty(propName))
     {
-        BaseObjectPtr val;
-        StringPtr childStr;
-        details::splitOnLastDot(propName, propName, childStr);
-
-        ErrCode err = getPropertyValue(propName, &val);
-        OPENDAQ_RETURN_IF_FAILED_EXCEPT(err, OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Failed to retrieve child object with name {})", propName));
-        if (err == OPENDAQ_ERR_NOTFOUND)
+        PropertyObjectPtr parentObj;
+        StringPtr leafName;
+        const ErrCode err = getParentObject(propName, parentObj, leafName);
+        if (err == OPENDAQ_ERR_NOTFOUND || err == OPENDAQ_ERR_NOINTERFACE)
         {
+            daqClearErrorInfo();
             *hasProperty = False;
             return OPENDAQ_SUCCESS;
         }
+        OPENDAQ_RETURN_IF_FAILED(err, fmt::format(R"(Failed to retrieve child object for property "{}")", propName));
 
-        PropertyObjectPtr obj = val.asPtrOrNull<IPropertyObject>(true);
-        if (!obj.assigned())
-        {
-            *hasProperty = False;
-            return OPENDAQ_SUCCESS;
-        }
-
-        return obj->hasProperty(childStr, hasProperty);
+        return parentObj->hasProperty(leafName, hasProperty);
     }
     
     if (localProperties.find(propertyName) != localProperties.cend())
