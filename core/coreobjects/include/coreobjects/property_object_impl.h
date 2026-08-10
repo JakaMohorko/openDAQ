@@ -404,12 +404,12 @@ private:
     void triggerCoreEventInternal(const CoreEventArgsPtr& args);
 
     // Looks up the property and resolves it if it is a reference property. Outputs the bound property,
-    // the effective name under which its value is stored, and the bracket ("[N]") suffix of `name`, if any.
+    // the resolved name under which its value is stored, and the bracket ("[N]") suffix of `name`, if any.
     // `bracket` points into the buffer of `name` and is only valid while `name` is alive.
-    ErrCode getBoundPropertyInternal(const StringPtr& name, PropertyPtr& property, StringPtr& effectiveName, ConstCharPtr& bracket);
+    ErrCode getBoundPropertyInternal(const StringPtr& name, PropertyPtr& property, StringPtr& resolvedName, ConstCharPtr& bracket);
     // Reads the current value of a property bound via `getBoundPropertyInternal`: the in-progress updating
     // value, the locally stored value, or the property default. Does not trigger read events.
-    ErrCode readPropertyValueInternal(const PropertyPtr& property, const StringPtr& effectiveName, ConstCharPtr bracket, bool retrieveUpdatingValue, BaseObjectPtr& value);
+    ErrCode readPropertyValueInternal(const PropertyPtr& property, const StringPtr& resolvedName, ConstCharPtr bracket, bool retrieveUpdatingValue, BaseObjectPtr& value);
     // Convenience overload: binds the property by name, then reads its value
     ErrCode readPropertyValueInternal(const StringPtr& name, bool retrieveUpdatingValue, PropertyPtr& property, BaseObjectPtr& value);
     ErrCode getPropertiesInternal(Bool includeInvisible, Bool bind, IList** list, Bool includeCoreProperties = false);
@@ -1080,7 +1080,7 @@ void GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::triggerCoreEven
 template <class PropObjInterface, class... Interfaces>
 ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getBoundPropertyInternal(const StringPtr& name,
                                                                                              PropertyPtr& property,
-                                                                                             StringPtr& effectiveName,
+                                                                                             StringPtr& resolvedName,
                                                                                              ConstCharPtr& bracket)
 {
     StringPtr propName;
@@ -1095,34 +1095,34 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getBoundProp
 
     bool isRef;
     property = details::checkForRefPropAndGetBoundProp(property, objPtr, &isRef);
-    effectiveName = details::buildEffectivePropertyName(propName, name, property, isRef, bracket);
+    resolvedName = details::buildResolvedPropertyName(propName, name, property, isRef, bracket);
     return OPENDAQ_SUCCESS;
 }
 
 template <class PropObjInterface, class... Interfaces>
 ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::readPropertyValueInternal(const PropertyPtr& property,
-                                                                                              const StringPtr& effectiveName,
+                                                                                              const StringPtr& resolvedName,
                                                                                               ConstCharPtr bracket,
                                                                                               bool retrieveUpdatingValue,
                                                                                               BaseObjectPtr& value)
 {
     ErrCode res = OPENDAQ_SUCCESS;
 
-    if (retrieveUpdatingValue && updatePropertyStack.getPropertyValue(effectiveName, value))
+    if (retrieveUpdatingValue && updatePropertyStack.getPropertyValue(resolvedName, value))
     {
         if (!value.assigned())
             value = property.getDefaultValue();
     }
     else
     {
-        res = readLocalValue(effectiveName, value);
+        res = readLocalValue(resolvedName, value);
     }
 
     OPENDAQ_RETURN_IF_FAILED_EXCEPT(res, OPENDAQ_ERR_NOTFOUND);
     if (res == OPENDAQ_ERR_NOTFOUND)
     {
         daqClearErrorInfo();
-        OPENDAQ_RETURN_IF_FAILED(details::readDefaultPropertyValue(property, effectiveName, bracket, value));
+        OPENDAQ_RETURN_IF_FAILED(details::readDefaultPropertyValue(property, resolvedName, bracket, value));
 
         if (!value.assigned())
             return OPENDAQ_SUCCESS;
@@ -1138,10 +1138,10 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::readProperty
                                                                                               PropertyPtr& property,
                                                                                               BaseObjectPtr& value)
 {
-    StringPtr effectiveName;
+    StringPtr resolvedName;
     ConstCharPtr bracket;
-    OPENDAQ_RETURN_IF_FAILED(getBoundPropertyInternal(name, property, effectiveName, bracket));
-    return readPropertyValueInternal(property, effectiveName, bracket, retrieveUpdatingValue, value);
+    OPENDAQ_RETURN_IF_FAILED(getBoundPropertyInternal(name, property, resolvedName, bracket));
+    return readPropertyValueInternal(property, resolvedName, bracket, retrieveUpdatingValue, value);
 }
 
 #if defined(__GNUC__) && __GNUC__ >= 12

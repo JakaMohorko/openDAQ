@@ -337,7 +337,7 @@ inline ErrCode checkPropertyTypeAndConvert(const PropertyPtr& prop, BaseObjectPt
 // Computes the name under which a property's value is stored/looked up, given the resolved
 // property and the raw queried name. Reference properties store under the referenced name;
 // a "[index]" suffix from the raw name is preserved.
-inline StringPtr buildEffectivePropertyName(const StringPtr& parsedName,
+inline StringPtr buildResolvedPropertyName(const StringPtr& parsedName,
                                             const StringPtr& rawName,
                                             const PropertyPtr& resolvedProperty,
                                             bool isReferenced,
