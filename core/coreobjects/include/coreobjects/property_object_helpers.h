@@ -333,6 +333,118 @@ inline ErrCode checkPropertyTypeAndConvert(const PropertyPtr& prop, BaseObjectPt
     return errCode;
 }
 
+// Maps a user-facing selection value to the index/key that is stored as the property value
+inline ErrCode selectionValueToKey(const PropertyPtr& prop, const BaseObjectPtr& valuePtr, BaseObjectPtr& indexOrKey)
+{
+    const auto propInternal = prop.asPtr<IPropertyInternal>(true);
+    const auto selectionValues = propInternal.getSelectionValuesNoLock();
+    const PropertyType propType = prop.getPropertyType();
+    const auto propName = prop.getName();
+
+    if (propType == PropertyType::IndexSelection)
+    {
+        if (!selectionValues.assigned())
+            return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPROPERTY,
+                                       fmt::format(R"(Index selection property "{}" has no selection values assigned)", propName));
+
+        const auto valuesList = selectionValues.template asPtrOrNull<IList>(true);
+        if (!valuesList.assigned())
+            return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPROPERTY,
+                                       fmt::format(R"(Index selection property "{}" values is not a list)", propName));
+
+        for (SizeT i = 0; i < valuesList.getCount(); ++i)
+        {
+            if (valuesList.getItemAt(i) == valuePtr)
+            {
+                indexOrKey = Int(i);
+                break;
+            }
+        }
+
+        if (!indexOrKey.assigned())
+            return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Value not found in selection values of property "{}")", propName));
+    }
+    else if (propType == PropertyType::SparseSelection)
+    {
+        if (!selectionValues.assigned())
+            return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPROPERTY,
+                                       fmt::format(R"(Sparse selection property "{}" has no selection values assigned)", propName));
+
+        const auto valuesDict = selectionValues.template asPtrOrNull<IDict>(true);
+        if (!valuesDict.assigned())
+            return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPROPERTY,
+                                       fmt::format(R"(Sparse selection property "{}" values is not a dictionary)", propName));
+
+        for (const auto& [key, value] : valuesDict)
+        {
+            if (value == valuePtr)
+            {
+                indexOrKey = key;
+                break;
+            }
+        }
+
+        if (!indexOrKey.assigned())
+            return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Value not found in sparse selection values of property "{}")", propName));
+    }
+    else if (propType == PropertyType::Selection)
+    {
+        indexOrKey = valuePtr;
+    }
+    else
+    {
+        return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPROPERTY, fmt::format(R"(Property "{}" is not an index selection or sparse selection property)", propName));
+    }
+
+    return OPENDAQ_SUCCESS;
+}
+
+// Resolves the stored index/key of a selection property to the corresponding selection value, in place
+inline ErrCode selectionKeyToValue(const PropertyPtr& prop, BaseObjectPtr& valuePtr)
+{
+    const auto propInternal = prop.asPtr<IPropertyInternal>(true);
+    const auto values = propInternal.getSelectionValuesNoLock();
+    const auto propName = prop.getName();
+
+    if (!values.assigned())
+        return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPROPERTY, fmt::format(R"(Selection property "{}" has no selection values assigned)", propName));
+
+    const PropertyType propType = prop.getPropertyType();
+    if (propType == PropertyType::IndexSelection)
+    {
+        const auto valuesList = values.asPtrOrNull<IList>(true);
+        if (!valuesList.assigned())
+            return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPROPERTY,
+                                       fmt::format(R"(Index selection property "{}" values is not a list)", propName));
+        valuePtr = valuesList.getItemAt(valuePtr);
+    }
+    else if (propType == PropertyType::SparseSelection)
+    {
+        const auto valuesDict = values.asPtrOrNull<IDict>(true);
+        if (!valuesDict.assigned())
+            return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPROPERTY,
+                                       fmt::format(R"(Sparse selection property "{}" values is not a dictionary)", propName));
+        valuePtr = valuesDict.get(valuePtr);
+    }
+    else if (propType == PropertyType::Selection)
+    {
+        if (propInternal.getValueTypeNoLock() != valuePtr.getCoreType())
+            return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDTYPE, fmt::format(R"(Selection item type mismatch for property "{}")", propName));
+
+        return OPENDAQ_SUCCESS;
+    }
+    else
+    {
+        return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPROPERTY,
+                                   fmt::format(R"(Property "{}" is not an index selection or sparse selection property)", propName));
+    }
+
+    if (propInternal.getItemTypeNoLock() != valuePtr.getCoreType())
+        return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDTYPE, fmt::format(R"(List item type mismatch for property "{}")", propName));
+
+    return OPENDAQ_SUCCESS;
+}
+
 // Coercion/Validation
 
 inline void coercePropertyWrite(const PropertyPtr& prop, ObjectPtr<IBaseObject>& valuePtr, const PropertyObjectPtr& objPtr)
