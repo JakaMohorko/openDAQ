@@ -1988,13 +1988,6 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getPropertyV
                           : parentObj->getOnPropertyValueRead(leafName, event);
     }
 
-    Bool hasProp;
-    const ErrCode err = this->hasProperty(name, &hasProp);
-    OPENDAQ_RETURN_IF_FAILED(err);
-
-    if (!hasProp)
-        return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Property "{}" does not exist)", name));
-
     PropertyInternalPtr prop = getUnboundPropertyOrNull(name);
     if (!prop.assigned())
         return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Property "{}" does not exist)", name));
