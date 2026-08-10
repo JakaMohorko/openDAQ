@@ -380,7 +380,7 @@ inline ErrCode readDefaultPropertyValue(const PropertyPtr& property, const Strin
 }
 
 // Container values are cloned on read so the stored value cannot be mutated through the returned reference
-inline BaseObjectPtr cloneContainerValue(const BaseObjectPtr& value)
+inline BaseObjectPtr cloneIfContainerValue(const BaseObjectPtr& value)
 {
     const CoreType coreType = value.getCoreType();
     if (coreType == ctList || coreType == ctDict)

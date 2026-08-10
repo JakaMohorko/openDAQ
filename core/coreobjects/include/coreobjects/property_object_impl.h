@@ -1125,7 +1125,7 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getPropertyA
             return OPENDAQ_SUCCESS;
     }
 
-    value = details::cloneContainerValue(value);
+    value = details::cloneIfContainerValue(value);
 
     if (triggerEvent)
         value = callPropertyValueRead(property, value);
