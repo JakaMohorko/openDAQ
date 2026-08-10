@@ -1901,31 +1901,21 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getPropertie
     }
 
     auto properties = List<IProperty>();
-    if (!customOrder.empty())
-    {
-        // Add properties with explicit order
-        for (auto& propName : customOrder)
-        {
-            const auto iter = lookup.find(propName);
-            if (iter != lookup.cend())
-            {
-                properties.unsafePushBack(iter->second);
-                lookup.erase(iter);
-            }
-        }
 
-        // Add the rest of without set order
-        for (auto& prop : lookup)
+    // Add properties with explicit order first, then the rest in default order
+    for (const auto& propName : customOrder)
+    {
+        const auto iter = lookup.find(propName);
+        if (iter != lookup.cend())
         {
-            properties.unsafePushBack(prop.second);
+            properties.unsafePushBack(iter->second);
+            lookup.erase(iter);
         }
     }
-    else
+
+    for (const auto& prop : lookup)
     {
-        for (auto& prop : lookup)
-        {
-            properties.unsafePushBack(prop.second);
-        }
+        properties.unsafePushBack(prop.second);
     }
 
     *list = properties.detach();
