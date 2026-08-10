@@ -393,7 +393,6 @@ private:
     ErrCode serializeLocalProperties(ISerializer* serializer);
 
     // Does not bind property to object and does not look up reference property
-    PropertyPtr getUnboundProperty(const StringPtr& name);
     PropertyPtr getUnboundPropertyOrNull(const StringPtr& name) const;
 
     // True if `value` differs from the property's default value (or the property cannot be resolved)
@@ -832,11 +831,11 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::setPropertyV
             return OPENDAQ_SUCCESS;
         }
 
-        PropertyPtr prop = getUnboundProperty(propName);
+        PropertyPtr prop = getUnboundPropertyOrNull(propName);
         prop = details::checkForRefPropAndGetBoundProp(prop, objPtr);
 
         if (!prop.assigned())
-            return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Property "{}" not found.)", propName));
+            return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Property "{}" does not exist)", propName));
 
         propName = prop.getName();
 
@@ -966,21 +965,6 @@ void GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::setOwnerToPrope
             checkErrorInfo(errCode);
         }
     }
-}
-
-template <class PropObjInterface, class... Interfaces>
-PropertyPtr GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getUnboundProperty(const StringPtr& name)
-{
-    const auto res = localProperties.find(name);
-    if (res == localProperties.end())
-    {
-        if (objectClass == nullptr)
-            DAQ_THROW_EXCEPTION(NotFoundException, R"(Property with name {} does not exist.)", name);
-
-        return objectClass.getProperty(name);
-    }
-
-    return res->second;
 }
 
 template <class PropObjInterface, class... Interfaces>
@@ -1243,11 +1227,11 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::setPropertyS
             }
         }
 
-        PropertyPtr prop = getUnboundProperty(propName);
+        PropertyPtr prop = getUnboundPropertyOrNull(propName);
         prop = details::checkForRefPropAndGetBoundProp(prop, objPtr);
 
         if (!prop.assigned())
-            return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Property "{}" not found)", propName));
+            return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Property "{}" does not exist)", propName));
 
         BaseObjectPtr indexOrKey;
         OPENDAQ_RETURN_IF_FAILED(details::selectionValueToKey(prop, valuePtr, indexOrKey));
@@ -1703,7 +1687,10 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getProperty(
         }
         else
         {
-            prop = getUnboundProperty(propName);
+            prop = getUnboundPropertyOrNull(propName);
+            if (!prop.assigned())
+                return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Property "{}" does not exist)", propName));
+
             prop = prop.asPtr<IPropertyInternal>().cloneWithOwner(objPtr);
         }
 
@@ -2008,7 +1995,10 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getPropertyV
     if (!hasProp)
         return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Property "{}" does not exist)", name));
 
-    PropertyInternalPtr prop = getUnboundProperty(name);
+    PropertyInternalPtr prop = getUnboundPropertyOrNull(name);
+    if (!prop.assigned())
+        return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Property "{}" does not exist)", name));
+
     if (prop.getReferencedPropertyUnresolved().assigned())
         return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALID_OPERATION,
                                    fmt::format(R"({} is not allowed for the reference properties "{}")",
