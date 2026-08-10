@@ -407,6 +407,9 @@ private:
     // the resolved name under which its value is stored, and the bracket ("[N]") suffix of `name`, if any.
     // `bracket` points into the buffer of `name` and is only valid while `name` is alive.
     ErrCode getBoundPropertyInternal(const StringPtr& name, PropertyPtr& property, StringPtr& resolvedName, ConstCharPtr& bracket);
+    // Write-path lookup: resolves the property by plain name (no bracket parsing) and rewrites
+    // `propName` to the resolved property's name
+    ErrCode bindForWrite(StringPtr& propName, PropertyPtr& prop);
     // Reads the current value of a property bound via `getBoundPropertyInternal`: the in-progress updating
     // value, the locally stored value, or the property default. Does not trigger read events.
     ErrCode readPropertyValueInternal(const PropertyPtr& property, const StringPtr& resolvedName, ConstCharPtr bracket, bool retrieveUpdatingValue, BaseObjectPtr& value);
@@ -845,13 +848,8 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::setPropertyV
             return OPENDAQ_SUCCESS;
         }
 
-        PropertyPtr prop = getUnboundPropertyOrNull(propName);
-        prop = details::checkForRefPropAndGetBoundProp(prop, objPtr);
-
-        if (!prop.assigned())
-            return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Property "{}" does not exist)", propName));
-
-        propName = prop.getName();
+        PropertyPtr prop;
+        OPENDAQ_RETURN_IF_FAILED(bindForWrite(propName, prop));
 
         const auto propInternal = prop.asPtr<IPropertyInternal>();
         // TODO: If function type, check if return value is correct type.
@@ -1100,6 +1098,19 @@ void GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::triggerCoreEven
 }
 
 template <class PropObjInterface, class... Interfaces>
+ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::bindForWrite(StringPtr& propName, PropertyPtr& prop)
+{
+    prop = getUnboundPropertyOrNull(propName);
+    prop = details::checkForRefPropAndGetBoundProp(prop, objPtr);
+
+    if (!prop.assigned())
+        return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Property "{}" does not exist)", propName));
+
+    propName = prop.getName();
+    return OPENDAQ_SUCCESS;
+}
+
+template <class PropObjInterface, class... Interfaces>
 ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getBoundPropertyInternal(const StringPtr& name,
                                                                                              PropertyPtr& property,
                                                                                              StringPtr& resolvedName,
@@ -1241,11 +1252,9 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::setPropertyS
             }
         }
 
-        PropertyPtr prop = getUnboundPropertyOrNull(propName);
-        prop = details::checkForRefPropAndGetBoundProp(prop, objPtr);
-
-        if (!prop.assigned())
-            return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Property "{}" does not exist)", propName));
+        StringPtr boundName = propName;
+        PropertyPtr prop;
+        OPENDAQ_RETURN_IF_FAILED(bindForWrite(boundName, prop));
 
         BaseObjectPtr indexOrKey;
         OPENDAQ_RETURN_IF_FAILED(details::selectionValueToKey(prop, valuePtr, indexOrKey));
@@ -1505,15 +1514,9 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::clearPropert
             return OPENDAQ_SUCCESS;
         }
 
-        PropertyPtr prop = getUnboundPropertyOrNull(propName);
-        prop = details::checkForRefPropAndGetBoundProp(prop, objPtr);
+        PropertyPtr prop;
+        OPENDAQ_RETURN_IF_FAILED(bindForWrite(propName, prop));
 
-        if (!prop.assigned())
-        {
-            return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Property "{}" does not exist)", propName));
-        }
-
-        propName = prop.getName();
         const auto propInternal = prop.asPtr<IPropertyInternal>();
 
         if (!protectedAccess)
