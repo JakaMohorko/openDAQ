@@ -434,6 +434,9 @@ private:
     // Called at the end of `getPropertyValue`
     BaseObjectPtr callPropertyValueRead(const PropertyPtr& prop, const BaseObjectPtr& readValue);
 
+    // Shared implementation of getOnPropertyValueWrite/getOnPropertyValueRead
+    ErrCode getPropertyValueEventInternal(IString* propertyName, IEvent** event, bool valueWrite);
+
     // Sets `this` as owner of `value`, if `value` is ownable
     void setOwnerToPropertyValue(const BaseObjectPtr& value);
 
@@ -1980,43 +1983,7 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getPropertie
 }
 
 template <class PropObjInterface, class... Interfaces>
-ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getOnPropertyValueWrite(IString* propertyName, IEvent** event)
-{
-    OPENDAQ_PARAM_NOT_NULL(propertyName);
-    OPENDAQ_PARAM_NOT_NULL(event);
-
-    StringPtr name = StringPtr::Borrow( propertyName);
-
-    if (details::isChildProperty(name))
-    {
-        PropertyObjectPtr parentObj;
-        StringPtr leafName;
-        ErrCode errCode = getParentObject(name, parentObj, leafName);
-        OPENDAQ_RETURN_IF_FAILED(errCode);
-
-        errCode = parentObj->getOnPropertyValueWrite(leafName, event);
-        OPENDAQ_RETURN_IF_FAILED(errCode);
-        return errCode;
-    }
-
-    Bool hasProp;
-    ErrCode err = this->hasProperty(name, &hasProp);
-    OPENDAQ_RETURN_IF_FAILED(err);
-
-    if (!hasProp)
-        return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Property "{}" does not exist)", name));
-
-    PropertyInternalPtr prop = getUnboundProperty(name);
-    if (prop.getReferencedPropertyUnresolved().assigned())
-        return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALID_OPERATION, fmt::format(R"(getOnPropertyValueWrite is not allowed for the reference properties "{}")", name));
-
-    auto [it, _] = valueWriteEvents.try_emplace(name);
-    *event = it->second.addRefAndReturn();
-    return OPENDAQ_SUCCESS;
-}
-
-template <typename PropObjInterface, typename... Interfaces>
-ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getOnPropertyValueRead(IString* propertyName, IEvent** event)
+ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getPropertyValueEventInternal(IString* propertyName, IEvent** event, bool valueWrite)
 {
     OPENDAQ_PARAM_NOT_NULL(propertyName);
     OPENDAQ_PARAM_NOT_NULL(event);
@@ -2027,30 +1994,43 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getOnPropert
     {
         PropertyObjectPtr parentObj;
         StringPtr leafName;
-        ErrCode errCode = getParentObject(name, parentObj, leafName);
+        const ErrCode errCode = getParentObject(name, parentObj, leafName);
         OPENDAQ_RETURN_IF_FAILED(errCode);
 
-        errCode = parentObj->getOnPropertyValueRead(leafName, event);
-        OPENDAQ_RETURN_IF_FAILED(errCode);
-        return errCode;
+        return valueWrite ? parentObj->getOnPropertyValueWrite(leafName, event)
+                          : parentObj->getOnPropertyValueRead(leafName, event);
     }
 
     Bool hasProp;
-    ErrCode err = this->hasProperty(name, &hasProp);
+    const ErrCode err = this->hasProperty(name, &hasProp);
     OPENDAQ_RETURN_IF_FAILED(err);
 
     if (!hasProp)
-    {
         return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Property "{}" does not exist)", name));
-    }
 
     PropertyInternalPtr prop = getUnboundProperty(name);
     if (prop.getReferencedPropertyUnresolved().assigned())
-        return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALID_OPERATION, fmt::format(R"(getOnPropertyValueRead is not allowed for the reference properties "{}")", name));
+        return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALID_OPERATION,
+                                   fmt::format(R"({} is not allowed for the reference properties "{}")",
+                                               valueWrite ? "getOnPropertyValueWrite" : "getOnPropertyValueRead",
+                                               name));
 
-    auto [it, _] = valueReadEvents.try_emplace(name);
+    auto& events = valueWrite ? valueWriteEvents : valueReadEvents;
+    auto [it, _] = events.try_emplace(name);
     *event = it->second.addRefAndReturn();
     return OPENDAQ_SUCCESS;
+}
+
+template <typename PropObjInterface, typename... Interfaces>
+ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getOnPropertyValueWrite(IString* propertyName, IEvent** event)
+{
+    return getPropertyValueEventInternal(propertyName, event, true);
+}
+
+template <typename PropObjInterface, typename... Interfaces>
+ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getOnPropertyValueRead(IString* propertyName, IEvent** event)
+{
+    return getPropertyValueEventInternal(propertyName, event, false);
 }
 
 template <typename PropObjInterface, typename ... Interfaces>
