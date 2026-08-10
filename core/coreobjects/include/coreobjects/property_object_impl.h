@@ -2303,24 +2303,6 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::disableCoreE
         }
     }
 
-    for (const auto& item : localProperties)
-    {
-        if (item.second.assigned())
-        {
-            const auto propInternal = item.second.template asPtr<IPropertyInternal>();
-            if (propInternal.getValueTypeUnresolved() == ctObject)
-            {
-                const auto defaultVal = item.second.getDefaultValue();
-                if (defaultVal.assigned())
-                {
-                    const auto objInternal = defaultVal.template asPtrOrNull<IPropertyObjectInternal>();
-                    if (objInternal.assigned())
-                        objInternal.disableCoreEventTrigger();
-                }
-            }
-        }
-    }
-
     return OPENDAQ_SUCCESS;
 }
 
