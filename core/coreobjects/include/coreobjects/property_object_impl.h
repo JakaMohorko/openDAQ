@@ -297,24 +297,6 @@ protected:
     virtual void callBeginUpdateOnChildren();
     virtual void callEndUpdateOnChildren();
 
-    // Invokes `handler` on every non-frozen child property object stored in `propValues`
-    template <typename Handler>
-    void forEachUnfrozenChildObject(Handler&& handler)
-    {
-        for (const auto& [_, propValue] : propValues)
-        {
-            const auto propObj = propValue.template asPtrOrNull<IPropertyObject>(true);
-            if (!propObj.assigned())
-                continue;
-
-            const auto freezable = propObj.template asPtrOrNull<IFreezable>(true);
-            if (freezable.assigned() && freezable.isFrozen())
-                continue;
-
-            handler(propObj);
-        }
-    }
-
     virtual PropertyObjectPtr getPropertyObjectParent();
     virtual PropertyObjectPtr cloneChildPropertyObject(const PropertyPtr& prop);
 
@@ -363,6 +345,24 @@ private:
     ErrCode getPropertyValueInternal(IString* propertyName, IBaseObject** value, Bool retrieveUpdatingValue = false);
     ErrCode getPropertySelectionValueInternal(IString* propertyName, IBaseObject** value, Bool retrieveUpdatingValue = false);
     ErrCode checkForReferencesInternal(IProperty* property, Bool* isReferenced);
+
+    // Invokes `handler` on every non-frozen child property object stored in `propValues`
+    template <typename Handler>
+    void forEachUnfrozenChildObject(Handler&& handler)
+    {
+        for (const auto& [_, propValue] : propValues)
+        {
+            const auto propObj = propValue.template asPtrOrNull<IPropertyObject>(true);
+            if (!propObj.assigned())
+                continue;
+
+            const auto freezable = propObj.template asPtrOrNull<IFreezable>(true);
+            if (freezable.assigned() && freezable.isFrozen())
+                continue;
+
+            handler(propObj);
+        }
+    }
 
     static void DeserializePropertyValues(const SerializedObjectPtr& serialized,
                                           const BaseObjectPtr& context,
