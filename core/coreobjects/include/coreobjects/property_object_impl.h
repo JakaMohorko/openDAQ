@@ -1537,17 +1537,17 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::clearPropert
                         freezable.assigned() && freezable.isFrozen())
                         return OPENDAQ_IGNORED;
 
-                    const auto obj = it->second.template asPtr<IPropertyObject>(true);
-                    PropertyObjectProtectedPtr objProtected;
+                    // Delegate to the nested object so the semantics (skipping read-only and
+                    // reference properties) match clearPropertyValuesInternal
                     if (protectedAccess)
-                        objProtected = it->second.template asPtr<IPropertyObjectProtected>(true);
-
-                    for (const auto& childProp : obj.getAllProperties())
                     {
-                        if (protectedAccess)
-                            objProtected.clearProtectedPropertyValue(childProp.getName());
-                        else
-                            obj.clearPropertyValue(childProp.getName());
+                        const auto nested = it->second.template asPtr<IPropertyObjectProtected>(true);
+                        OPENDAQ_RETURN_IF_FAILED(nested->clearProtectedPropertyValues());
+                    }
+                    else
+                    {
+                        const auto nested = it->second.template asPtr<IPropertyObject>(true);
+                        OPENDAQ_RETURN_IF_FAILED(nested->clearPropertyValues());
                     }
                 }
             }

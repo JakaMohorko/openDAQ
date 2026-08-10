@@ -2237,6 +2237,28 @@ TEST_F(PropertyObjectTest, ChildPropertyClearInChildUpdateScope)
     ASSERT_EQ(propObj.getPropertyValue("Child.Str"), "-");
 }
 
+TEST_F(PropertyObjectTest, ClearObjectPropertyWithReadOnlyChild)
+{
+    const auto childTemplate = PropertyObject();
+    childTemplate.addProperty(IntPropertyBuilder("RO", 1).setReadOnly(true).build());
+    childTemplate.addProperty(IntProperty("RW", 1));
+
+    auto propObj = PropertyObject();
+    propObj.addProperty(ObjectProperty("Child", childTemplate));
+
+    propObj.asPtr<IPropertyObjectProtected>().setProtectedPropertyValue("Child.RO", 5);
+    propObj.setPropertyValue("Child.RW", 5);
+
+    // Read-only children are skipped, matching clearPropertyValues on the nested object
+    ASSERT_NO_THROW(propObj.clearPropertyValue("Child"));
+    ASSERT_EQ(propObj.getPropertyValue("Child.RW"), 1);
+    ASSERT_EQ(propObj.getPropertyValue("Child.RO"), 5);
+
+    // The protected clear still resets read-only children
+    propObj.asPtr<IPropertyObjectProtected>().clearProtectedPropertyValue("Child");
+    ASSERT_EQ(propObj.getPropertyValue("Child.RO"), 1);
+}
+
 TEST_F(PropertyObjectTest, TestContainerClone)
 {
     const auto propObj = PropertyObject();
