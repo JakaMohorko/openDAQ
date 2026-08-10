@@ -410,8 +410,10 @@ private:
     // Sets `this` as owner of `value`, if `value` is ownable
     void setOwnerToPropertyValue(const BaseObjectPtr& value);
 
-    // Child property handling - Used when a property is queried in the "parent.child" format
-    ErrCode getChildPropertyValue(const StringPtr& childName, const StringPtr& subName, BaseObjectPtr& value);
+    // Child property handling - Used when a property is queried in the "parent.child" format.
+    // Iteratively walks the dot-separated path and returns the object that owns the leaf property.
+    // For "a.b.c" returns the object at "a.b" and sets leafName to "c". Only valid for child paths.
+    ErrCode getParentObject(const StringPtr& path, PropertyObjectPtr& parentObj, StringPtr& leafName);
 
 
     // Update
@@ -580,51 +582,41 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getClassName
     return OPENDAQ_SUCCESS;
 }
 
-#if defined(__GNUC__) && __GNUC__ >= 12
-    #pragma GCC diagnostic push
-    #pragma GCC diagnostic ignored "-Wdangling-pointer"
-#endif
-
 template <typename PropObjInterface, typename... Interfaces>
-ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getChildPropertyValue(const StringPtr& childName,
-                                                                                          const StringPtr& subName,
-                                                                                          BaseObjectPtr& value)
+ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getParentObject(const StringPtr& path,
+                                                                                    PropertyObjectPtr& parentObj,
+                                                                                    StringPtr& leafName)
 {
-    PropertyPtr prop;
-    StringPtr name;
+    StringPtr parentPath;
+    details::splitOnLastDot(path, parentPath, leafName);
 
-    auto err = daqTry([&]() -> auto
+    const std::string parentPathStr = parentPath;
+    PropertyObjectPtr current;
+    size_t start = 0;
+
+    while (true)
     {
-        prop = getUnboundProperty(childName);
+        const size_t pos = parentPathStr.find('.', start);
+        const SizeT segmentLength = (pos == std::string::npos ? parentPathStr.size() : pos) - start;
+        const StringPtr segment = String(parentPathStr.c_str() + start, segmentLength);
 
-        prop = details::checkForRefPropAndGetBoundProp(prop, objPtr);
-        name = prop.getName();
-        return OPENDAQ_SUCCESS;
-    });
+        BaseObjectPtr childValue;
+        const ErrCode err = current.assigned() ? current->getPropertyValue(segment, &childValue)
+                                               : getPropertyValueInternal(segment, &childValue);
+        OPENDAQ_RETURN_IF_FAILED(err);
 
-    OPENDAQ_RETURN_IF_FAILED(err);
+        current = childValue.template asPtrOrNull<IPropertyObject>(true);
+        if (!current.assigned())
+            return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_NOINTERFACE, fmt::format(R"(Property "{}" is not a property object)", segment));
 
-    if (!prop.assigned())
-    {
-        return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Property "{}" does not exist)", name));
+        if (pos == std::string::npos)
+            break;
+        start = pos + 1;
     }
 
-    BaseObjectPtr childProp;
-    err = getPropertyValueInternal(name, &childProp);
-    OPENDAQ_RETURN_IF_FAILED(err);
-
-    err = daqTry([&]() -> auto
-    {
-        const auto childPropAsPropertyObject = childProp.template asPtr<IPropertyObject, PropertyObjectPtr>(true);
-        value = childPropAsPropertyObject.getPropertyValue(subName);
-    });
-    OPENDAQ_RETURN_IF_FAILED(err);
-    return err;
+    parentObj = current;
+    return OPENDAQ_SUCCESS;
 }
-
-#if defined(__GNUC__) && __GNUC__ >= 12
-    #pragma GCC diagnostic pop
-#endif
 
 template <class PropObjInterface, class... Interfaces>
 ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::callPropertyValueWrite(const PropertyPtr& prop,
@@ -791,10 +783,23 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::setPropertyV
             return OPENDAQ_SUCCESS;
         }
 
-        StringPtr subName;
         if (isChildProp)
         {
-            details::splitOnFirstDot(propName, propName, subName);
+            PropertyObjectPtr parentObj;
+            StringPtr leafName;
+            OPENDAQ_RETURN_IF_FAILED(getParentObject(propName, parentObj, leafName));
+
+            if (protectedAccess)
+            {
+                const auto parentObjProtected = parentObj.template asPtr<IPropertyObjectProtected>(true);
+                parentObjProtected.setProtectedPropertyValue(leafName, valuePtr);
+            }
+            else
+            {
+                parentObj.setPropertyValue(leafName, valuePtr);
+            }
+
+            return OPENDAQ_SUCCESS;
         }
 
         PropertyPtr prop = getUnboundProperty(propName);
@@ -804,26 +809,6 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::setPropertyV
             return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Property "{}" not found.)", propName));
 
         propName = prop.getName();
-
-        if (isChildProp)
-        {
-            BaseObjectPtr childProp;
-            const ErrCode err = getPropertyValueInternal(propName, &childProp);
-            OPENDAQ_RETURN_IF_FAILED(err);
-
-            if (protectedAccess)
-            {
-                const auto childPropAsPropertyObject = childProp.template asPtr<IPropertyObjectProtected>(true);
-                childPropAsPropertyObject.setProtectedPropertyValue(subName, valuePtr);
-            }
-            else
-            {
-                const auto childPropAsPropertyObject = childProp.template asPtr<IPropertyObject, PropertyObjectPtr>(true);
-                childPropAsPropertyObject.setPropertyValue(subName, valuePtr);
-            }
-
-            return OPENDAQ_SUCCESS;
-        }
 
         const auto propInternal = prop.asPtr<IPropertyInternal>();
         // TODO: If function type, check if return value is correct type.
@@ -1246,23 +1231,18 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::setPropertyS
 
         if (details::isChildProperty(propName))
         {
-            StringPtr childName;
-            StringPtr subName;
-            details::splitOnFirstDot(propName, childName, subName);
-
-            BaseObjectPtr childProp;
-            const ErrCode err = getPropertyValueInternal(childName, &childProp);
-            OPENDAQ_RETURN_IF_FAILED(err);
+            PropertyObjectPtr parentObj;
+            StringPtr leafName;
+            OPENDAQ_RETURN_IF_FAILED(getParentObject(propName, parentObj, leafName));
 
             if (protectedAccess)
             {
-                const auto childPropAsPropertyObject = childProp.template asPtr<IPropertyObjectProtected>(true);
-                return childPropAsPropertyObject->setProtectedPropertySelectionValue(subName, value);
+                const auto parentObjProtected = parentObj.template asPtr<IPropertyObjectProtected>(true);
+                return parentObjProtected->setProtectedPropertySelectionValue(leafName, value);
             }
             else
             {
-                const auto childPropAsPropertyObject = childProp.template asPtr<IPropertyObject, PropertyObjectPtr>(true);
-                return childPropAsPropertyObject->setPropertySelectionValue(subName, value);
+                return parentObj->setPropertySelectionValue(leafName, value);
             }
         }
 
@@ -1590,11 +1570,23 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::clearPropert
             return OPENDAQ_SUCCESS;
         }
 
-        StringPtr subName;
-        const auto isChildProp = details::isChildProperty(propName);
-        if (isChildProp)
+        if (details::isChildProperty(propName))
         {
-            details::splitOnFirstDot(propName, propName, subName);
+            PropertyObjectPtr parentObj;
+            StringPtr leafName;
+            OPENDAQ_RETURN_IF_FAILED(getParentObject(propName, parentObj, leafName));
+
+            if (protectedAccess)
+            {
+                const auto parentObjProtected = parentObj.template asPtr<IPropertyObjectProtected>(true);
+                parentObjProtected.clearProtectedPropertyValue(leafName);
+            }
+            else
+            {
+                parentObj.clearPropertyValue(leafName);
+            }
+
+            return OPENDAQ_SUCCESS;
         }
 
         PropertyPtr prop = getUnboundPropertyOrNull(propName);
@@ -1610,30 +1602,12 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::clearPropert
 
         if (!protectedAccess)
         {
-            if (propInternal.getReadOnlyNoLock() && !isChildProp)
+            if (propInternal.getReadOnlyNoLock())
             {
                 return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_ACCESSDENIED, fmt::format(R"(Property "{}" is read only)", propName));
             }
         }
 
-        if (isChildProp)
-        {
-            BaseObjectPtr childProp;
-            const ErrCode err = getPropertyValueInternal(propName, &childProp);
-            OPENDAQ_RETURN_IF_FAILED(err);
-
-            if (protectedAccess)
-            {
-                const auto childPropAsPropertyObject = childProp.template asPtr<IPropertyObjectProtected>(true);
-                childPropAsPropertyObject.clearProtectedPropertyValue(subName);
-            }
-            else
-            {
-                const auto childPropAsPropertyObject = childProp.template asPtr<IPropertyObject, PropertyObjectPtr>(true);
-                childPropAsPropertyObject.clearPropertyValue(subName);
-            }
-        }
-        else
         {
             if (propValues.find(prop.getName()) == propValues.end())
                 return OPENDAQ_IGNORED;
@@ -1707,9 +1681,11 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getPropertyV
 
         if (details::isChildProperty(propName))
         {
-            StringPtr subName;
-            details::splitOnFirstDot(propName, propName, subName);
-            err = getChildPropertyValue(propName, subName, valuePtr);
+            PropertyObjectPtr parentObj;
+            StringPtr leafName;
+            err = getParentObject(propName, parentObj, leafName);
+            OPENDAQ_RETURN_IF_FAILED(err);
+            err = parentObj->getPropertyValue(leafName, &valuePtr);
         }
         else
         {
@@ -1811,15 +1787,11 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getProperty(
 
         if (details::isChildProperty(propName))
         {
-            StringPtr subName;
-            BaseObjectPtr childProp;
+            PropertyObjectPtr parentObj;
+            StringPtr leafName;
+            OPENDAQ_RETURN_IF_FAILED(getParentObject(propName, parentObj, leafName));
 
-            details::splitOnFirstDot(propName, propName, subName);
-            const ErrCode err = getPropertyValueInternal(propName, &childProp);
-            OPENDAQ_RETURN_IF_FAILED(err);
-
-            const auto childPropAsPropertyObject = childProp.template asPtr<IPropertyObject, PropertyObjectPtr>(true);
-            prop = childPropAsPropertyObject.getProperty(subName);
+            prop = parentObj.getProperty(leafName);
         }
         else
         {
@@ -2112,15 +2084,12 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getOnPropert
 
     if (details::isChildProperty(name))
     {
-        StringPtr subName;
-        details::splitOnFirstDot(name, name, subName);
-
-        BaseObjectPtr childProp;
-        ErrCode errCode = getPropertyValueInternal(name, &childProp);
+        PropertyObjectPtr parentObj;
+        StringPtr leafName;
+        ErrCode errCode = getParentObject(name, parentObj, leafName);
         OPENDAQ_RETURN_IF_FAILED(errCode);
 
-        const auto childPropAsPropertyObject = childProp.template asPtr<IPropertyObject>(true);
-        errCode = childPropAsPropertyObject->getOnPropertyValueWrite(subName, event);
+        errCode = parentObj->getOnPropertyValueWrite(leafName, event);
         OPENDAQ_RETURN_IF_FAILED(errCode);
         return errCode;
     }
@@ -2151,15 +2120,12 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getOnPropert
 
     if (details::isChildProperty(name))
     {
-        StringPtr subName;
-        details::splitOnFirstDot(name, name, subName);
-
-        BaseObjectPtr childProp;
-        ErrCode errCode = getPropertyValueInternal(name, &childProp);
+        PropertyObjectPtr parentObj;
+        StringPtr leafName;
+        ErrCode errCode = getParentObject(name, parentObj, leafName);
         OPENDAQ_RETURN_IF_FAILED(errCode);
 
-        const auto childPropAsPropertyObject = childProp.template asPtr<IPropertyObject>(true);
-        errCode = childPropAsPropertyObject->getOnPropertyValueRead(subName, event);
+        errCode = parentObj->getOnPropertyValueRead(leafName, event);
         OPENDAQ_RETURN_IF_FAILED(errCode);
         return errCode;
     }
