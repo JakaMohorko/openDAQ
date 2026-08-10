@@ -2197,6 +2197,46 @@ TEST_F(PropertyObjectTest, BeginEndUpdateNestedFromPropertyValueWrite)
     ASSERT_EQ(propObj.getPropertyValue("Property4"), "valuefromprop2");
 }
 
+TEST_F(PropertyObjectTest, ChildPropertyClearInChildUpdateScope)
+{
+    const auto childTemplate = PropertyObject();
+    childTemplate.addProperty(StringProperty("Str", "-"));
+
+    auto propObj = PropertyObject();
+    propObj.addProperty(ObjectProperty("Child", childTemplate));
+    propObj.setPropertyValue("Child.Str", "Value");
+
+    const PropertyObjectPtr child = propObj.getPropertyValue("Child");
+
+    bool clearSeen = false;
+    child.getOnPropertyValueWrite("Str") += [&clearSeen](PropertyObjectPtr&, PropertyValueEventArgsPtr& args)
+    {
+        if (args.getPropertyEventType() == PropertyEventType::Clear)
+        {
+            clearSeen = true;
+            // A child-path clear during an update applies within the child's own update scope,
+            // matching the behavior of child-path sets
+            ASSERT_TRUE(args.getIsUpdating());
+        }
+    };
+
+    int childEndUpdateCount = 0;
+    child.getOnEndUpdate() += [&childEndUpdateCount](PropertyObjectPtr&, EndUpdateEventArgsPtr& args)
+    {
+        childEndUpdateCount++;
+        ASSERT_THAT(args.getProperties(), testing::ElementsAre("Str"));
+    };
+
+    propObj.beginUpdate();
+    propObj.clearPropertyValue("Child.Str");
+    ASSERT_EQ(propObj.getPropertyValue("Child.Str"), "Value");
+    propObj.endUpdate();
+
+    ASSERT_TRUE(clearSeen);
+    ASSERT_EQ(childEndUpdateCount, 1);
+    ASSERT_EQ(propObj.getPropertyValue("Child.Str"), "-");
+}
+
 TEST_F(PropertyObjectTest, TestContainerClone)
 {
     const auto propObj = PropertyObject();

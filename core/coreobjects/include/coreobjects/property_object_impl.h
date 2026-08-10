@@ -1478,14 +1478,15 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::clearPropert
     const ErrCode errCode = daqTry([&]()
     {
         auto propName = StringPtr::Borrow(name);
+        const auto isChildProp = details::isChildProperty(propName);
 
-        if (batch)
+        if (batch && !isChildProp)
         {
             batchedUpdates.emplace_back(std::make_pair(propName, UpdatingAction{false, protectedAccess, nullptr}));
             return OPENDAQ_SUCCESS;
         }
 
-        if (details::isChildProperty(propName))
+        if (isChildProp)
         {
             PropertyObjectPtr parentObj;
             StringPtr leafName;
@@ -2148,7 +2149,13 @@ void GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::endApplyUpdate(
         if (err != OPENDAQ_IGNORED)
         {
             PropertyPtr prop;
-            if (OPENDAQ_SUCCEEDED(readPropertyValueInternal(name, false, prop, action.value)) && action.value.assigned())
+            const ErrCode refreshErr = readPropertyValueInternal(name, false, prop, action.value);
+            if (OPENDAQ_FAILED(refreshErr))
+            {
+                // Child-path names cannot be refreshed on this object; keep the queued value
+                daqClearErrorInfo();
+            }
+            else if (action.value.assigned())
             {
                 // TODO: firing read events while applying updates is likely unintended; kept for behavior parity
                 action.value = callPropertyValueRead(prop, action.value);
