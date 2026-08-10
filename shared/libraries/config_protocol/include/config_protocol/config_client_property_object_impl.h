@@ -810,7 +810,7 @@ void ConfigClientPropertyObjectBaseImpl<Impl>::endApplyUpdate()
         propsAndValuesEx = List<IDict>();
 
         auto ignoredProps = List<IString>();
-        for (auto& item : this->updatingPropsAndValues)
+        for (auto& item : this->batchedUpdates)
         {
             auto itemEx = Dict<IString, IBaseObject>();
             itemEx.set("Name", String(item.first));
@@ -823,7 +823,7 @@ void ConfigClientPropertyObjectBaseImpl<Impl>::endApplyUpdate()
     else
         applyUpdatingPropsAndValuesProtocolVer0();
 
-    this->updatingPropsAndValues.clear();
+    this->batchedUpdates.clear();
 
     clientComm->endUpdate(remoteGlobalId, getPathInternal(), propsAndValuesEx);
 }
@@ -831,7 +831,7 @@ void ConfigClientPropertyObjectBaseImpl<Impl>::endApplyUpdate()
 template <class Impl>
 void ConfigClientPropertyObjectBaseImpl<Impl>::applyUpdatingPropsAndValuesProtocolVer0()
 {
-    for (const auto& item : this->updatingPropsAndValues)
+    for (const auto& item : this->batchedUpdates)
     {
         if (item.second.setValue)
         {

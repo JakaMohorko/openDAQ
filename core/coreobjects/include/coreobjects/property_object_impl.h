@@ -336,7 +336,7 @@ private:
 
     WeakRefPtr<IPropertyObject> owner;
     int updateCount;
-    UpdatingActions updatingPropsAndValues;
+    UpdatingActions batchedUpdates;
     WeakRefPtr<ITypeManager> manager;
     std::vector<StringPtr> customOrder;
     StringPtr path;
@@ -788,7 +788,7 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::setPropertyV
 
         if (batch && !isChildProp)
         {
-            updatingPropsAndValues.emplace_back(std::make_pair(propName, UpdatingAction{true, protectedAccess, valuePtr}));
+            batchedUpdates.emplace_back(std::make_pair(propName, UpdatingAction{true, protectedAccess, valuePtr}));
             return OPENDAQ_SUCCESS;
         }
 
@@ -1485,7 +1485,7 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::clearPropert
 
         if (batch)
         {
-            updatingPropsAndValues.emplace_back(std::make_pair(propName, UpdatingAction{false, protectedAccess, nullptr}));
+            batchedUpdates.emplace_back(std::make_pair(propName, UpdatingAction{false, protectedAccess, nullptr}));
             return OPENDAQ_SUCCESS;
         }
 
@@ -2186,13 +2186,13 @@ std::mutex* GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getLocal
 template <typename PropObjInterface, typename... Interfaces>
 void GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::beginApplyUpdate()
 {
-    beginApplyProperties(updatingPropsAndValues, isParentUpdating());
+    beginApplyProperties(batchedUpdates, isParentUpdating());
 }
 
 template <typename PropObjInterface, typename... Interfaces>
 void GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::endApplyUpdate()
 {
-    UpdatingActions localUpdates = std::move(updatingPropsAndValues);
+    UpdatingActions localUpdates = std::move(batchedUpdates);
     UpdatingActions appliedUpdates;
     appliedUpdates.reserve(localUpdates.size());
 
