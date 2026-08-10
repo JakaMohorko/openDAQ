@@ -60,6 +60,24 @@ BEGIN_NAMESPACE_OPENDAQ
 
 using PropertyOrderedMap = tsl::ordered_map<StringPtr, PropertyPtr, StringHash, StringEqualTo>;
 
+using PropertyValueEventEmitter = EventEmitter<PropertyObjectPtr, PropertyValueEventArgsPtr>;
+using EndUpdateEventEmitter = EventEmitter<PropertyObjectPtr, EndUpdateEventArgsPtr>;
+
+// Snapshot of the members a clone copies from its source. Namespace-scoped (not nested) so that
+// all GenericPropertyObjectImpl instantiations share the type and can configure clones of one another.
+struct PropertyObjectCloneParameters
+{
+    const std::unordered_map<StringPtr, PropertyValueEventEmitter>& valueWriteEvents;
+    const std::unordered_map<StringPtr, PropertyValueEventEmitter>& valueReadEvents;
+    const EndUpdateEventEmitter& endUpdateEvent;
+    const ProcedurePtr& triggerCoreEvent;
+    const PropertyOrderedMap& localProperties;
+    const std::unordered_map<StringPtr, BaseObjectPtr, StringHash, StringEqualTo>& propValues;
+    const std::vector<StringPtr>& customOrder;
+    const PermissionManagerPtr& permissionManager;
+    const std::set<StringPtr>& corePropertyNames;
+};
+
 namespace config_protocol
 {
     class ConfigClientDeviceInfoImpl;
@@ -171,32 +189,9 @@ public:
     virtual ErrCode INTERFACE_FUNC clearProtectedPropertyValue(IString* propertyName) override;
     virtual ErrCode INTERFACE_FUNC clearProtectedPropertyValues() override;
     
-    using PropertyValueEventEmitter = EventEmitter<PropertyObjectPtr, PropertyValueEventArgsPtr>;
-    using EndUpdateEventEmitter = EventEmitter<PropertyObjectPtr, EndUpdateEventArgsPtr>;
-
-    struct CloneParameters
-    {
-        const std::unordered_map<StringPtr, PropertyValueEventEmitter>& valueWriteEvents;
-        const std::unordered_map<StringPtr, PropertyValueEventEmitter>& valueReadEvents;
-        const EndUpdateEventEmitter& endUpdateEvent;
-        const ProcedurePtr& triggerCoreEvent;
-        const PropertyOrderedMap& localProperties;
-        const std::unordered_map<StringPtr, BaseObjectPtr, StringHash, StringEqualTo>& propValues;
-        const std::vector<StringPtr>& customOrder;
-        const PermissionManagerPtr& permissionManager;
-        const std::set<StringPtr>& corePropertyNames;
-    };
+    using CloneParameters = PropertyObjectCloneParameters;
 
     void configureClonedMembers(const CloneParameters& parameters);
-    void configureClonedMembers(const std::unordered_map<StringPtr, PropertyValueEventEmitter>& valueWriteEvents,
-                                const std::unordered_map<StringPtr, PropertyValueEventEmitter>& valueReadEvents,
-                                const EndUpdateEventEmitter& endUpdateEvent,
-                                const ProcedurePtr& triggerCoreEvent,
-                                const PropertyOrderedMap& localProperties,
-                                const std::unordered_map<StringPtr, BaseObjectPtr, StringHash, StringEqualTo>& propValues,
-                                const std::vector<StringPtr>& customOrder,
-                                const PermissionManagerPtr& permissionManager,
-                                const std::set<StringPtr>& corePropertyNames);
       
     // TODO: Make remove friend classes once private methods are properly exposed in protected scope.
     template <typename TInterface, typename... TInterfaces>
@@ -1249,39 +1244,16 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::clearProtect
 template <typename PropObjInterface, typename ... Interfaces>
 void GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::configureClonedMembers(const CloneParameters& parameters)
 {
-    configureClonedMembers(parameters.valueWriteEvents,
-                           parameters.valueReadEvents,
-                           parameters.endUpdateEvent,
-                           parameters.triggerCoreEvent,
-                           parameters.localProperties,
-                           parameters.propValues,
-                           parameters.customOrder,
-                           parameters.permissionManager,
-                           parameters.corePropertyNames);
-}
-
-template <typename PropObjInterface, typename... Interfaces>
-void GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::configureClonedMembers(
-    const std::unordered_map<StringPtr, PropertyValueEventEmitter>& valueWriteEvents,
-    const std::unordered_map<StringPtr, PropertyValueEventEmitter>& valueReadEvents,
-    const EndUpdateEventEmitter& endUpdateEvent,
-    const ProcedurePtr& triggerCoreEvent,
-    const PropertyOrderedMap& localProperties,
-    const std::unordered_map<StringPtr, BaseObjectPtr, StringHash, StringEqualTo>& propValues,
-    const std::vector<StringPtr>& customOrder,
-    const PermissionManagerPtr& permissionManager,
-    const std::set<StringPtr>& corePropertyNames)
-{
     this->valueWriteEvents.clear();
-    for (const auto& [name, srcEmitter] : valueWriteEvents)
+    for (const auto& [name, srcEmitter] : parameters.valueWriteEvents)
     {
         BaseObjectPtr cloned;
         srcEmitter.template asPtr<ICloneable>(true)->clone(&cloned);
         this->valueWriteEvents.emplace(name, cloned);
     }
-        
+
     this->valueReadEvents.clear();
-    for (const auto& [name, srcEmitter] : valueReadEvents)
+    for (const auto& [name, srcEmitter] : parameters.valueReadEvents)
     {
         BaseObjectPtr cloned;
         srcEmitter.template asPtr<ICloneable>(true)->clone(&cloned);
@@ -1289,19 +1261,19 @@ void GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::configureCloned
     }
 
     BaseObjectPtr cloned;
-    endUpdateEvent.template asPtr<ICloneable>(true)->clone(&cloned);
+    parameters.endUpdateEvent.template asPtr<ICloneable>(true)->clone(&cloned);
 
     this->endUpdateEvent = cloned;
-    this->triggerCoreEvent = triggerCoreEvent;
-    this->localProperties = localProperties;
-    this->customOrder = customOrder;
-    this->corePropertyNames = corePropertyNames;
+    this->triggerCoreEvent = parameters.triggerCoreEvent;
+    this->localProperties = parameters.localProperties;
+    this->customOrder = parameters.customOrder;
+    this->corePropertyNames = parameters.corePropertyNames;
 
     BaseObjectPtr permissionManagerClone;
-    permissionManager.template asPtr<ICloneable>()->clone(&permissionManagerClone);
+    parameters.permissionManager.template asPtr<ICloneable>()->clone(&permissionManagerClone);
     this->permissionManager = permissionManagerClone;
 
-    for (const auto& val : propValues)
+    for (const auto& val : parameters.propValues)
     {
         const auto& propName = val.first;
         const auto& prop = val.second;
@@ -2391,15 +2363,7 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::clone(IPrope
     const ErrCode errCode = daqTry([this, &obj, &cloned]()
     {
         auto implPtr = static_cast<PropertyObjectImpl*>(obj.getObject());
-        implPtr->configureClonedMembers(valueWriteEvents,
-                                        valueReadEvents,
-                                        endUpdateEvent,
-                                        triggerCoreEvent,
-                                        localProperties,
-                                        propValues,
-                                        customOrder,
-                                        permissionManager,
-                                        corePropertyNames);
+        implPtr->configureClonedMembers(getCloneParameters());
 
         *cloned = obj.detach();
         return OPENDAQ_SUCCESS;
