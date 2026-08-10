@@ -585,6 +585,32 @@ inline void coerceMinMax(const PropertyPtr& prop, ObjectPtr<IBaseObject>& valueP
     }
 }
 
+// Validates and converts `value` for writing to `prop`: type conversion and compatibility
+// checks, write coercion/validation, min/max clamping, and a defensive clone of container
+// values so the caller stores a private copy.
+inline ErrCode checkAndCoerceWrite(const PropertyPtr& prop, ObjectPtr<IBaseObject>& value, const PropertyObjectPtr& objPtr)
+{
+    OPENDAQ_RETURN_IF_FAILED(checkPropertyTypeAndConvert(prop, value));
+    OPENDAQ_RETURN_IF_FAILED(checkContainerType(prop, value));
+    OPENDAQ_RETURN_IF_FAILED(checkSelectionValues(prop, value));
+    OPENDAQ_RETURN_IF_FAILED(checkStructType(prop, value));
+    OPENDAQ_RETURN_IF_FAILED(checkEnumerationType(prop, value));
+
+    coercePropertyWrite(prop, value, objPtr);
+    validatePropertyWrite(prop, value, objPtr);
+    coerceMinMax(prop, value);
+
+    const auto ct = prop.asPtr<IPropertyInternal>(true).getValueTypeNoLock();
+    if (ct == ctList || ct == ctDict)
+    {
+        BaseObjectPtr cloned;
+        OPENDAQ_RETURN_IF_FAILED(value.asPtr<ICloneable>()->clone(&cloned));
+        value = cloned.detach();
+    }
+
+    return OPENDAQ_SUCCESS;
+}
+
 // Reference property handling
 
 inline PropertyPtr checkForRefPropAndGetBoundProp(PropertyPtr& prop, const PropertyObjectPtr& objPtr, bool* isReferenced = nullptr)

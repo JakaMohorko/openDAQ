@@ -861,28 +861,10 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::setPropertyV
             }
         }
 
-        OPENDAQ_RETURN_IF_FAILED(details::checkPropertyTypeAndConvert(prop, valuePtr));
-        OPENDAQ_RETURN_IF_FAILED(details::checkContainerType(prop, valuePtr));
-        OPENDAQ_RETURN_IF_FAILED(details::checkSelectionValues(prop, valuePtr));
-        OPENDAQ_RETURN_IF_FAILED(details::checkStructType(prop, valuePtr));
-        OPENDAQ_RETURN_IF_FAILED(details::checkEnumerationType(prop, valuePtr));
+        OPENDAQ_RETURN_IF_FAILED(details::checkAndCoerceWrite(prop, valuePtr, objPtr));
 
-        details::coercePropertyWrite(prop, valuePtr, objPtr);
-        details::validatePropertyWrite(prop, valuePtr, objPtr);
-        details::coerceMinMax(prop, valuePtr);
-
-        const auto ct = propInternal.getValueTypeNoLock();
-        if (ct == ctList || ct == ctDict)
-        {
-            BaseObjectPtr clonedValue;
-            OPENDAQ_RETURN_IF_FAILED(valuePtr.asPtr<ICloneable>()->clone(&clonedValue));
-
-            valuePtr = clonedValue.detach();
-        }
-        else if (ct == ctObject)
-        {
+        if (propInternal.getValueTypeNoLock() == ctObject)
             configureClonedObj(propName, valuePtr);
-        }
 
         if (triggerEvent)
         {
