@@ -112,6 +112,7 @@ source_group("property_object" FILES ${SDK_HEADERS_DIR}/property_object.h
                                      ${SDK_HEADERS_DIR}/property_object_core.h
                                      ${SDK_HEADERS_DIR}/property_object_core_impl.h
                                      ${SDK_HEADERS_DIR}/property_object_utils.h
+                                     ${SDK_HEADERS_DIR}/property_object_helpers.h
                                      property_object_core_impl.cpp
                                      property_object_impl.cpp
                                      property_object_utils.cpp
@@ -300,6 +301,7 @@ set(SRC_PublicHeaders coreobjects.h
                       mutex_impl.h
                       property_object_core.h
                       property_object_utils.h
+                      property_object_helpers.h
                       permissions_internal.h
 )
 

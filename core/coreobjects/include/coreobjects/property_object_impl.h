@@ -54,16 +54,11 @@
 #include <coreobjects/mutex_factory.h>
 #include <coreobjects/mutex_impl.h>
 #include <coreobjects/property_object_utils.h>
+#include <coreobjects/property_object_helpers.h>
 
 BEGIN_NAMESPACE_OPENDAQ
 
 using PropertyOrderedMap = tsl::ordered_map<StringPtr, PropertyPtr, StringHash, StringEqualTo>;
-
-struct PropertyNameInfo
-{
-    StringPtr name;
-    Int index{};
-};
 
 namespace config_protocol
 {
@@ -387,11 +382,6 @@ private:
     // Adds the value to the local list of values (`propValues`)
     bool writeLocalValue(const StringPtr& name, const BaseObjectPtr& value, bool forceWrite = false);
 
-    
-    // Child property handling - Used when a property is queried in the "parent.child" format
-    static bool isChildProperty(const StringPtr& name);
-    static void splitOnFirstDot(const StringPtr& input, StringPtr& head, StringPtr& tail);
-    static void splitOnLastDot(const StringPtr& input, StringPtr& head, StringPtr& tail);
 
     static bool checkIsChildObjectProperty(const PropertyPtr& prop);
     void setChildPropertyObject(const StringPtr& propName, const PropertyObjectPtr& cloned);
@@ -406,7 +396,6 @@ private:
     // Gets the property value, if stored in local value dictionary (propValues)
     // Parses brackets, if the property is a list
     ErrCode readLocalValue(const StringPtr& name, BaseObjectPtr& value) const;
-    static PropertyNameInfo getPropertyNameInfo(const StringPtr& name);
 
     // Checks if the value is a container type, or base `IPropertyObject`. Only such values can be set in `setProperty`
     static ErrCode checkContainerType(const PropertyPtr& prop, const BaseObjectPtr& value);
@@ -435,13 +424,6 @@ private:
 
     // Sets `this` as owner of `value`, if `value` is ownable
     void setOwnerToPropertyValue(const BaseObjectPtr& value);
-
-    // Gets the index integer value between two square brackets
-    static int parseIndex(char const* lBracket);
-
-    // Gets the property name without the index as the `propName` output parameter
-    // Returns the index in the form of [index], eg. [0]
-    static ConstCharPtr getPropNameWithoutIndex(const StringPtr& name, StringPtr& propName);
 
     // Child property handling - Used when a property is queried in the "parent.child" format
     ErrCode getChildPropertyValue(const StringPtr& childName, const StringPtr& subName, BaseObjectPtr& value);
@@ -627,45 +609,6 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getClassName
     #pragma GCC diagnostic push
     #pragma GCC diagnostic ignored "-Wdangling-pointer"
 #endif
-
-template <class PropObjInterface, class... Interfaces>
-bool GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::isChildProperty(const StringPtr& name)
-{
-    auto chr = strchr(name.getCharPtr(), '.');
-    return chr != nullptr;
-}
-
-template <typename PropObjInterface, typename... Interfaces>
-void GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::splitOnFirstDot(const StringPtr& input,
-                                                                                 StringPtr& head,
-                                                                                 StringPtr& tail)
-{
-    const std::string inputStr = input;
-    head = input;
-
-    size_t pos = inputStr.find('.');
-    if (pos == std::string::npos)
-        return;
-    
-    head = inputStr.substr(0, pos);
-    tail = inputStr.substr(pos + 1);
-}
-
-template <typename PropObjInterface, typename... Interfaces>
-void GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::splitOnLastDot(const StringPtr& input,
-                                                                                StringPtr& head,
-                                                                                StringPtr& tail)
-{
-    const std::string inputStr = input;
-    head = input;
-
-    size_t pos = inputStr.rfind('.');
-    if (pos == std::string::npos)
-        return;
-
-    head = inputStr.substr(0, pos);
-    tail = inputStr.substr(pos + 1);
-}
 
 template <typename PropObjInterface, typename... Interfaces>
 ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getChildPropertyValue(const StringPtr& childName,
@@ -1103,7 +1046,7 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::setPropertyV
 
     const ErrCode errCode = daqTry([&]()
     {
-        const auto isChildProp = isChildProperty(propName);
+        const auto isChildProp = details::isChildProperty(propName);
 
         if (batch && !isChildProp)
         {
@@ -1114,7 +1057,7 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::setPropertyV
         StringPtr subName;
         if (isChildProp)
         {
-            splitOnFirstDot(propName, propName, subName);
+            details::splitOnFirstDot(propName, propName, subName);
         }
 
         PropertyPtr prop = getUnboundProperty(propName);
@@ -1461,7 +1404,7 @@ bool GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::hasDuplicateRef
 template <class PropObjInterface, class... Interfaces>
 ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::readLocalValue(const StringPtr& name, BaseObjectPtr& value) const
 {
-    PropertyNameInfo info = getPropertyNameInfo(name);
+    details::PropertyNameInfo info = details::getPropertyNameInfo(name);
 
     const auto it = propValues.find(info.name);
     if (it != propValues.cend())
@@ -1490,68 +1433,10 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::readLocalVal
     return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Property value "{}" not found)", name));
 }
 
-template <class PropObjInterface, class... Interfaces>
-int GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::parseIndex(char const* lBracket)
-{
-    auto last = strchr(lBracket, ']');
-    if (last != nullptr)
-    {
-        char* end;
-        int index = strtol(lBracket + 1, &end, 10);
-
-        if (end != last)
-        {
-            DAQ_THROW_EXCEPTION(InvalidParameterException, "Could not parse the property index.");
-        }
-
-        return index;
-    }
-    DAQ_THROW_EXCEPTION(InvalidParameterException, "No matching ] found.");
-}
-
 #if defined(__GNUC__) && __GNUC__ >= 12
     #pragma GCC diagnostic push
     #pragma GCC diagnostic ignored "-Wdangling-pointer"
 #endif
-
-template <class PropObjInterface, class... Interfaces>
-PropertyNameInfo GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getPropertyNameInfo(const StringPtr& name)
-{
-    PropertyNameInfo nameInfo;
-
-    auto propNameData = name.getCharPtr();
-    auto first = strchr(propNameData, '[');
-    if (first != nullptr)
-    {
-        nameInfo.index = parseIndex(first);
-        nameInfo.name = String(propNameData, first - propNameData);
-    }
-    else
-    {
-        nameInfo.index = -1;
-        nameInfo.name = name;
-    }
-
-    return nameInfo;
-}
-
-template <class PropObjInterface, class... Interfaces>
-ConstCharPtr GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getPropNameWithoutIndex(const StringPtr& name,
-                                                                                                 StringPtr& propName)
-{
-    auto propNameData = name.getCharPtr();
-    auto first = strchr(propNameData, '[');
-
-    if (first == nullptr)
-    {
-        propName = String(propNameData);
-    }
-    else
-    {
-        propName = String(propNameData, first - propNameData);
-    }
-    return first;
-}
 
 template <typename PropObjInterface, typename... Interfaces>
 void GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::triggerCoreEventInternal(const CoreEventArgsPtr& args)
@@ -1568,7 +1453,7 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getPropertyA
                                                                                                 bool retrieveUpdatingValue)
 {
     StringPtr propName;
-    ConstCharPtr bracket = getPropNameWithoutIndex(name, propName);
+    ConstCharPtr bracket = details::getPropNameWithoutIndex(name, propName);
 
     property = getUnboundPropertyOrNull(propName);
 
@@ -1625,7 +1510,7 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getPropertyA
         CoreType coreType = value.getCoreType();
         if (coreType == ctList && bracket != nullptr)
         {
-            int index = parseIndex(bracket);
+            int index = details::parseIndex(bracket);
             ListPtr<IBaseObject> list = value;
             if (index >= static_cast<int>(list.getCount()))
             {
@@ -1707,11 +1592,11 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::setPropertyS
         const auto propName = StringPtr::Borrow(propertyName);
         const auto valuePtr = BaseObjectPtr::Borrow(value);
 
-        if (isChildProperty(propName))
+        if (details::isChildProperty(propName))
         {
             StringPtr childName;
             StringPtr subName;
-            splitOnFirstDot(propName, childName, subName);
+            details::splitOnFirstDot(propName, childName, subName);
 
             BaseObjectPtr childProp;
             const ErrCode err = getPropertyValueInternal(childName, &childProp);
@@ -2054,10 +1939,10 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::clearPropert
         }
 
         StringPtr subName;
-        const auto isChildProp = isChildProperty(propName);
+        const auto isChildProp = details::isChildProperty(propName);
         if (isChildProp)
         {
-            splitOnFirstDot(propName, propName, subName);
+            details::splitOnFirstDot(propName, propName, subName);
         }
 
         PropertyPtr prop = getUnboundPropertyOrNull(propName);
@@ -2168,10 +2053,10 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getPropertyV
         BaseObjectPtr valuePtr;
         ErrCode err;
 
-        if (isChildProperty(propName))
+        if (details::isChildProperty(propName))
         {
             StringPtr subName;
-            splitOnFirstDot(propName, propName, subName);
+            details::splitOnFirstDot(propName, propName, subName);
             err = getChildPropertyValue(propName, subName, valuePtr);
         }
         else
@@ -2203,7 +2088,7 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getPropertyS
         BaseObjectPtr valuePtr;
         PropertyPtr prop;
 
-        if (isChildProperty(propName))
+        if (details::isChildProperty(propName))
         {
             const ErrCode errCode = getProperty(propName, &prop);
             OPENDAQ_RETURN_IF_FAILED(errCode, OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Selection property "{}" not found)", propName));
@@ -2272,12 +2157,12 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getProperty(
         StringPtr propName = propertyName;
         PropertyPtr prop;
 
-        if (isChildProperty(propName))
+        if (details::isChildProperty(propName))
         {
             StringPtr subName;
             BaseObjectPtr childProp;
 
-            splitOnFirstDot(propName, propName, subName);
+            details::splitOnFirstDot(propName, propName, subName);
             const ErrCode err = getPropertyValueInternal(propName, &childProp);
             OPENDAQ_RETURN_IF_FAILED(err);
 
@@ -2573,10 +2458,10 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getOnPropert
 
     StringPtr name = StringPtr::Borrow( propertyName);
 
-    if (isChildProperty(name))
+    if (details::isChildProperty(name))
     {
         StringPtr subName;
-        splitOnFirstDot(name, name, subName);
+        details::splitOnFirstDot(name, name, subName);
 
         BaseObjectPtr childProp;
         ErrCode errCode = getPropertyValueInternal(name, &childProp);
@@ -2612,10 +2497,10 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getOnPropert
 
     StringPtr name = StringPtr::Borrow(propertyName);
 
-    if (isChildProperty(name))
+    if (details::isChildProperty(name))
     {
         StringPtr subName;
-        splitOnFirstDot(name, name, subName);
+        details::splitOnFirstDot(name, name, subName);
 
         BaseObjectPtr childProp;
         ErrCode errCode = getPropertyValueInternal(name, &childProp);
@@ -3577,11 +3462,11 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::hasProperty(
 
     auto propName = StringPtr::Borrow(propertyName);
 
-    if (isChildProperty(propName))
+    if (details::isChildProperty(propName))
     {
         BaseObjectPtr val;
         StringPtr childStr;
-        splitOnLastDot(propName, propName, childStr);
+        details::splitOnLastDot(propName, propName, childStr);
 
         ErrCode err = getPropertyValue(propName, &val);
         OPENDAQ_RETURN_IF_FAILED_EXCEPT(err, OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Failed to retrieve child object with name {})", propName));
