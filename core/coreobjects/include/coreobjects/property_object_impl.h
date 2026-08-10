@@ -398,6 +398,8 @@ private:
     // Reads the current value of a property bound via `getBoundPropertyInternal`: the in-progress updating
     // value, the locally stored value, or the property default. Does not trigger read events.
     ErrCode readPropertyValueInternal(const PropertyPtr& property, const StringPtr& effectiveName, ConstCharPtr bracket, bool retrieveUpdatingValue, BaseObjectPtr& value);
+    // Convenience overload: binds the property by name, then reads its value
+    ErrCode readPropertyValueInternal(const StringPtr& name, bool retrieveUpdatingValue, PropertyPtr& property, BaseObjectPtr& value);
     ErrCode getPropertiesInternal(Bool includeInvisible, Bool bind, IList** list, Bool includeCoreProperties = false);
 
     // Gets the property value, if stored in local value dictionary (propValues)
@@ -1133,6 +1135,18 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::readProperty
     return OPENDAQ_SUCCESS;
 }
 
+template <class PropObjInterface, class... Interfaces>
+ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::readPropertyValueInternal(const StringPtr& name,
+                                                                                              bool retrieveUpdatingValue,
+                                                                                              PropertyPtr& property,
+                                                                                              BaseObjectPtr& value)
+{
+    StringPtr effectiveName;
+    ConstCharPtr bracket;
+    OPENDAQ_RETURN_IF_FAILED(getBoundPropertyInternal(name, property, effectiveName, bracket));
+    return readPropertyValueInternal(property, effectiveName, bracket, retrieveUpdatingValue, value);
+}
+
 #if defined(__GNUC__) && __GNUC__ >= 12
 #pragma GCC diagnostic pop
 #endif
@@ -1421,14 +1435,9 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::clearPropert
 
         if (prop.getValueType() == ctObject)
         {
-            const StringPtr propName = prop.getName();
-            PropertyPtr propPtr;
-            StringPtr effectiveName;
-            ConstCharPtr bracket;
+            // `prop` is already bound and cannot be a reference here; read the value directly
             BaseObjectPtr valuePtr;
-            ErrCode err = getBoundPropertyInternal(propName, propPtr, effectiveName, bracket);
-            OPENDAQ_RETURN_IF_FAILED(err);
-            err = readPropertyValueInternal(propPtr, effectiveName, bracket, false, valuePtr);
+            const ErrCode err = readPropertyValueInternal(prop, prop.getName(), nullptr, false, valuePtr);
             OPENDAQ_RETURN_IF_FAILED(err);
 
             if (const auto freezable = valuePtr.asPtrOrNull<IFreezable>(true); freezable.assigned() && freezable.isFrozen())
@@ -1600,11 +1609,7 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getPropertyV
         else
         {
             PropertyPtr prop;
-            StringPtr effectiveName;
-            ConstCharPtr bracket;
-            err = getBoundPropertyInternal(propName, prop, effectiveName, bracket);
-            OPENDAQ_RETURN_IF_FAILED(err);
-            err = readPropertyValueInternal(prop, effectiveName, bracket, retrieveUpdatingValue, valuePtr);
+            err = readPropertyValueInternal(propName, retrieveUpdatingValue, prop, valuePtr);
             OPENDAQ_RETURN_IF_FAILED(err);
             if (valuePtr.assigned())
                 valuePtr = callPropertyValueRead(prop, valuePtr);
@@ -1641,11 +1646,7 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getPropertyS
         }
         else
         {
-            StringPtr effectiveName;
-            ConstCharPtr bracket;
-            ErrCode errCode = getBoundPropertyInternal(propName, prop, effectiveName, bracket);
-            OPENDAQ_RETURN_IF_FAILED(errCode, OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Selection property "{}" not found)", propName));
-            errCode = readPropertyValueInternal(prop, effectiveName, bracket, retrieveUpdatingValue, valuePtr);
+            const ErrCode errCode = readPropertyValueInternal(propName, retrieveUpdatingValue, prop, valuePtr);
             OPENDAQ_RETURN_IF_FAILED(errCode, OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Selection property "{}" not found)", propName));
             if (valuePtr.assigned())
                 valuePtr = callPropertyValueRead(prop, valuePtr);
@@ -2213,11 +2214,7 @@ void GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::endApplyUpdate(
         if (err != OPENDAQ_IGNORED)
         {
             PropertyPtr prop;
-            StringPtr effectiveName;
-            ConstCharPtr bracket;
-            if (OPENDAQ_SUCCEEDED(getBoundPropertyInternal(name, prop, effectiveName, bracket)) &&
-                OPENDAQ_SUCCEEDED(readPropertyValueInternal(prop, effectiveName, bracket, false, action.value)) &&
-                action.value.assigned())
+            if (OPENDAQ_SUCCEEDED(readPropertyValueInternal(name, false, prop, action.value)) && action.value.assigned())
             {
                 // TODO: firing read events while applying updates is likely unintended; kept for behavior parity
                 action.value = callPropertyValueRead(prop, action.value);
