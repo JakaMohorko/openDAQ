@@ -1545,24 +1545,18 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::clearPropert
                         freezable.assigned() && freezable.isFrozen())
                         return OPENDAQ_IGNORED;
 
+                    const auto obj = it->second.template asPtr<IPropertyObject>(true);
+                    PropertyObjectProtectedPtr objProtected;
                     if (protectedAccess)
+                        objProtected = it->second.template asPtr<IPropertyObjectProtected>(true);
+
+                    for (const auto& childProp : obj.getAllProperties())
                     {
-                        auto objProtected = it->second.template asPtr<IPropertyObjectProtected>(true);
-                        auto obj = it->second.template asPtr<IPropertyObject>(true);
-                        for (const auto& childProp: obj.getAllProperties())
-                        {
+                        if (protectedAccess)
                             objProtected.clearProtectedPropertyValue(childProp.getName());
-                        }
-                    }
-                    else
-                    {
-                        auto obj = it->second.template asPtr<IPropertyObject>(true);
-                        for (const auto& childProp: obj.getAllProperties())
-                        {
+                        else
                             obj.clearPropertyValue(childProp.getName());
-                        }
                     }
-                    
                 }
             }
             else
