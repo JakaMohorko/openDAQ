@@ -22,6 +22,7 @@
 #include <coreobjects/property_ptr.h>
 #include <coreobjects/property_internal_ptr.h>
 #include <coretypes/coretypes.h>
+#include <coretypes/cloneable.h>
 #include <stdexcept>
 #include <coretypes/stringobject_factory.h>
 #include <coretypes/enumeration_factory.h>
@@ -331,6 +332,64 @@ inline ErrCode checkPropertyTypeAndConvert(const PropertyPtr& prop, BaseObjectPt
 
     OPENDAQ_RETURN_IF_FAILED(errCode, fmt::format(R"(Value type is different than Property type and conversion failed for property "{}")", prop.getName()));
     return errCode;
+}
+
+// Computes the name under which a property's value is stored/looked up, given the resolved
+// property and the raw queried name. Reference properties store under the referenced name;
+// a "[index]" suffix from the raw name is preserved.
+inline StringPtr buildEffectivePropertyName(const StringPtr& parsedName,
+                                            const StringPtr& rawName,
+                                            const PropertyPtr& resolvedProperty,
+                                            bool isReferenced,
+                                            ConstCharPtr bracket)
+{
+    if (bracket != nullptr)
+        return isReferenced ? StringPtr(resolvedProperty.getName() + std::string(bracket)) : rawName;
+
+    if (isReferenced)
+        return resolvedProperty.getName();
+
+    return parsedName;
+}
+
+// Reads the property's default value, indexing into it when a "[index]" suffix was queried.
+// A missing default is not an error; value is simply left unassigned.
+inline ErrCode readDefaultPropertyValue(const PropertyPtr& property, const StringPtr& propName, ConstCharPtr bracket, BaseObjectPtr& value)
+{
+    const auto propInternal = property.asPtr<IPropertyInternal>();
+    const ErrCode res = propInternal->getDefaultValueNoLock(&value);
+
+    if (OPENDAQ_FAILED(res))
+        daqClearErrorInfo();
+
+    if (!value.assigned())
+        return OPENDAQ_SUCCESS;
+
+    if (value.getCoreType() == ctList && bracket != nullptr)
+    {
+        const int index = parseIndex(bracket);
+        ListPtr<IBaseObject> list = value;
+        if (index >= static_cast<int>(list.getCount()))
+        {
+            return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_OUTOFRANGE, fmt::format(R"(The index parameter is out of bounds of the list for property "{}")", propName));
+        }
+        value = list[std::size_t(index)];
+    }
+
+    return OPENDAQ_SUCCESS;
+}
+
+// Container values are cloned on read so the stored value cannot be mutated through the returned reference
+inline BaseObjectPtr cloneContainerValue(const BaseObjectPtr& value)
+{
+    const CoreType coreType = value.getCoreType();
+    if (coreType == ctList || coreType == ctDict)
+    {
+        BaseObjectPtr clonedValue;
+        value.asPtr<ICloneable>()->clone(&clonedValue);
+        return clonedValue;
+    }
+    return value;
 }
 
 // Maps a user-facing selection value to the index/key that is stored as the property value

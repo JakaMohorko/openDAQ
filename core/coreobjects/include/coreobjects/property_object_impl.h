@@ -1101,23 +1101,7 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getPropertyA
 
     bool isRef;
     property = details::checkForRefPropAndGetBoundProp(property, objPtr, &isRef);
-
-    // TODO: Extract this to own function
-    if (bracket != nullptr)
-    {
-        if (isRef)
-        {
-            propName = property.getName() + std::string(bracket);
-        }
-        else
-        {
-            propName = name;
-        }
-    }
-    else if (isRef)
-    {
-        propName = property.getName();
-    }
+    propName = details::buildEffectivePropertyName(propName, name, property, isRef, bracket);
 
     ErrCode res = OPENDAQ_SUCCESS;
 
@@ -1135,35 +1119,13 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getPropertyA
     if (res == OPENDAQ_ERR_NOTFOUND)
     {
         daqClearErrorInfo();
-        const auto propInternal = property.asPtr<IPropertyInternal>();
-        res = propInternal->getDefaultValueNoLock(&value);
-
-        if (OPENDAQ_FAILED(res))
-            daqClearErrorInfo();
+        OPENDAQ_RETURN_IF_FAILED(details::readDefaultPropertyValue(property, propName, bracket, value));
 
         if (!value.assigned())
             return OPENDAQ_SUCCESS;
-
-        CoreType coreType = value.getCoreType();
-        if (coreType == ctList && bracket != nullptr)
-        {
-            int index = details::parseIndex(bracket);
-            ListPtr<IBaseObject> list = value;
-            if (index >= static_cast<int>(list.getCount()))
-            {
-                return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_OUTOFRANGE, fmt::format(R"(The index parameter is out of bounds of the list for property "{}")", propName));
-            }
-            value = list[std::size_t(index)];
-        }
     }
 
-    CoreType coreType = value.getCoreType();
-    if (coreType == ctList || coreType == ctDict)
-    {
-        BaseObjectPtr clonedValue;
-        value.asPtr<ICloneable>()->clone(&clonedValue);
-        value = clonedValue.detach();
-    }
+    value = details::cloneContainerValue(value);
 
     if (triggerEvent)
         value = callPropertyValueRead(property, value);
