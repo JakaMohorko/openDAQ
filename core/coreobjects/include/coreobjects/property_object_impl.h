@@ -378,6 +378,8 @@ private:
     PropertyPtr getUnboundProperty(const StringPtr& name);
     PropertyPtr getUnboundPropertyOrNull(const StringPtr& name) const;
 
+    // True if `value` differs from the property's default value (or the property cannot be resolved)
+    bool differsFromDefaultValue(const StringPtr& name, const BaseObjectPtr& value) const;
     bool shouldWriteLocalValue(const StringPtr& name, const BaseObjectPtr& value) const;
     // Adds the value to the local list of values (`propValues`)
     bool writeLocalValue(const StringPtr& name, const BaseObjectPtr& value, bool forceWrite = false);
@@ -882,58 +884,47 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::setPropertyV
 
 
 template <class PropObjInterface, class... Interfaces>
-bool GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::shouldWriteLocalValue(const StringPtr& name, const BaseObjectPtr& value) const
+bool GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::differsFromDefaultValue(const StringPtr& name, const BaseObjectPtr& value) const
 {
-    auto it = propValues.find(name);
-    if (it != propValues.end())
+    try
     {
-        return it->second != value;
+        return objPtr.getProperty(name).template asPtr<IPropertyInternal>().getDefaultValueNoLock() != value;
     }
-    else
+    catch (...)
     {
-        try
-        {
-            return objPtr.getProperty(name).template asPtr<IPropertyInternal>().getDefaultValueNoLock() != value;
-        }
-        catch(...)
-        {
-        }
     }
     return true;
 }
 
 template <class PropObjInterface, class... Interfaces>
+bool GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::shouldWriteLocalValue(const StringPtr& name, const BaseObjectPtr& value) const
+{
+    const auto it = propValues.find(name);
+    if (it != propValues.end())
+        return it->second != value;
+
+    return differsFromDefaultValue(name, value);
+}
+
+template <class PropObjInterface, class... Interfaces>
 bool GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::writeLocalValue(const StringPtr& name, const BaseObjectPtr& value, bool forceWrite)
 {
-    auto it = propValues.find(name);
+    const auto it = propValues.find(name);
     if (it != propValues.end())
     {
         if (it->second == value)
             return false;
         it->second = value;
+        return true;
     }
-    else if (forceWrite)
+
+    if (forceWrite || differsFromDefaultValue(name, value))
     {
         propValues.emplace(name, value);
-    }
-    else
-    {
-        bool shouldWrite = true;
-        try
-        {
-            shouldWrite = objPtr.getProperty(name).template asPtr<IPropertyInternal>().getDefaultValueNoLock() != value;
-        }
-        catch (...)
-        {
-        }
-
-        if (shouldWrite)
-            propValues.emplace(name, value);
-        else
-            return false;
+        return true;
     }
 
-    return true;
+    return false;
 }
 
 template <class PropObjInterface, class... Interfaces>
