@@ -302,6 +302,24 @@ protected:
     virtual void callBeginUpdateOnChildren();
     virtual void callEndUpdateOnChildren();
 
+    // Invokes `handler` on every non-frozen child property object stored in `propValues`
+    template <typename Handler>
+    void forEachUnfrozenChildObject(Handler&& handler)
+    {
+        for (const auto& [_, propValue] : propValues)
+        {
+            const auto propObj = propValue.template asPtrOrNull<IPropertyObject>(true);
+            if (!propObj.assigned())
+                continue;
+
+            const auto freezable = propObj.template asPtrOrNull<IFreezable>(true);
+            if (freezable.assigned() && freezable.isFrozen())
+                continue;
+
+            handler(propObj);
+        }
+    }
+
     virtual PropertyObjectPtr getPropertyObjectParent();
     virtual PropertyObjectPtr cloneChildPropertyObject(const PropertyPtr& prop);
 
@@ -2063,35 +2081,13 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::beginUpdate(
 template <typename PropObjInterface, typename... Interfaces>
 void GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::callBeginUpdateOnChildren()
 {
-    for (const auto& [_, propValue] : propValues)
-    {
-        const auto propObj = propValue.template asPtrOrNull<IPropertyObject>(true);
-        if (!propObj.assigned())
-            continue;
-
-        auto freezable = propObj.template asPtrOrNull<IFreezable>(true);
-        if (freezable.assigned() && freezable.isFrozen())
-            continue;
-
-        propObj.beginUpdate();
-    }
+    forEachUnfrozenChildObject([](const PropertyObjectPtr& propObj) { propObj.beginUpdate(); });
 }
 
 template <typename PropObjInterface, typename... Interfaces>
 void GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::callEndUpdateOnChildren()
 {
-    for (const auto& [_, propValue] : propValues)
-    {
-        const auto propObj = propValue.template asPtrOrNull<IPropertyObject>(true);
-        if (!propObj.assigned())
-            continue;
-
-        auto freezable = propObj.template asPtrOrNull<IFreezable>(true);
-        if (freezable.assigned() && freezable.isFrozen())
-            continue;
-
-        propObj.endUpdate();
-    }
+    forEachUnfrozenChildObject([](const PropertyObjectPtr& propObj) { propObj.endUpdate(); });
 }
 
 template <typename PropObjInterface, typename... Interfaces>
