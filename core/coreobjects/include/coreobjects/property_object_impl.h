@@ -669,39 +669,51 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::callProperty
         }
     }
 
-    BaseObjectPtr oldValue;
-    ErrCode errCode = readLocalValue(name, oldValue);
-    if (errCode == OPENDAQ_ERR_NOTFOUND)
+    bool unregistered = false;
+    try
     {
-        daqClearErrorInfo();
-        oldValue = defaultValue;
+        BaseObjectPtr oldValue;
+        ErrCode errCode = readLocalValue(name, oldValue);
+        if (errCode == OPENDAQ_ERR_NOTFOUND)
+        {
+            daqClearErrorInfo();
+            oldValue = defaultValue;
+        }
+        PropertyValueEventArgsPtr args;
+        if (changeType == PropertyEventType::Clear)
+            args = PropertyValueEventArgs(prop, defaultValue, oldValue, changeType, isUpdating);
+        else
+            args = PropertyValueEventArgs(prop, newValue, oldValue, changeType, isUpdating);
+
+        errCode = firePropertyValueEvents(prop, args, true);
+
+        const bool shouldUpdate = updatePropertyStack.unregisterPropertyUpdating(name);
+        unregistered = true;
+        // If the event execution failed, forward the error code
+        OPENDAQ_RETURN_IF_FAILED(errCode);
+
+        if (shouldUpdate)
+        {
+            // setting the final value is only done in the top level of the stack
+            if (changeType == PropertyEventType::Clear && args.getValue() == defaultValue)
+                return OPENDAQ_SUCCESS;
+
+            if (newValue == args.getValue())
+                return OPENDAQ_SUCCESS;
+
+            // if the value changed, we have to validate new value before setting it
+            newValue = args.getValue();
+            return setPropertyValueInternal(name, newValue, false, true, false);
+        }
+        return OPENDAQ_IGNORED;
     }
-    PropertyValueEventArgsPtr args;
-    if (changeType == PropertyEventType::Clear)
-        args = PropertyValueEventArgs(prop, defaultValue, oldValue, changeType, isUpdating);
-    else
-        args = PropertyValueEventArgs(prop, newValue, oldValue, changeType, isUpdating);
-
-    errCode = firePropertyValueEvents(prop, args, true);
-
-    bool shouldUpdate = updatePropertyStack.unregisterPropertyUpdating(name);
-    // If the event execution failed, forward the error code
-    OPENDAQ_RETURN_IF_FAILED(errCode);
-
-    if (shouldUpdate)
+    catch (...)
     {
-        // setting the final value is only done in the top level of the stack
-        if (changeType == PropertyEventType::Clear && args.getValue() == defaultValue)
-            return OPENDAQ_SUCCESS;
-
-        if (newValue == args.getValue())
-            return OPENDAQ_SUCCESS;
-        
-        // if the value changed, we have to validate new value before setting it
-        newValue = args.getValue();
-        return setPropertyValueInternal(name, newValue, false, true, false);
+        // A registration leaked past a throw would permanently poison the update stack for this property
+        if (!unregistered)
+            updatePropertyStack.unregisterPropertyUpdating(name);
+        throw;
     }
-    return OPENDAQ_IGNORED;
 }
 
 template <typename PropObjInterface, typename... Interfaces>
@@ -713,26 +725,36 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::fireProperty
     const auto name = prop.getName();
     auto& events = valueWrite ? valueWriteEvents : valueReadEvents;
 
+    // Write tiers are guarded so a throwing handler surfaces as an error instead of unwinding
+    // past the caller's update-stack bookkeeping; all tiers still fire, the first error wins.
+    const auto fire = [&](const PropertyValueEventEmitter& emitter)
+    {
+        if (!emitter.hasListeners())
+            return;
+
+        if (!valueWrite)
+        {
+            emitter(objPtr, args);
+            return;
+        }
+
+        const ErrCode err = daqTry([&] { emitter(objPtr, args); });
+        if (OPENDAQ_FAILED(err) && OPENDAQ_SUCCEEDED(errCode))
+            errCode = err;
+    };
+
     if (!localProperties.count(name))
     {
         const auto propInternal = prop.asPtr<IPropertyInternal>(true);
         const PropertyValueEventEmitter classEvent{valueWrite ? propInternal.getClassOnPropertyValueWrite()
                                                               : propInternal.getClassOnPropertyValueRead()};
-        if (classEvent.hasListeners())
-            classEvent(objPtr, args);
+        fire(classEvent);
     }
 
-    if (const auto it = events.find(name); it != events.end() && it->second.hasListeners())
-    {
-        if (valueWrite)
-            errCode = daqTry([&] { it->second(objPtr, args); });
-        else
-            it->second(objPtr, args);
-    }
+    if (const auto it = events.find(name); it != events.end())
+        fire(it->second);
 
-    auto& anyEvent = events[valueWrite ? AnyWriteEventName : AnyReadEventName];
-    if (anyEvent.hasListeners())
-        anyEvent(objPtr, args);
+    fire(events[valueWrite ? AnyWriteEventName : AnyReadEventName]);
 
     return errCode;
 }
