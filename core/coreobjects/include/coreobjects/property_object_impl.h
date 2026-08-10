@@ -433,6 +433,11 @@ private:
     // Called at the end of `getPropertyValue`
     BaseObjectPtr callPropertyValueRead(const PropertyPtr& prop, const BaseObjectPtr& readValue);
 
+    // Fires the class-level, per-property, and any-property event tiers for `args`.
+    // Only the per-property write tier is guarded (a failure there is returned); the
+    // other tiers propagate exceptions unchanged.
+    ErrCode firePropertyValueEvents(const PropertyPtr& prop, PropertyValueEventArgsPtr& args, bool valueWrite);
+
     // Shared implementation of getOnPropertyValueWrite/getOnPropertyValueRead
     ErrCode getPropertyValueEventInternal(IString* propertyName, IEvent** event, bool valueWrite);
 
@@ -676,31 +681,13 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::callProperty
         daqClearErrorInfo();
         oldValue = defaultValue;
     }
-    errCode = OPENDAQ_SUCCESS;
-
     PropertyValueEventArgsPtr args;
     if (changeType == PropertyEventType::Clear)
         args = PropertyValueEventArgs(prop, defaultValue, oldValue, changeType, isUpdating);
     else
         args = PropertyValueEventArgs(prop, newValue, oldValue, changeType, isUpdating);
 
-    if (!localProperties.count(name))
-    {
-        const PropertyValueEventEmitter propEvent{prop.asPtr<IPropertyInternal>(true).getClassOnPropertyValueWrite()};
-        if (propEvent.hasListeners())
-            propEvent(objPtr, args);
-    }
-
-    if (valueWriteEvents.find(name) != valueWriteEvents.end())
-    {
-        if (valueWriteEvents[name].hasListeners())
-            errCode = daqTry([&] { valueWriteEvents[name](objPtr, args); });
-    }
-
-    if (valueWriteEvents[AnyWriteEventName].hasListeners())
-    {
-        valueWriteEvents[AnyWriteEventName](objPtr, args);
-    }
+    errCode = firePropertyValueEvents(prop, args, true);
 
     bool shouldUpdate = updatePropertyStack.unregisterPropertyUpdating(name);
     // If the event execution failed, forward the error code
@@ -723,6 +710,39 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::callProperty
 }
 
 template <typename PropObjInterface, typename... Interfaces>
+ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::firePropertyValueEvents(const PropertyPtr& prop,
+                                                                                            PropertyValueEventArgsPtr& args,
+                                                                                            bool valueWrite)
+{
+    ErrCode errCode = OPENDAQ_SUCCESS;
+    const auto name = prop.getName();
+    auto& events = valueWrite ? valueWriteEvents : valueReadEvents;
+
+    if (!localProperties.count(name))
+    {
+        const auto propInternal = prop.asPtr<IPropertyInternal>(true);
+        const PropertyValueEventEmitter classEvent{valueWrite ? propInternal.getClassOnPropertyValueWrite()
+                                                              : propInternal.getClassOnPropertyValueRead()};
+        if (classEvent.hasListeners())
+            classEvent(objPtr, args);
+    }
+
+    if (const auto it = events.find(name); it != events.end() && it->second.hasListeners())
+    {
+        if (valueWrite)
+            errCode = daqTry([&] { it->second(objPtr, args); });
+        else
+            it->second(objPtr, args);
+    }
+
+    auto& anyEvent = events[valueWrite ? AnyWriteEventName : AnyReadEventName];
+    if (anyEvent.hasListeners())
+        anyEvent(objPtr, args);
+
+    return errCode;
+}
+
+template <typename PropObjInterface, typename... Interfaces>
 BaseObjectPtr GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::callPropertyValueRead(const PropertyPtr& prop,
                                                                                                 const BaseObjectPtr& readValue)
 {
@@ -732,30 +752,7 @@ BaseObjectPtr GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::callPr
     }
 
     auto args = PropertyValueEventArgs(prop, readValue, readValue, PropertyEventType::Read, False);
-
-    if (!localProperties.count(prop.getName()))
-    {
-        const PropertyValueEventEmitter propEvent{prop.asPtr<IPropertyInternal>().getClassOnPropertyValueRead()};
-        if (propEvent.hasListeners())
-        {
-            propEvent(objPtr, args);
-        }
-    }
-
-    const auto name = prop.getName();
-    if (valueReadEvents.find(name) != valueReadEvents.end())
-    {
-        if (valueReadEvents[name].hasListeners())
-        {
-            valueReadEvents[name](objPtr, args);
-        }
-    }
-
-    if (valueReadEvents[AnyReadEventName].hasListeners())
-    {
-        valueReadEvents[AnyReadEventName](objPtr, args);
-    }
-
+    firePropertyValueEvents(prop, args, false);
     return args.getValue();
 }
 
