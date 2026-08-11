@@ -526,9 +526,7 @@ GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::GenericPropertyObjec
         for (const auto& prop : objectClass.getProperties(true))
         {
             if (checkIsChildObjectProperty(prop))
-            {
                 setChildPropertyObject(prop.getName(), cloneChildPropertyObject(prop));
-            }
         }
     }
 }
@@ -610,13 +608,9 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getClassName
     OPENDAQ_PARAM_NOT_NULL(className);
 
     if (this->className.assigned())
-    {
         *className = this->className.addRefAndReturn();
-    }
     else
-    {
         *className = String("").detach();
-    }
 
     return OPENDAQ_SUCCESS;
 }
@@ -669,8 +663,7 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::callProperty
     if (!updatePropertyStack.registerPropertyUpdating(name, newValue))
         return OPENDAQ_IGNORED;
 
-    const bool isBaseStackLevel = updatePropertyStack.isBaseStackLevel(name);
-    if (isBaseStackLevel)
+    if (updatePropertyStack.isBaseStackLevel(name))
     {
         if (newValue.assigned() && !shouldWriteLocalValue(name, newValue))
         {
@@ -689,11 +682,9 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::callProperty
             daqClearErrorInfo();
             oldValue = defaultValue;
         }
-        PropertyValueEventArgsPtr args;
-        if (changeType == PropertyEventType::Clear)
-            args = PropertyValueEventArgs(prop, defaultValue, oldValue, changeType, isUpdating);
-        else
-            args = PropertyValueEventArgs(prop, newValue, oldValue, changeType, isUpdating);
+
+        auto chosenValue = changeType == PropertyEventType::Clear ? defaultValue : newValue;
+        PropertyValueEventArgsPtr args = PropertyValueEventArgs(prop, chosenValue, oldValue, changeType, isUpdating);
 
         errCode = firePropertyValueEvents(prop, args, true);
 
@@ -775,9 +766,7 @@ BaseObjectPtr GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::callPr
                                                                                                 const BaseObjectPtr& readValue)
 {
     if (!prop.assigned())
-    {
         return readValue;
-    }
 
     auto args = PropertyValueEventArgs(prop, readValue, readValue, PropertyEventType::Read, False);
     firePropertyValueEvents(prop, args, false);
@@ -849,9 +838,7 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::setPropertyV
                 parentObjProtected.setProtectedPropertyValue(leafName, valuePtr);
             }
             else
-            {
                 parentObj.setPropertyValue(leafName, valuePtr);
-            }
 
             return OPENDAQ_SUCCESS;
         }
@@ -879,9 +866,7 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::writeBoundPr
     if (!protectedAccess)
     {
         if (propInternal.getReadOnlyNoLock() || propInternal.getValueTypeNoLock() == ctObject)
-        {
             return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_ACCESSDENIED, fmt::format(R"(Property "{}" is read only)", propName));
-        }
     }
 
     OPENDAQ_RETURN_IF_FAILED(details::checkAndCoerceWrite(prop, valuePtr, objPtr));
@@ -1065,21 +1050,15 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::readLocalVal
         if (info.index != -1)
         {
             if (it->second.getCoreType() != ctList)
-            {
                 return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPARAMETER, fmt::format(R"(Could not access the index as the value is not a list for property "{}")", name));
-            }
 
             ListPtr<IBaseObject> list = it->second;
             if (info.index >= (int) list.getCount())
-            {
                 return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_OUTOFRANGE, fmt::format(R"(The index parameter is out of bounds of the list for property "{}")", name));
-            }
             value = list[std::size_t(info.index)];
         }
         else
-        {
             value = it->second;
-        }
         return OPENDAQ_SUCCESS;
     }
 
@@ -1123,9 +1102,7 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getBoundProp
     property = getUnboundPropertyOrNull(propName);
 
     if (!property.assigned())
-    {
         return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Property "{}" does not exist)", propName));
-    }
 
     bool isRef;
     property = details::checkForRefPropAndGetBoundProp(property, objPtr, &isRef);
@@ -1148,9 +1125,7 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::readProperty
             value = property.getDefaultValue();
     }
     else
-    {
         res = readLocalValue(resolvedName, value);
-    }
 
     OPENDAQ_RETURN_IF_FAILED_EXCEPT(res, OPENDAQ_ERR_NOTFOUND);
     if (res == OPENDAQ_ERR_NOTFOUND)
@@ -1248,9 +1223,7 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::setPropertyS
                 return parentObjProtected->setProtectedPropertySelectionValue(leafName, value);
             }
             else
-            {
                 return parentObj->setPropertySelectionValue(leafName, value);
-            }
         }
 
         StringPtr boundName = propName;
@@ -1352,9 +1325,7 @@ void GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::configureCloned
             }
         }
         else
-        {
             this->propValues.insert(val);
-        }
     }
 }
 
@@ -1515,9 +1486,7 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::clearPropert
                 parentObjProtected.clearProtectedPropertyValue(leafName);
             }
             else
-            {
                 parentObj.clearPropertyValue(leafName);
-            }
 
             return OPENDAQ_SUCCESS;
         }
@@ -1530,9 +1499,7 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::clearPropert
         if (!protectedAccess)
         {
             if (propInternal.getReadOnlyNoLock())
-            {
                 return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_ACCESSDENIED, fmt::format(R"(Property "{}" is read only)", propName));
-            }
         }
 
         {
@@ -1692,9 +1659,7 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getProperty(
         }
 
         if (const auto freezable = prop.template asPtrOrNull<IFreezable>(true); freezable.assigned())
-        {
             OPENDAQ_RETURN_IF_FAILED(freezable->freeze());
-        }
 
         *property = prop.detach();
         return OPENDAQ_SUCCESS;
@@ -1723,8 +1688,10 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::addPropertyI
             return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDVALUE, fmt::format(R"(Property "{}" does not have an assigned name.)", propName));
 
         if (details::hasDuplicateReferences(propPtr, objPtr))
+        {
             return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDVALUE,
                                        fmt::format(R"(Reference property "{}" references a property that is already referenced by another.)", propName));
+        }
 
         propPtr.asPtr<IOwnable>(true).setOwner(objPtr);
 
@@ -1800,23 +1767,17 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::removeProper
     OPENDAQ_PARAM_NOT_NULL(propertyName);
 
     if (frozen)
-    {
         return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_FROZEN);
-    }
 
     auto lock = getRecursiveConfigLock2();
 
     auto namePtr = StringPtr::Borrow(propertyName);
     if (localProperties.find(propertyName) == localProperties.cend())
-    {
         return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Property "{}" does not exist)", namePtr));
-    }
 
     localProperties.erase(propertyName);
     if (propValues.find(propertyName) != propValues.cend())
-    {
         propValues.erase(propertyName);
-    }
 
     if (auto it = corePropertyNames.find(namePtr); it != corePropertyNames.end())
         corePropertyNames.erase(it);
@@ -1894,9 +1855,7 @@ std::vector<PropertyPtr> GenericPropertyObjectImpl<PropObjInterface, Interfaces.
             allProperties.push_back(prop);
     }
     else
-    {
         allProperties.reserve(localProperties.size());
-    }
 
     for (const auto& [propName, prop] : localProperties)
     {
@@ -1923,22 +1882,16 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::bindAndFilte
 
         auto boundProp = prop.asPtr<IPropertyInternal>(true).cloneWithOwner(objPtr);
         if (!includeInvisible && boundProp.getIsReferenced())
-        {
             continue;
-        }
 
         try
         {
             if (!includeInvisible && !boundProp.getVisible())
-            {
                 continue;
-            }
 
             auto freezable = boundProp.template asPtrOrNull<IFreezable>(true);
             if (freezable.assigned())
-            {
                 freezable.freeze();
-            }
 
             lookup.insert_or_assign(boundProp.getName(), boundProp);
         }
@@ -2004,10 +1957,12 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getPropertyV
         return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Property "{}" does not exist)", name));
 
     if (prop.getReferencedPropertyUnresolved().assigned())
+    {
         return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALID_OPERATION,
                                    fmt::format(R"({} is not allowed for the reference properties "{}")",
                                                valueWrite ? "getOnPropertyValueWrite" : "getOnPropertyValueRead",
                                                name));
+    }
 
     auto& events = valueWrite ? valueWriteEvents : valueReadEvents;
     auto [it, _] = events.try_emplace(name);
@@ -2145,9 +2100,7 @@ template <typename PropObjInterface, typename ... Interfaces>
 std::mutex* GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getLocalMutex()
 {
     if (this->lockingStrategy == LockingStrategy::InheritLock)
-    {
         DAQ_THROW_EXCEPTION(daq::InvalidStateException, "Can't acquire local mutex if locking strategy is set to inherit");
-    }
 
     MutexImpl* mutexImpl = dynamic_cast<MutexImpl*>(this->sync.getObject());
     return &mutexImpl->mutex;
@@ -2806,9 +2759,7 @@ void GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::DeserializeLoca
         const auto propName = prop.getName();
 
         if (!propObjPtr.hasProperty(propName))
-        {
             propObjPtr.addProperty(prop);
-        }
     }
 }
 
@@ -2823,9 +2774,7 @@ template <class PropObjInterface, class... Interfaces>
 ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::toString(CharPtr* str)
 {
     if (str == nullptr)
-    {
         return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_ARGUMENT_NULL, "Parameter must not be null");
-    }
 
     std::ostringstream stream;
     stream << "PropertyObject";
@@ -2948,9 +2897,7 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::setPropertyF
                                                                                               const TypeManagerPtr& typeManager)
 {
     if (!serialized.assigned())
-    {
         return propObj->clearPropertyValue(propName);
-    }
 
     BaseObjectPtr propValue;
 

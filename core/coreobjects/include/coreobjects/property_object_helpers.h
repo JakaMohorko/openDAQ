@@ -82,9 +82,7 @@ inline int parseIndex(char const* lBracket)
         int index = strtol(lBracket + 1, &end, 10);
 
         if (end != last)
-        {
             DAQ_THROW_EXCEPTION(InvalidParameterException, "Could not parse the property index.");
-        }
 
         return index;
     }
@@ -99,13 +97,9 @@ inline ConstCharPtr getPropNameWithoutIndex(const StringPtr& name, StringPtr& pr
     auto first = strchr(propNameData, '[');
 
     if (first == nullptr)
-    {
         propName = String(propNameData);
-    }
     else
-    {
         propName = String(propNameData, first - propNameData);
-    }
     return first;
 }
 
@@ -133,9 +127,7 @@ inline ErrCode checkContainerType(const PropertyPtr& prop, const BaseObjectPtr& 
     {
         auto inspect = value.asPtrOrNull<IInspectable>(true);
         if (inspect.assigned() && !inspect.getInterfaceIds().empty())
-        {
             return inspect.getInterfaceIds()[0] == IPropertyObject::Id;
-        }
 
         return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDTYPE, "Only base Property Object object-type values are allowed");
     }
@@ -292,8 +284,10 @@ inline ErrCode checkPropertyTypeAndConvert(const PropertyPtr& prop, BaseObjectPt
             {
                 const auto enumVal = propInternal.getDefaultValueNoLock().asPtrOrNull<IEnumeration>();
                 if (!enumVal.assigned())
+                {
                     return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDSTATE,
                                                fmt::format(R"(Default value of enumeration property {} is not assigned)", prop.getName()));
+                }
 
                 const auto type = enumVal.getEnumerationType();
                 const Int intVal = value.convertTo(ctInt);
@@ -345,9 +339,7 @@ inline ErrCode readDefaultPropertyValue(const PropertyPtr& property, const Strin
         const int index = parseIndex(bracket);
         ListPtr<IBaseObject> list = value;
         if (index >= static_cast<int>(list.getCount()))
-        {
             return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_OUTOFRANGE, fmt::format(R"(The index parameter is out of bounds of the list for property "{}")", propName));
-        }
         value = list[std::size_t(index)];
     }
 
@@ -381,13 +373,17 @@ inline ErrCode selectionValueToKey(const PropertyPtr& prop, const BaseObjectPtr&
     if (propType == PropertyType::IndexSelection)
     {
         if (!selectionValues.assigned())
+        {
             return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPROPERTY,
                                        fmt::format(R"(Index selection property "{}" has no selection values assigned)", propName));
+        }
 
         const auto valuesList = selectionValues.asPtrOrNull<IList>(true);
         if (!valuesList.assigned())
+        {
             return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPROPERTY,
                                        fmt::format(R"(Index selection property "{}" values is not a list)", propName));
+        }
 
         for (SizeT i = 0; i < valuesList.getCount(); ++i)
         {
@@ -404,13 +400,17 @@ inline ErrCode selectionValueToKey(const PropertyPtr& prop, const BaseObjectPtr&
     else if (propType == PropertyType::SparseSelection)
     {
         if (!selectionValues.assigned())
+        {
             return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPROPERTY,
                                        fmt::format(R"(Sparse selection property "{}" has no selection values assigned)", propName));
+        }
 
         const auto valuesDict = selectionValues.asPtrOrNull<IDict>(true);
         if (!valuesDict.assigned())
+        {
             return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPROPERTY,
                                        fmt::format(R"(Sparse selection property "{}" values is not a dictionary)", propName));
+        }
 
         for (const auto& [key, value] : valuesDict)
         {
@@ -425,13 +425,9 @@ inline ErrCode selectionValueToKey(const PropertyPtr& prop, const BaseObjectPtr&
             return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Value not found in sparse selection values of property "{}")", propName));
     }
     else if (propType == PropertyType::Selection)
-    {
         indexOrKey = valuePtr;
-    }
     else
-    {
         return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPROPERTY, fmt::format(R"(Property "{}" is not an index selection or sparse selection property)", propName));
-    }
 
     return OPENDAQ_SUCCESS;
 }
@@ -451,16 +447,20 @@ inline ErrCode selectionKeyToValue(const PropertyPtr& prop, BaseObjectPtr& value
     {
         const auto valuesList = values.asPtrOrNull<IList>(true);
         if (!valuesList.assigned())
+        {
             return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPROPERTY,
                                        fmt::format(R"(Index selection property "{}" values is not a list)", propName));
+        }
         valuePtr = valuesList.getItemAt(valuePtr);
     }
     else if (propType == PropertyType::SparseSelection)
     {
         const auto valuesDict = values.asPtrOrNull<IDict>(true);
         if (!valuesDict.assigned())
+        {
             return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPROPERTY,
                                        fmt::format(R"(Sparse selection property "{}" values is not a dictionary)", propName));
+        }
         valuePtr = valuesDict.get(valuePtr);
     }
     else if (propType == PropertyType::Selection)
@@ -594,9 +594,7 @@ inline ErrCode checkAndCoerceWrite(const PropertyPtr& prop, ObjectPtr<IBaseObjec
 inline PropertyPtr checkForRefPropAndGetBoundProp(const PropertyPtr& prop, const PropertyObjectPtr& objPtr, bool* isReferenced = nullptr)
 {
     if (!prop.assigned())
-    {
         return prop;
-    }
 
     PropertyInternalPtr boundProp = prop.asPtr<IPropertyInternal>(true).cloneWithOwner(objPtr);
     auto refProp = boundProp.getReferencedPropertyNoLock();
