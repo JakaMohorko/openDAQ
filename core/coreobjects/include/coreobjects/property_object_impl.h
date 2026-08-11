@@ -1358,26 +1358,24 @@ void GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::configureCloned
     }
 }
 
+// The non-"2" lock accessors are the legacy generation, kept for derived classes still on std lock types;
+// each is defined in terms of its "2" counterpart or the shared local mutex.
 template <typename PropObjInterface, typename... Interfaces>
 std::unique_ptr<RecursiveConfigLockGuard> GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getRecursiveConfigLock()
 {
-    LockGuardPtr lockGuard;
-    checkErrorInfo(getRecursiveLockGuard(&lockGuard));
-    return std::make_unique<RecursiveConfigLockGuard>(lockGuard);
+    return std::make_unique<RecursiveConfigLockGuard>(getRecursiveConfigLock2());
 }
 
 template <typename PropObjInterface, typename... Interfaces>
 std::lock_guard<std::mutex> GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getAcquisitionLock()
 {
-    std::mutex* mutexPtr = getLocalMutex();
-    return std::lock_guard(*mutexPtr);
+    return std::lock_guard(*getLocalMutex());
 }
 
 template <typename PropObjInterface, typename ... Interfaces>
 std::unique_lock<std::mutex> GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getUniqueLock()
 {
-    std::mutex* mutexPtr = getLocalMutex();
-    return std::unique_lock(*mutexPtr);
+    return std::unique_lock(*getLocalMutex());
 }
 
 template <typename PropObjInterface, typename ... Interfaces>
