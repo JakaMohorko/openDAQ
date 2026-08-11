@@ -339,7 +339,9 @@ private:
     bool frozen;
 
     ErrCode setPropertyValueInternal(IString* name, IBaseObject* value, bool triggerEvent, bool protectedAccess, bool batch, bool isUpdating = false);
-    ErrCode writeBoundPropertyValue(const PropertyPtr& prop, const StringPtr& propName, BaseObjectPtr& valuePtr, bool triggerEvent, bool protectedAccess, bool isUpdating);
+    // The commit stage of a set once binding is done: access check, coercion/validation,
+    // object-value clone configuration, then the event-firing commit (or silent local write)
+    ErrCode checkAndSetPropertyValue(const PropertyPtr& prop, const StringPtr& propName, BaseObjectPtr& valuePtr, bool triggerEvent, bool protectedAccess, bool isUpdating);
     ErrCode setPropertySelectionValueInternal(IString* propertyName, IBaseObject* value, bool protectedAccess);
     ErrCode clearPropertyValueInternal(IString* name, bool protectedAccess, bool batch, bool isUpdating = false);
     ErrCode clearPropertyValuesInternal(bool protectedAccess);
@@ -408,9 +410,9 @@ private:
     // the resolved name under which its value is stored, and the bracket ("[N]") suffix of `name`, if any.
     // `bracket` points into the buffer of `name` and is only valid while `name` is alive.
     ErrCode getBoundPropertyInternal(const StringPtr& name, PropertyPtr& property, StringPtr& resolvedName, ConstCharPtr& bracket);
-    // Write-path lookup: resolves the property by plain name (no bracket parsing) and rewrites
-    // `propName` to the resolved property's name
-    ErrCode bindForWrite(StringPtr& propName, PropertyPtr& prop);
+    // Resolves a plain name (no bracket parsing, unlike `getBoundPropertyInternal`) to its bound
+    // property, following reference properties, and rewrites `propName` to the bound property's name
+    ErrCode bindProperty(StringPtr& propName, PropertyPtr& prop);
     // Reads the current value of a property bound via `getBoundPropertyInternal`: the in-progress updating
     // value, the locally stored value, or the property default. Does not trigger read events.
     ErrCode readPropertyValueInternal(const PropertyPtr& property, const StringPtr& resolvedName, ConstCharPtr bracket, bool retrieveUpdatingValue, BaseObjectPtr& value);
@@ -844,9 +846,9 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::setPropertyV
         }
 
         PropertyPtr prop;
-        OPENDAQ_RETURN_IF_FAILED(bindForWrite(propName, prop));
+        OPENDAQ_RETURN_IF_FAILED(bindProperty(propName, prop));
 
-        return writeBoundPropertyValue(prop, propName, valuePtr, triggerEvent, protectedAccess, isUpdating);
+        return checkAndSetPropertyValue(prop, propName, valuePtr, triggerEvent, protectedAccess, isUpdating);
     });
 
     OPENDAQ_RETURN_IF_FAILED(errCode, fmt::format(R"(Failed to set property value "{}")", propName));
@@ -854,7 +856,7 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::setPropertyV
 }
 
 template <typename PropObjInterface, typename... Interfaces>
-ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::writeBoundPropertyValue(const PropertyPtr& prop,
+ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::checkAndSetPropertyValue(const PropertyPtr& prop,
                                                                                             const StringPtr& propName,
                                                                                             BaseObjectPtr& valuePtr,
                                                                                             bool triggerEvent,
@@ -1078,7 +1080,7 @@ void GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::triggerCoreEven
 }
 
 template <class PropObjInterface, class... Interfaces>
-ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::bindForWrite(StringPtr& propName, PropertyPtr& prop)
+ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::bindProperty(StringPtr& propName, PropertyPtr& prop)
 {
     prop = getUnboundPropertyOrNull(propName);
     prop = details::checkForRefPropAndGetBoundProp(prop, objPtr);
@@ -1228,7 +1230,7 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::setPropertyS
 
         StringPtr boundName = propName;
         PropertyPtr prop;
-        OPENDAQ_RETURN_IF_FAILED(bindForWrite(boundName, prop));
+        OPENDAQ_RETURN_IF_FAILED(bindProperty(boundName, prop));
 
         BaseObjectPtr indexOrKey;
         OPENDAQ_RETURN_IF_FAILED(details::selectionValueToKey(prop, valuePtr, indexOrKey));
@@ -1242,7 +1244,7 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::setPropertyS
             return OPENDAQ_SUCCESS;
         }
 
-        return writeBoundPropertyValue(prop, boundName, indexOrKey, true, protectedAccess, false);
+        return checkAndSetPropertyValue(prop, boundName, indexOrKey, true, protectedAccess, false);
     });
     OPENDAQ_RETURN_IF_FAILED(errCode, "Failed to set property selection value");
     return errCode;
@@ -1492,7 +1494,7 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::clearPropert
         }
 
         PropertyPtr prop;
-        OPENDAQ_RETURN_IF_FAILED(bindForWrite(propName, prop));
+        OPENDAQ_RETURN_IF_FAILED(bindProperty(propName, prop));
 
         const auto propInternal = prop.asPtr<IPropertyInternal>();
 
