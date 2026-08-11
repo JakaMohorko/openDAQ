@@ -506,3 +506,31 @@ TEST_F(PropertyValueChangedEventsTest, AnyEventClone)
 
     ASSERT_EQ(callCount, 3);
 }
+
+TEST_F(PropertyValueChangedEventsTest, ThrowingWriteHandlerDoesNotPoisonProperty)
+{
+    const PropertyObjectPtr obj = PropertyObject();
+    obj.addProperty(IntProperty("int", 0));
+
+    bool shouldThrow = true;
+    obj.getOnAnyPropertyValueWrite() +=
+        [&shouldThrow](const PropertyObjectPtr&, const PropertyValueEventArgsPtr&)
+        {
+            if (shouldThrow)
+                throw GeneralErrorException("Handler failure");
+        };
+
+    ASSERT_ANY_THROW(obj.setPropertyValue("int", 1));
+
+    // A failed write must not leave a phantom value on the update stack: reads consult
+    // the stack first, so a leaked entry makes every read return the never-written value
+    ASSERT_EQ(obj.getPropertyValue("int"), 0);
+
+    // The same value must still be settable afterwards, and for real (visible to clones)
+    shouldThrow = false;
+    ASSERT_NO_THROW(obj.setPropertyValue("int", 1));
+    ASSERT_EQ(obj.getPropertyValue("int"), 1);
+
+    const PropertyObjectPtr objClone = obj.asPtr<IPropertyObjectInternal>().clone();
+    ASSERT_EQ(objClone.getPropertyValue("int"), 1);
+}

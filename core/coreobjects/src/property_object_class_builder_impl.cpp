@@ -2,6 +2,7 @@
 #include <coreobjects/property_internal_ptr.h>
 #include <coreobjects/property_object_class_builder_impl.h>
 #include <coreobjects/property_object_class_factory.h>
+#include <coreobjects/property_object_helpers.h>
 #include <coreobjects/property_ptr.h>
 #include <coretypes/type_manager_factory.h>
 #include <utility>
@@ -72,7 +73,7 @@ ErrCode PropertyObjectClassBuilderImpl::addProperty(IProperty* property)
     {
         auto p = PropertyPtr::Borrow(property);
 
-		if (hasDuplicateReferences(p))
+		if (details::hasDuplicateReferences(p, getProperties()))
 			return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDVALUE, "Reference property references a property that is already referenced by another.");
 
         if (props.hasKey(p.getName()))
@@ -149,32 +150,6 @@ ErrCode PropertyObjectClassBuilderImpl::getManager(ITypeManager** manager)
     else
         *manager = nullptr;
     return OPENDAQ_SUCCESS;
-}
-
-bool PropertyObjectClassBuilderImpl::hasDuplicateReferences(const PropertyPtr& prop) const
-{
-    if (const auto refEval = prop.asPtr<IPropertyInternal>().getReferencedPropertyUnresolved(); refEval.assigned())
-    {
-        const auto refNames = refEval.getPropertyReferences();
-        std::unordered_set<std::string> refNamesSet;
-        for (auto refName : refNames)
-            refNamesSet.insert(refName);
-        
-        for (auto ownProp : getProperties())
-        {
-            if (auto refEvalOwn = ownProp.asPtr<IPropertyInternal>().getReferencedPropertyUnresolved(); refEvalOwn.assigned())
-            {
-                auto refNamesOwn = refEvalOwn.getPropertyReferences();
-                for (auto refPropName : refNamesOwn)
-                {
-                    if (refNamesSet.count(refPropName))
-                        return true;
-                }
-            }
-        }
-    }
-
-    return false;
 }
 
 ListPtr<IProperty> PropertyObjectClassBuilderImpl::getProperties() const

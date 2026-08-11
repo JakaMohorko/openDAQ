@@ -2197,6 +2197,68 @@ TEST_F(PropertyObjectTest, BeginEndUpdateNestedFromPropertyValueWrite)
     ASSERT_EQ(propObj.getPropertyValue("Property4"), "valuefromprop2");
 }
 
+TEST_F(PropertyObjectTest, ChildPropertyClearInChildUpdateScope)
+{
+    const auto childTemplate = PropertyObject();
+    childTemplate.addProperty(StringProperty("Str", "-"));
+
+    auto propObj = PropertyObject();
+    propObj.addProperty(ObjectProperty("Child", childTemplate));
+    propObj.setPropertyValue("Child.Str", "Value");
+
+    const PropertyObjectPtr child = propObj.getPropertyValue("Child");
+
+    bool clearSeen = false;
+    child.getOnPropertyValueWrite("Str") += [&clearSeen](PropertyObjectPtr&, PropertyValueEventArgsPtr& args)
+    {
+        if (args.getPropertyEventType() == PropertyEventType::Clear)
+        {
+            clearSeen = true;
+            // A child-path clear during an update applies within the child's own update scope,
+            // matching the behavior of child-path sets
+            ASSERT_TRUE(args.getIsUpdating());
+        }
+    };
+
+    int childEndUpdateCount = 0;
+    child.getOnEndUpdate() += [&childEndUpdateCount](PropertyObjectPtr&, EndUpdateEventArgsPtr& args)
+    {
+        childEndUpdateCount++;
+        ASSERT_THAT(args.getProperties(), testing::ElementsAre("Str"));
+    };
+
+    propObj.beginUpdate();
+    propObj.clearPropertyValue("Child.Str");
+    ASSERT_EQ(propObj.getPropertyValue("Child.Str"), "Value");
+    propObj.endUpdate();
+
+    ASSERT_TRUE(clearSeen);
+    ASSERT_EQ(childEndUpdateCount, 1);
+    ASSERT_EQ(propObj.getPropertyValue("Child.Str"), "-");
+}
+
+TEST_F(PropertyObjectTest, ClearObjectPropertyWithReadOnlyChild)
+{
+    const auto childTemplate = PropertyObject();
+    childTemplate.addProperty(IntPropertyBuilder("RO", 1).setReadOnly(true).build());
+    childTemplate.addProperty(IntProperty("RW", 1));
+
+    auto propObj = PropertyObject();
+    propObj.addProperty(ObjectProperty("Child", childTemplate));
+
+    propObj.asPtr<IPropertyObjectProtected>().setProtectedPropertyValue("Child.RO", 5);
+    propObj.setPropertyValue("Child.RW", 5);
+
+    // Read-only children are skipped, matching clearPropertyValues on the nested object
+    ASSERT_NO_THROW(propObj.clearPropertyValue("Child"));
+    ASSERT_EQ(propObj.getPropertyValue("Child.RW"), 1);
+    ASSERT_EQ(propObj.getPropertyValue("Child.RO"), 5);
+
+    // The protected clear still resets read-only children
+    propObj.asPtr<IPropertyObjectProtected>().clearProtectedPropertyValue("Child");
+    ASSERT_EQ(propObj.getPropertyValue("Child.RO"), 1);
+}
+
 TEST_F(PropertyObjectTest, TestContainerClone)
 {
     const auto propObj = PropertyObject();

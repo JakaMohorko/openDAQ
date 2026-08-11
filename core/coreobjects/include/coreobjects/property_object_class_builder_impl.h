@@ -54,7 +54,6 @@ private:
     ListPtr<IString> customOrder;
     WeakRefPtr<ITypeManager> manager;
 
-    bool hasDuplicateReferences(const PropertyPtr& prop) const;
     ListPtr<IProperty> getProperties() const;
 };
 

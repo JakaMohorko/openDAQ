@@ -266,33 +266,6 @@ ErrCode PropertyObjectClassImpl::serializeProperties(ISerializer* serializer)
     return OPENDAQ_SUCCESS;
 }
 
-bool PropertyObjectClassImpl::hasDuplicateReferences(const PropertyPtr& prop)
-{
-    if (const auto refEval = prop.asPtr<IPropertyInternal>().getReferencedPropertyUnresolved(); refEval.assigned())
-    {
-        const auto refNames = refEval.getPropertyReferences();
-        std::unordered_set<std::string> refNamesSet;
-        for (auto refName : refNames)
-            refNamesSet.insert(refName);
-
-        const auto thisPtr = this->borrowPtr<PropertyObjectClassPtr>();
-        for (auto ownProp : thisPtr.getProperties(true))
-        {
-            if (auto refEvalOwn = ownProp.asPtr<IPropertyInternal>().getReferencedPropertyUnresolved(); refEvalOwn.assigned())
-            {
-                auto refNamesOwn = refEvalOwn.getPropertyReferences();
-                for (auto refPropName : refNamesOwn)
-                {
-                    if (refNamesSet.count(refPropName))
-                        return true;
-                }
-            }
-        }
-    }
-
-    return false;
-}
-
 ErrCode PropertyObjectClassImpl::serialize(ISerializer* serializer)
 {
     serializer->startTaggedObject(this);
