@@ -472,10 +472,330 @@ void MultiReaderImpl::settleStateLocked(const ReaderStateTransition& transition)
     }
 }
 
+// --- Stage helpers ------------------------------------------------------------------------------
+
+Fault MultiReaderImpl::faultWithCulprits(FaultType type,
+                                         const char* detailPrefix,
+                                         const char* detailSuffix,
+                                         std::vector<SizeT> culprits)
+{
+    auto detail = fmt::format("{} [{}]{}", detailPrefix, fmt::join(culprits, ", "), detailSuffix);
+    return {type, std::move(detail), std::move(culprits)};
+}
+
+void MultiReaderImpl::drainUnusedSlotsLocked()
+{
+    // Unused inputs stay observable. Their ports are inactive, so data is dropped at the
+    // connection and only events can arrive; draining them makes pending events visible in the
+    // per-input states and lets them fire the dataAvailable callback.
+    for (auto* slot : slots)
+    {
+        if (slot->isUsed())
+            continue;
+
+        slot->adoptQueuedPackets();
+        if (!slot->isConnected())
+        {
+            slot->publishAvailability(0, false);
+            setSlotEventLocked(slot, false);
+            continue;
+        }
+
+        slot->clearPacketPending();
+        auto& reader = slot->getQueueReader();
+        reader.drain();
+        publishSlotAvailabilityLocked(slot);
+        setSlotEventLocked(slot, reader.hasPendingEvents());
+    }
+}
+
+bool MultiReaderImpl::exposeBuriedEventsLocked(const std::vector<SizeT>& culprits)
+{
+    bool exposed = false;
+    for (const auto index : culprits)
+    {
+        if (index >= slots.size())
+            continue;
+
+        auto& reader = slots[index]->getQueueReader();
+        if (!reader.hasPendingEvents() && reader.hasQueuedEventPackets())
+        {
+            // The failing input has a corrective descriptor change queued behind data that was
+            // produced under the old, failing descriptor. That data can never be read while the
+            // input keeps failing, so drop it and let the event surface - the same semantics the
+            // setInputUsed(false -> true) recovery applies. Without this, an actively producing
+            // input could never recover: the fix would stay buried behind unreadable data forever.
+            reader.dropForInactive();
+            exposed |= reader.hasPendingEvents();
+        }
+    }
+    return exposed;
+}
+
+std::vector<SizeT> MultiReaderImpl::visibleLostSlotsLocked() const
+{
+    const auto lost = dataLossMonitor->lostSlots();
+    if (lost.empty())
+        return {};
+
+    // "Can no longer contribute" is < one aligned block, not empty: block-aligned reads floor to
+    // whole blocks, so a residual sub-block (possible whenever an input's divider != blockLcm) is
+    // unreadable and, with the producer dead, no event will ever end its segment to let it drain.
+    // Gating on == 0 would keep the reader serving forever without surfacing the loss.
+    const SizeT block = syncManager->hasModel() ? syncManager->getModel().blockLcm : 1;
+    std::vector<SizeT> drained;
+    for (const auto index : lost)
+    {
+        if (slots[index]->getQueueReader().getAvailableSamples() < block)
+            drained.push_back(index);
+    }
+    return drained;
+}
+
+// --- Establishing -------------------------------------------------------------------------------
+
+std::optional<Fault> MultiReaderImpl::evaluateInactiveLocked()
+{
+    // Inactive readers are not monitored for data loss
+    for (SizeT i = 0; i < slots.size(); ++i)
+        dataLossMonitor->setMonitored(i, false);
+
+    std::vector<QueueReader*> readers;
+    std::vector<SizeT> slotIndices;
+    collectUsedReadersInto(readers, slotIndices);
+
+    std::vector<SizeT> eventInputs;
+    for (SizeT position = 0; position < readers.size(); ++position)
+    {
+        const auto slotIndex = slotIndices[position];
+        // Clear-then-drain (see the connection stage): clear before adopting so a concurrent
+        // lock-free arrival re-arms the flag instead of being stranded.
+        slots[slotIndex]->clearPacketPending();
+        slots[slotIndex]->adoptQueuedPackets();
+        if (!slots[slotIndex]->isConnected())
+        {
+            setSlotEventLocked(slots[slotIndex], false);
+            continue;
+        }
+
+        const bool hasEvents = readers[position]->hasPendingEvents();
+        setSlotEventLocked(slots[slotIndex], hasEvents);
+        if (hasEvents)
+            eventInputs.push_back(slotIndex);
+    }
+
+    if (!eventInputs.empty())
+        return faultWithCulprits(FaultType::EventPending, "Events pending on inputs", "", std::move(eventInputs));
+    return std::nullopt;
+}
+
+/**
+ * @brief Everything that has to hold before any alignment question is worth asking, in precedence
+ * order: the used set and the main input, connections, the data-loss monitoring refresh, leading
+ * events, descriptors, per-input validity, deadlines, and the cross-input model.
+ *
+ * Each stage either settles here naming what blocks advancement, or hands a consumer-resolvable
+ * fault to Error. Falling off the end means rank 1 is complete and alignment can start.
+ */
 ReaderStateTransition MultiReaderImpl::evaluateEstablishingLocked()
 {
-    return {ReaderBehavior::Establishing, TransitionTrigger::Settled, std::nullopt};
+    const auto settled = [](std::optional<Fault> fault = std::nullopt) -> ReaderStateTransition
+    { return {ReaderBehavior::Establishing, TransitionTrigger::Settled, std::move(fault)}; };
+    const auto faulted = [](Fault fault) -> ReaderStateTransition
+    { return {ReaderBehavior::Error, TransitionTrigger::Faulted, std::move(fault)}; };
+
+    drainUnusedSlotsLocked();
+
+    if (!isActive)
+        return settled(evaluateInactiveLocked());
+
+    std::vector<QueueReader*> readers;
+    std::vector<SizeT> slotIndices;
+    collectUsedReadersInto(readers, slotIndices);
+
+    if (readers.empty())
+    {
+        invalidateSynchronizationLocked();
+        return settled(Fault{FaultType::Unconnected, "No used inputs", {}});
+    }
+
+    // The explicitly selected main input is never silently replaced
+    SizeT mainPosition = 0;
+    if (mainInputId.assigned())
+    {
+        const auto mainSlot = mainSlotIndexLocked();
+        const auto position = std::find(slotIndices.begin(), slotIndices.end(), mainSlot);
+        if (mainSlot == notFound || position == slotIndices.end())
+        {
+            invalidateModelLocked();
+            return settled(Fault{FaultType::Unconnected,
+                                 "The selected main input is not among the used inputs",
+                                 mainSlot == notFound ? std::vector<SizeT>{} : std::vector<SizeT>{mainSlot}});
+        }
+        mainPosition = static_cast<SizeT>(position - slotIndices.begin());
+    }
+
+    // Adopt what the producers enqueued. Connectivity itself is NOT polled here: every
+    // connect/disconnect/reconnect reaches the slot as a port callback, and
+    // Input::replayMissedPortCallbacks replays the two callbacks the port skips for a port that was
+    // already connected when the listener was installed. So isConnected() is authoritative; only
+    // the queue contents need collecting, because the lock-free producer path cannot hand them over.
+    {
+        std::vector<SizeT> unconnected;
+        for (const auto index : slotIndices)
+        {
+            // Clear the arrival flag BEFORE draining (clear-then-drain). The producer path is
+            // lock-free, so a packet enqueued after this clear re-arms the flag and is caught by the
+            // next pass; clearing AFTER the drain would instead wipe the flag of a packet enqueued
+            // in the drain->clear window without ever adopting it, stranding it on the connection
+            // (the availability-undercount race).
+            slots[index]->clearPacketPending();
+            slots[index]->adoptQueuedPackets();
+            if (!slots[index]->isConnected())
+                unconnected.push_back(index);
+        }
+        if (!unconnected.empty())
+        {
+            // Connections gate events: while a used input has no signal no event is returnable, so
+            // the callback must not fire on the events already queued on the connected inputs
+            for (const auto index : slotIndices)
+                setSlotEventLocked(slots[index], false);
+
+            invalidateModelLocked();
+            return settled(faultWithCulprits(FaultType::Unconnected, "Inputs", " have no signal connected", std::move(unconnected)));
+        }
+    }
+
+    // Data-loss monitoring covers exactly the used, connected inputs of an active reader;
+    // everything else is unmonitored and disarmed
+    for (SizeT i = 0; i < slots.size(); ++i)
+        dataLossMonitor->setMonitored(i, slots[i]->isUsed() && slots[i]->isConnected());
+
+    // Leading events preempt everything below them
+    {
+        std::vector<SizeT> eventInputs;
+        bool handshakeInFlight = false;
+        for (SizeT position = 0; position < readers.size(); ++position)
+        {
+            // packetPending was already cleared before the drain above (clear-then-drain); clearing
+            // again here would re-open the drain->clear race, so it is intentionally not cleared.
+            const bool hasEvents = readers[position]->hasPendingEvents();
+            if (hasEvents)
+                eventInputs.push_back(slotIndices[position]);
+            setSlotEventLocked(slots[slotIndices[position]], hasEvents);
+
+            // A connected input with neither descriptors nor events is still completing its connect
+            // handshake: the signal's initial descriptor event has not been enqueued yet
+            // (connections are constructed in steps and evaluations can run in between)
+            if (!hasEvents && !readers[position]->getValueDescriptor().assigned() &&
+                !readers[position]->getDomainDescriptor().assigned())
+            {
+                handshakeInFlight = true;
+            }
+        }
+
+        // While a connect handshake is in flight the reader is not yet event-ready: the in-flight
+        // input's initial descriptor event arrives momentarily and re-triggers evaluation, so both
+        // the dataAvailable callback and blocked reads see every input's initial event at once. The
+        // evaluation falls through to the descriptor stage, which truthfully names the handshaking
+        // input as missing its descriptors.
+        if (handshakeInFlight)
+        {
+            for (const auto index : slotIndices)
+                setSlotEventLocked(slots[index], false);
+        }
+        else if (!eventInputs.empty())
+        {
+            // Descriptors apply when leading events are consumed, so the cross-input model is built
+            // opportunistically - accessors like getCommonSampleRate and getTickResolution work
+            // right after construction, like they always have
+            if (!syncManager->hasModel())
+            {
+                bool modelBuildable = true;
+                for (auto* reader : readers)
+                {
+                    if (!reader->getValueDescriptor().assigned() || !reader->getDomainDescriptor().assigned() || !reader->isValid())
+                        modelBuildable = false;
+                }
+                if (modelBuildable)
+                    syncManager->buildCommonModel(readers, slotIndices, mainPosition);
+            }
+            return settled(faultWithCulprits(FaultType::EventPending, "Events pending on inputs", "", std::move(eventInputs)));
+        }
+    }
+
+    // Descriptors
+    {
+        std::vector<SizeT> missing;
+        for (SizeT position = 0; position < readers.size(); ++position)
+        {
+            if (!readers[position]->getValueDescriptor().assigned() || !readers[position]->getDomainDescriptor().assigned())
+                missing.push_back(slotIndices[position]);
+        }
+        if (!missing.empty())
+            return settled(faultWithCulprits(FaultType::MissingDescriptors, "Inputs", " have no descriptors yet", std::move(missing)));
+    }
+
+    // From here on the main-input descriptors are current. Deliberately above every stage that
+    // invalidates the model: the refresh may itself drop the cached main-descriptor packet.
+    refreshMainInputDescriptorsLocked();
+
+    // Per-input validity
+    {
+        std::vector<SizeT> invalidInputs;
+        for (SizeT position = 0; position < readers.size(); ++position)
+        {
+            if (!readers[position]->isValid())
+                invalidInputs.push_back(slotIndices[position]);
+        }
+        if (!invalidInputs.empty())
+        {
+            invalidateModelLocked();
+            if (exposeBuriedEventsLocked(invalidInputs))
+            {
+                for (const auto index : invalidInputs)
+                    setSlotEventLocked(slots[index], slots[index]->getQueueReader().hasPendingEvents());
+                return settled(faultWithCulprits(FaultType::EventPending, "Events pending on inputs", "", std::move(invalidInputs)));
+            }
+            return faulted(faultWithCulprits(
+                FaultType::Incompatible, "Inputs", " are not readable with the current descriptors", std::move(invalidInputs)));
+        }
+    }
+
+    // Deadlines. In-band: an input's buffered pre-loss data stays readable (the producer went
+    // silent AFTER producing it), so the loss only ends the establishment once the affected input
+    // can no longer contribute a whole block.
+    if (auto lost = visibleLostSlotsLocked(); !lost.empty())
+    {
+        invalidateSynchronizationLocked();
+        return faulted(faultWithCulprits(FaultType::DataLost, "Inputs", " missed their packet deadline", std::move(lost)));
+    }
+
+    // The cross-input model, built only when absent. buildCommonModel assigns the model wholesale,
+    // which clears commonStart - so rebuilding an existing one would destroy a synchronization the
+    // reader is entitled to keep. Absent is the honest trigger: everything that can move the model
+    // (descriptors, the used set, configuration) arrives as an event or a trigger that invalidates
+    // it first, and that is also what lets Synchronizing trust the model it is handed.
+    if (!syncManager->hasModel())
+    {
+        auto setup = syncManager->buildCommonModel(readers, slotIndices, mainPosition);
+        if (!setup.ok())
+        {
+            readCoordinator->invalidate();
+            if (exposeBuriedEventsLocked(setup.affectedInputs))
+            {
+                for (const auto index : setup.affectedInputs)
+                    setSlotEventLocked(slots[index], slots[index]->getQueueReader().hasPendingEvents());
+                return settled(
+                    faultWithCulprits(FaultType::EventPending, "Events pending on inputs", "", std::move(setup.affectedInputs)));
+            }
+            return faulted(Fault{FaultType::Incompatible, std::move(setup.message), std::move(setup.affectedInputs)});
+        }
+    }
+
+    return {ReaderBehavior::Synchronizing, TransitionTrigger::InputsReady, std::nullopt};
 }
+
 ReaderStateTransition MultiReaderImpl::evaluateSynchronizingLocked()
 {
     return {ReaderBehavior::Synchronizing, TransitionTrigger::Settled, std::nullopt};
@@ -741,6 +1061,7 @@ void MultiReaderImpl::slotConnected(SizeT slotIndex)
         {
             slots[slotIndex]->rebindConnection();
             settleLocked([this, slotIndex](StateContext& ctx) { return currentState->slotConnected(ctx, slotIndex); });
+            settleStateLocked({ReaderBehavior::Establishing, TransitionTrigger::ConnectionChanged, std::nullopt});
         }
     }
     notifyCondition.notify_all();

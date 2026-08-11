@@ -202,6 +202,29 @@ private:
     ReaderStateTransition evaluateSynchronizingLocked();
     ReaderStateTransition evaluateReadyLocked();
     ReaderStateTransition evaluateErrorLocked();
+
+    /// The deactivated arm of Establishing. Inactivity suspends the data flow only: descriptor and
+    /// gap events are enqueued regardless of the active flag and must still surface, so this arm
+    /// adopts and reports events but runs no validity or alignment stage. Its whole vocabulary is
+    /// therefore {no fault, EventPending}; ReadStatus::Inactive comes from isActive, not from here.
+    std::optional<Fault> evaluateInactiveLocked();
+
+    // --- Stage helpers (state mutex held) ---
+    /// Adopts unused inputs' queued event packets so they surface in the per-input states and fire
+    /// the callback gate - the recovery signal a consumer answers with setInputUsed(id, true).
+    void drainUnusedSlotsLocked();
+    /// Failure recovery: a failed input with a corrective descriptor change buried behind
+    /// unreadable stale data drops that data (dropForInactive semantics) so the event can surface.
+    /// @return true when any event became pending.
+    bool exposeBuriedEventsLocked(const std::vector<SizeT>& culprits);
+    /// Slots whose packet deadline has passed AND which can no longer contribute a whole aligned
+    /// block. Loss is in-band: buffered pre-loss data stays readable, so a crossed deadline only
+    /// becomes DataLost once the input has less than one block left. Shared by every state that
+    /// has to decide whether a deadline ends what it is doing.
+    std::vector<SizeT> visibleLostSlotsLocked() const;
+    /// Formats "<prefix> [i, j, ...]<suffix>" from the culprits before moving them into the fault -
+    /// never both format and move in one argument list (evaluation order is unspecified).
+    static Fault faultWithCulprits(FaultType type, const char* detailPrefix, const char* detailSuffix, std::vector<SizeT> culprits);
     // --- NEW STATE MACHINE END ----
     
     // --- State machine (state mutex held) ---
