@@ -191,6 +191,19 @@ private:
     void replaySlotCallbacks(SizeT firstSlot = 0);
     void applyConfigToSyncManager();
 
+    // --- NEW STATE MACHINE ----
+    void onExitLocked(ReaderBehavior state);
+    void onEnterLocked(ReaderBehavior state);
+    void applyTransitionLocked(const ReaderStateTransition& transition);
+    ReaderStateTransition nextStateLocked();
+    void settleStateLocked(const ReaderStateTransition& transition);
+
+    ReaderStateTransition evaluateEstablishingLocked();
+    ReaderStateTransition evaluateSynchronizingLocked();
+    ReaderStateTransition evaluateReadyLocked();
+    ReaderStateTransition evaluateErrorLocked();
+    // --- NEW STATE MACHINE END ----
+    
     // --- State machine (state mutex held) ---
     /// Full state evaluation - the transition handler run by the paths that change state
     /// (connect/disconnect, used/active changes, topology, events, deadlines). Builds the
@@ -300,6 +313,12 @@ private:
     ReaderState state{ReaderState::WaitingForConnections};
     std::string stateMessage;
     std::vector<SizeT> stateAffectedInputs;
+
+    // --- New state ---
+    ReaderBehavior currentBehavior{ReaderBehavior::Establishing};
+    TransitionTrigger lastTrigger{TransitionTrigger::Created};
+    std::optional<Fault> currentFault{std::nullopt};
+    // --- New state END ---
 
     std::vector<ObjectPtr<IInputPortNotifications>> slotObjects;  // strong refs (ports hold weak listener refs)
     std::vector<multi_reader::Input*> slots;                                // parallel implementation pointers

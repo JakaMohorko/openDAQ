@@ -413,6 +413,82 @@ void MultiReaderImpl::applyDataLossTimeoutLocked()
     dataLossMonitor->setTimeout(std::chrono::duration_cast<std::chrono::nanoseconds>(duration));
 }
 
+void MultiReaderImpl::onExitLocked(ReaderBehavior state){}
+void MultiReaderImpl::onEnterLocked(ReaderBehavior state){}
+
+void MultiReaderImpl::applyTransitionLocked(const ReaderStateTransition& transition)
+{
+    onExitLocked(currentBehavior);
+
+    currentBehavior = transition.target;
+    lastTrigger = transition.trigger;
+    currentFault = transition.fault;
+
+    onEnterLocked(transition.target);
+}
+
+ReaderStateTransition MultiReaderImpl::nextStateLocked()
+{
+    switch (currentBehavior)
+    {
+    case ReaderBehavior::Establishing:
+        return evaluateEstablishingLocked();
+    case ReaderBehavior::Synchronizing:
+        return evaluateSynchronizingLocked();
+    case ReaderBehavior::Ready:
+        return evaluateReadyLocked();
+    case ReaderBehavior::Error:
+        return evaluateErrorLocked();
+    }
+    return {ReaderBehavior::Error, TransitionTrigger::Settled, std::nullopt};
+}
+
+void MultiReaderImpl::settleStateLocked(const ReaderStateTransition& transition)
+{
+    ReaderStateTransition nextTransition = transition;
+    uint8_t iterations = 0;
+    constexpr uint8_t MAX_ITERATIONS = 8;
+
+    while (nextTransition.trigger != TransitionTrigger::Settled)
+    {
+        ++iterations;
+        if (iterations > MAX_ITERATIONS)
+        {
+            // Something must have went wrong for the number of iterations to have been exceeded.
+            nextTransition = {ReaderBehavior::Error, TransitionTrigger::Settled, std::nullopt};
+            applyTransitionLocked(nextTransition);
+            break;
+        }
+
+        applyTransitionLocked(nextTransition);
+        nextTransition = nextStateLocked();
+    }
+
+    // Override the fault with what we found in staying case, unless the previous
+    // fault was specified and needed user interaction (couldn't have been cleared by this point)
+    if (currentBehavior != ReaderBehavior::Error)
+    {
+        currentFault = nextTransition.fault;
+    }
+}
+
+ReaderStateTransition MultiReaderImpl::evaluateEstablishingLocked()
+{
+    return {ReaderBehavior::Establishing, TransitionTrigger::Settled, std::nullopt};
+}
+ReaderStateTransition MultiReaderImpl::evaluateSynchronizingLocked()
+{
+    return {ReaderBehavior::Synchronizing, TransitionTrigger::Settled, std::nullopt};
+}
+ReaderStateTransition MultiReaderImpl::evaluateReadyLocked()
+{
+    return {ReaderBehavior::Ready, TransitionTrigger::Settled, std::nullopt};
+}
+ReaderStateTransition MultiReaderImpl::evaluateErrorLocked()
+{
+    return {ReaderBehavior::Error, TransitionTrigger::Settled, std::nullopt};
+}
+
 // --- State machine ----------------------------------------------------------------------------
 
 void MultiReaderImpl::setStateLocked(ReaderState newState, std::string message, std::vector<SizeT> affected)
