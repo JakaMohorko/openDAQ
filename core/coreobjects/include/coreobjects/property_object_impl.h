@@ -417,6 +417,12 @@ private:
     // Convenience overload: binds the property by name, then reads its value
     ErrCode readPropertyValueInternal(const StringPtr& name, bool retrieveUpdatingValue, PropertyPtr& property, BaseObjectPtr& value);
     ErrCode getPropertiesInternal(Bool includeInvisible, Bool bind, IList** list, Bool includeCoreProperties = false);
+    // Collects class properties and local properties, unbound and unordered
+    std::vector<PropertyPtr> collectAllProperties(Bool includeCoreProperties) const;
+    // Binds the collected properties to this object and drops invisible/referenced ones unless requested
+    ErrCode bindAndFilterProperties(const std::vector<PropertyPtr>& allProperties, Bool includeInvisible, Bool bind, PropertyOrderedMap& lookup);
+    // Consumes `lookup`: properties named in customOrder first, then the rest in default order
+    ListPtr<IProperty> applyCustomPropertyOrder(PropertyOrderedMap& lookup) const;
 
     // Gets the property value, if stored in local value dictionary (propValues)
     // Parses brackets, if the property is a list
@@ -1869,6 +1875,18 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getPropertie
     if (!includeInvisible && !bind)
         return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPARAMETER);
 
+    const std::vector<PropertyPtr> allProperties = collectAllProperties(includeCoreProperties);
+
+    PropertyOrderedMap lookup;
+    OPENDAQ_RETURN_IF_FAILED(bindAndFilterProperties(allProperties, includeInvisible, bind, lookup));
+
+    *list = applyCustomPropertyOrder(lookup).detach();
+    return OPENDAQ_SUCCESS;
+}
+
+template <class PropObjInterface, class... Interfaces>
+std::vector<PropertyPtr> GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::collectAllProperties(Bool includeCoreProperties) const
+{
     std::vector<PropertyPtr> allProperties;
     if (objectClass.assigned())
     {
@@ -1888,8 +1906,16 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getPropertie
             allProperties.push_back(prop);
     }
 
-    PropertyOrderedMap lookup;
-    for (auto& prop : allProperties)
+    return allProperties;
+}
+
+template <class PropObjInterface, class... Interfaces>
+ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::bindAndFilterProperties(const std::vector<PropertyPtr>& allProperties,
+                                                                                            Bool includeInvisible,
+                                                                                            Bool bind,
+                                                                                            PropertyOrderedMap& lookup)
+{
+    for (const auto& prop : allProperties)
     {
         if (!bind)
         {
@@ -1930,9 +1956,14 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getPropertie
         }
     }
 
+    return OPENDAQ_SUCCESS;
+}
+
+template <class PropObjInterface, class... Interfaces>
+ListPtr<IProperty> GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::applyCustomPropertyOrder(PropertyOrderedMap& lookup) const
+{
     auto properties = List<IProperty>();
 
-    // Add properties with explicit order first, then the rest in default order
     for (const auto& propName : customOrder)
     {
         const auto iter = lookup.find(propName);
@@ -1948,8 +1979,7 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getPropertie
         properties.unsafePushBack(prop.second);
     }
 
-    *list = properties.detach();
-    return OPENDAQ_SUCCESS;
+    return properties;
 }
 
 template <class PropObjInterface, class... Interfaces>
