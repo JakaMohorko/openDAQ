@@ -339,6 +339,7 @@ private:
     bool frozen;
 
     ErrCode setPropertyValueInternal(IString* name, IBaseObject* value, bool triggerEvent, bool protectedAccess, bool batch, bool isUpdating = false);
+    ErrCode writeBoundPropertyValue(const PropertyPtr& prop, const StringPtr& propName, BaseObjectPtr& valuePtr, bool triggerEvent, bool protectedAccess, bool isUpdating);
     ErrCode setPropertySelectionValueInternal(IString* propertyName, IBaseObject* value, bool protectedAccess);
     ErrCode clearPropertyValueInternal(IString* name, bool protectedAccess, bool batch, bool isUpdating = false);
     ErrCode clearPropertyValuesInternal(bool protectedAccess);
@@ -735,6 +736,7 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::fireProperty
         if (!emitter.hasListeners())
             return;
 
+        // Does it make sense to only protect the write events?
         if (!valueWrite)
         {
             emitter(objPtr, args);
@@ -851,51 +853,62 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::setPropertyV
         PropertyPtr prop;
         OPENDAQ_RETURN_IF_FAILED(bindForWrite(propName, prop));
 
-        const auto propInternal = prop.asPtr<IPropertyInternal>();
-        // TODO: If function type, check if return value is correct type.
-        if (!protectedAccess)
-        {
-            if (propInternal.getReadOnlyNoLock() || propInternal.getValueTypeNoLock() == ctObject)
-            {
-                return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_ACCESSDENIED, fmt::format(R"(Property "{}" is read only)", propName));
-            }
-        }
-
-        OPENDAQ_RETURN_IF_FAILED(details::checkAndCoerceWrite(prop, valuePtr, objPtr));
-
-        if (propInternal.getValueTypeNoLock() == ctObject)
-            configureClonedObj(propName, valuePtr);
-
-        if (triggerEvent)
-        {
-            BaseObjectPtr newValue = valuePtr;
-            ErrCode err = callPropertyValueWrite(prop, newValue, PropertyEventType::Update, isUpdating);
-            OPENDAQ_RETURN_IF_FAILED(err);
-
-            if (err == OPENDAQ_IGNORED)
-                return OPENDAQ_SUCCESS;
-
-            if (valuePtr == newValue)
-            {
-                writeLocalValue(propName, newValue);
-                setOwnerToPropertyValue(newValue);
-            }
-
-            if (!isUpdating)
-                triggerCoreEventInternal(CoreEventArgsPropertyValueChanged(objPtr, propName, newValue, path));
-        }
-        else
-        {
-            if (!writeLocalValue(propName, valuePtr))
-                return OPENDAQ_IGNORED;
-            setOwnerToPropertyValue(valuePtr);
-        }
-
-        return OPENDAQ_SUCCESS;
+        return writeBoundPropertyValue(prop, propName, valuePtr, triggerEvent, protectedAccess, isUpdating);
     });
 
     OPENDAQ_RETURN_IF_FAILED(errCode, fmt::format(R"(Failed to set property value "{}")", propName));
     return errCode;
+}
+
+template <typename PropObjInterface, typename... Interfaces>
+ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::writeBoundPropertyValue(const PropertyPtr& prop,
+                                                                                            const StringPtr& propName,
+                                                                                            BaseObjectPtr& valuePtr,
+                                                                                            bool triggerEvent,
+                                                                                            bool protectedAccess,
+                                                                                            bool isUpdating)
+{
+    const auto propInternal = prop.asPtr<IPropertyInternal>();
+    // TODO: If function type, check if return value is correct type.
+    if (!protectedAccess)
+    {
+        if (propInternal.getReadOnlyNoLock() || propInternal.getValueTypeNoLock() == ctObject)
+        {
+            return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_ACCESSDENIED, fmt::format(R"(Property "{}" is read only)", propName));
+        }
+    }
+
+    OPENDAQ_RETURN_IF_FAILED(details::checkAndCoerceWrite(prop, valuePtr, objPtr));
+
+    if (propInternal.getValueTypeNoLock() == ctObject)
+        configureClonedObj(propName, valuePtr);
+
+    if (triggerEvent)
+    {
+        BaseObjectPtr newValue = valuePtr;
+        ErrCode err = callPropertyValueWrite(prop, newValue, PropertyEventType::Update, isUpdating);
+        OPENDAQ_RETURN_IF_FAILED(err);
+
+        if (err == OPENDAQ_IGNORED)
+            return OPENDAQ_SUCCESS;
+
+        if (valuePtr == newValue)
+        {
+            writeLocalValue(propName, newValue);
+            setOwnerToPropertyValue(newValue);
+        }
+
+        if (!isUpdating)
+            triggerCoreEventInternal(CoreEventArgsPropertyValueChanged(objPtr, propName, newValue, path));
+    }
+    else
+    {
+        if (!writeLocalValue(propName, valuePtr))
+            return OPENDAQ_IGNORED;
+        setOwnerToPropertyValue(valuePtr);
+    }
+
+    return OPENDAQ_SUCCESS;
 }
 
 
@@ -1241,7 +1254,16 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::setPropertyS
         BaseObjectPtr indexOrKey;
         OPENDAQ_RETURN_IF_FAILED(details::selectionValueToKey(prop, valuePtr, indexOrKey));
 
-        return setPropertyValueInternal(propertyName, indexOrKey, true, protectedAccess, updateCount > 0);
+        if (frozen)
+            return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_FROZEN);
+
+        if (updateCount > 0)
+        {
+            batchedUpdates.emplace_back(std::make_pair(propName, UpdatingAction{true, protectedAccess, indexOrKey}));
+            return OPENDAQ_SUCCESS;
+        }
+
+        return writeBoundPropertyValue(prop, boundName, indexOrKey, true, protectedAccess, false);
     });
     OPENDAQ_RETURN_IF_FAILED(errCode, "Failed to set property selection value");
     return errCode;
@@ -1616,14 +1638,14 @@ ErrCode GenericPropertyObjectImpl<PropObjInterface, Interfaces...>::getPropertyS
 
         if (details::isChildProperty(propName))
         {
-            const ErrCode errCode = getProperty(propName, &prop);
-            OPENDAQ_RETURN_IF_FAILED(errCode, OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Selection property "{}" not found)", propName));
+            const ErrCode err = getProperty(propName, &prop);
+            OPENDAQ_RETURN_IF_FAILED(err, OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Selection property "{}" not found)", propName));
             valuePtr = prop.getValue();
         }
         else
         {
-            const ErrCode errCode = readPropertyValueInternal(propName, retrieveUpdatingValue, prop, valuePtr);
-            OPENDAQ_RETURN_IF_FAILED(errCode, OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Selection property "{}" not found)", propName));
+            const ErrCode err = readPropertyValueInternal(propName, retrieveUpdatingValue, prop, valuePtr);
+            OPENDAQ_RETURN_IF_FAILED(err, OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Selection property "{}" not found)", propName));
             if (valuePtr.assigned())
                 valuePtr = callPropertyValueRead(prop, valuePtr);
         }
