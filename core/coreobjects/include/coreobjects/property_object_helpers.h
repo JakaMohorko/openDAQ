@@ -33,6 +33,7 @@
 #include <cstring>
 #include <limits>
 #include <stdexcept>
+#include <unordered_set>
 
 BEGIN_NAMESPACE_OPENDAQ
 
@@ -628,6 +629,32 @@ inline bool hasDuplicateReferences(const PropertyPtr& prop, const PropertyObject
     {
         if (objPtr.hasProperty(refPropName) && objPtr.getProperty(refPropName).getIsReferenced())
             return true;
+    }
+
+    return false;
+}
+
+// Checks whether the property's reference targets overlap with those of any property in the list
+inline bool hasDuplicateReferences(const PropertyPtr& prop, const ListPtr<IProperty>& properties)
+{
+    const auto refEval = prop.asPtr<IPropertyInternal>().getReferencedPropertyUnresolved();
+    if (!refEval.assigned())
+        return false;
+
+    std::unordered_set<std::string> refNamesSet;
+    for (const auto& refName : refEval.getPropertyReferences())
+        refNamesSet.insert(refName);
+
+    for (const auto& ownProp : properties)
+    {
+        if (const auto refEvalOwn = ownProp.asPtr<IPropertyInternal>().getReferencedPropertyUnresolved(); refEvalOwn.assigned())
+        {
+            for (const auto& refPropName : refEvalOwn.getPropertyReferences())
+            {
+                if (refNamesSet.count(refPropName))
+                    return true;
+            }
+        }
     }
 
     return false;

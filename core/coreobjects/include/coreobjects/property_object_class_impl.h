@@ -68,8 +68,6 @@ private:
     ErrCode getInheritedProperties(ListPtr<IProperty>& properties) const;
     
     ErrCode serializeProperties(ISerializer* serializer);
-
-    bool hasDuplicateReferences(const PropertyPtr& prop);
 };
 
 
