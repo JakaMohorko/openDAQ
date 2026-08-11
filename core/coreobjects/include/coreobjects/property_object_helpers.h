@@ -23,16 +23,16 @@
 #include <coreobjects/property_internal_ptr.h>
 #include <coretypes/coretypes.h>
 #include <coretypes/cloneable.h>
-#include <stdexcept>
 #include <coretypes/stringobject_factory.h>
 #include <coretypes/enumeration_factory.h>
 #include <coretypes/inspectable_ptr.h>
 #include <coretypes/struct_ptr.h>
 #include <coretypes/validation.h>
 #include <cmath>
-#include <cstring>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
+#include <stdexcept>
 
 BEGIN_NAMESPACE_OPENDAQ
 
@@ -43,7 +43,7 @@ namespace details
 struct PropertyNameInfo
 {
     StringPtr name;
-    Int index{};
+    Int index = -1;  // -1 when the queried name carries no "[index]" suffix
 };
 
 #if defined(__GNUC__) && __GNUC__ >= 12
@@ -55,21 +55,7 @@ struct PropertyNameInfo
 
 inline bool isChildProperty(const StringPtr& name)
 {
-    auto chr = strchr(name.getCharPtr(), '.');
-    return chr != nullptr;
-}
-
-inline void splitOnFirstDot(const StringPtr& input, StringPtr& head, StringPtr& tail)
-{
-    const std::string inputStr = input;
-    head = input;
-
-    size_t pos = inputStr.find('.');
-    if (pos == std::string::npos)
-        return;
-
-    head = inputStr.substr(0, pos);
-    tail = inputStr.substr(pos + 1);
+    return strchr(name.getCharPtr(), '.') != nullptr;
 }
 
 inline void splitOnLastDot(const StringPtr& input, StringPtr& head, StringPtr& tail)
@@ -104,26 +90,6 @@ inline int parseIndex(char const* lBracket)
     DAQ_THROW_EXCEPTION(InvalidParameterException, "No matching ] found.");
 }
 
-inline PropertyNameInfo getPropertyNameInfo(const StringPtr& name)
-{
-    PropertyNameInfo nameInfo;
-
-    auto propNameData = name.getCharPtr();
-    auto first = strchr(propNameData, '[');
-    if (first != nullptr)
-    {
-        nameInfo.index = parseIndex(first);
-        nameInfo.name = String(propNameData, first - propNameData);
-    }
-    else
-    {
-        nameInfo.index = -1;
-        nameInfo.name = name;
-    }
-
-    return nameInfo;
-}
-
 // Gets the property name without the index as the `propName` output parameter
 // Returns the index in the form of [index], eg. [0]
 inline ConstCharPtr getPropNameWithoutIndex(const StringPtr& name, StringPtr& propName)
@@ -140,6 +106,15 @@ inline ConstCharPtr getPropNameWithoutIndex(const StringPtr& name, StringPtr& pr
         propName = String(propNameData, first - propNameData);
     }
     return first;
+}
+
+inline PropertyNameInfo getPropertyNameInfo(const StringPtr& name)
+{
+    PropertyNameInfo nameInfo;
+    const ConstCharPtr bracket = getPropNameWithoutIndex(name, nameInfo.name);
+    if (bracket != nullptr)
+        nameInfo.index = parseIndex(bracket);
+    return nameInfo;
 }
 
 #if defined(__GNUC__) && __GNUC__ >= 12
@@ -248,52 +223,51 @@ inline ErrCode checkEnumerationType(const PropertyPtr& prop, const BaseObjectPtr
 inline ErrCode checkSelectionValues(const PropertyPtr& prop, const BaseObjectPtr& value)
 {
     const auto selectionValues = prop.asPtr<IPropertyInternal>(true).getSelectionValuesNoLock();
-    if (selectionValues.assigned())
+    if (!selectionValues.assigned())
+        return OPENDAQ_SUCCESS;
+
+    const PropertyType propType = prop.getPropertyType();
+    if (propType == PropertyType::IndexSelection)
     {
-        const PropertyType propType = prop.getPropertyType();
-        if (propType == PropertyType::IndexSelection)
+        if (const auto list = selectionValues.asPtrOrNull<IList>(true); list.assigned())
         {
-            if (const auto list = selectionValues.asPtrOrNull<IList>(true); list.assigned())
-            {
-                const SizeT key = value;
-                if (key < list.getCount())
-                    return OPENDAQ_SUCCESS;
-            }
-        }
-        else if (propType == PropertyType::Selection)
-        {
-            if (const auto list = selectionValues.asPtrOrNull<IList>(true); list.assigned())
-            {
-                if (prop.getValueType() == ctFloat)
-                {
-                    const double valueDouble = value;
-                    const double preScale =  std::max({1.0, std::abs(valueDouble)});
-                    for (const double& item : list)
-                    {
-                        const double scale = std::max({preScale, std::abs(item)});
-                        if (std::abs(item - valueDouble) <= std::numeric_limits<double>::epsilon() * scale)
-                            return OPENDAQ_SUCCESS;
-                    }
-                }
-                else
-                {
-                    for (const auto& item : list)
-                    {
-                        if (item == value)
-                            return OPENDAQ_SUCCESS;
-                    }
-                }
-            }
-        }
-        else if (propType == PropertyType::SparseSelection)
-        {
-            if (const auto dict = selectionValues.asPtrOrNull<IDict>(true); dict.assigned() && dict.hasKey(value))
+            const SizeT key = value;
+            if (key < list.getCount())
                 return OPENDAQ_SUCCESS;
         }
-        return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Value is not a key/index of selection values for property "{}")", prop.getName()));
+    }
+    else if (propType == PropertyType::Selection)
+    {
+        if (const auto list = selectionValues.asPtrOrNull<IList>(true); list.assigned())
+        {
+            if (prop.getValueType() == ctFloat)
+            {
+                const double valueDouble = value;
+                const double preScale = std::max(1.0, std::abs(valueDouble));
+                for (const double& item : list)
+                {
+                    const double scale = std::max(preScale, std::abs(item));
+                    if (std::abs(item - valueDouble) <= std::numeric_limits<double>::epsilon() * scale)
+                        return OPENDAQ_SUCCESS;
+                }
+            }
+            else
+            {
+                for (const auto& item : list)
+                {
+                    if (item == value)
+                        return OPENDAQ_SUCCESS;
+                }
+            }
+        }
+    }
+    else if (propType == PropertyType::SparseSelection)
+    {
+        if (const auto dict = selectionValues.asPtrOrNull<IDict>(true); dict.assigned() && dict.hasKey(value))
+            return OPENDAQ_SUCCESS;
     }
 
-    return OPENDAQ_SUCCESS;
+    return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_NOTFOUND, fmt::format(R"(Value is not a key/index of selection values for property "{}")", prop.getName()));
 }
 
 // Checks if property and value type match. If not, attempts to convert the value
@@ -382,6 +356,9 @@ inline ErrCode readDefaultPropertyValue(const PropertyPtr& property, const Strin
 // Container values are cloned on read so the stored value cannot be mutated through the returned reference
 inline BaseObjectPtr cloneIfContainerValue(const BaseObjectPtr& value)
 {
+    if (!value.assigned())
+        return value;
+
     const CoreType coreType = value.getCoreType();
     if (coreType == ctList || coreType == ctDict)
     {
@@ -406,7 +383,7 @@ inline ErrCode selectionValueToKey(const PropertyPtr& prop, const BaseObjectPtr&
             return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPROPERTY,
                                        fmt::format(R"(Index selection property "{}" has no selection values assigned)", propName));
 
-        const auto valuesList = selectionValues.template asPtrOrNull<IList>(true);
+        const auto valuesList = selectionValues.asPtrOrNull<IList>(true);
         if (!valuesList.assigned())
             return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPROPERTY,
                                        fmt::format(R"(Index selection property "{}" values is not a list)", propName));
@@ -429,7 +406,7 @@ inline ErrCode selectionValueToKey(const PropertyPtr& prop, const BaseObjectPtr&
             return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPROPERTY,
                                        fmt::format(R"(Sparse selection property "{}" has no selection values assigned)", propName));
 
-        const auto valuesDict = selectionValues.template asPtrOrNull<IDict>(true);
+        const auto valuesDict = selectionValues.asPtrOrNull<IDict>(true);
         if (!valuesDict.assigned())
             return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPROPERTY,
                                        fmt::format(R"(Sparse selection property "{}" values is not a dictionary)", propName));
@@ -499,7 +476,7 @@ inline ErrCode selectionKeyToValue(const PropertyPtr& prop, BaseObjectPtr& value
     }
 
     if (propInternal.getItemTypeNoLock() != valuePtr.getCoreType())
-        return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDTYPE, fmt::format(R"(List item type mismatch for property "{}")", propName));
+        return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDTYPE, fmt::format(R"(Selection value type mismatch for property "{}")", propName));
 
     return OPENDAQ_SUCCESS;
 }
@@ -508,47 +485,47 @@ inline ErrCode selectionKeyToValue(const PropertyPtr& prop, BaseObjectPtr& value
 
 inline void coercePropertyWrite(const PropertyPtr& prop, ObjectPtr<IBaseObject>& valuePtr, const PropertyObjectPtr& objPtr)
 {
-    if (prop.assigned() && valuePtr.assigned())
+    if (!prop.assigned() || !valuePtr.assigned())
+        return;
+
+    const auto coercer = prop.asPtr<IPropertyInternal>().getCoercerNoLock();
+    if (!coercer.assigned())
+        return;
+
+    try
     {
-        const auto coercer = prop.asPtr<IPropertyInternal>().getCoercerNoLock();
-        if (coercer.assigned())
-        {
-            try
-            {
-                valuePtr = coercer.coerceNoLock(objPtr, valuePtr);
-            }
-            catch (const DaqException&)
-            {
-                throw;
-            }
-            catch (...)
-            {
-                DAQ_THROW_EXCEPTION(CoerceFailedException);
-            }
-        }
+        valuePtr = coercer.coerceNoLock(objPtr, valuePtr);
+    }
+    catch (const DaqException&)
+    {
+        throw;
+    }
+    catch (...)
+    {
+        DAQ_THROW_EXCEPTION(CoerceFailedException);
     }
 }
 
 inline void validatePropertyWrite(const PropertyPtr& prop, ObjectPtr<IBaseObject>& valuePtr, const PropertyObjectPtr& objPtr)
 {
-    if (prop.assigned() && valuePtr.assigned())
+    if (!prop.assigned() || !valuePtr.assigned())
+        return;
+
+    const auto validator = prop.asPtr<IPropertyInternal>().getValidatorNoLock();
+    if (!validator.assigned())
+        return;
+
+    try
     {
-        const auto validator = prop.asPtr<IPropertyInternal>().getValidatorNoLock();
-        if (validator.assigned())
-        {
-            try
-            {
-                validator.validateNoLock(objPtr, valuePtr);
-            }
-            catch (const DaqException&)
-            {
-                throw;
-            }
-            catch (...)
-            {
-                DAQ_THROW_EXCEPTION(ValidateFailedException);
-            }
-        }
+        validator.validateNoLock(objPtr, valuePtr);
+    }
+    catch (const DaqException&)
+    {
+        throw;
+    }
+    catch (...)
+    {
+        DAQ_THROW_EXCEPTION(ValidateFailedException);
     }
 }
 
@@ -613,7 +590,7 @@ inline ErrCode checkAndCoerceWrite(const PropertyPtr& prop, ObjectPtr<IBaseObjec
 
 // Reference property handling
 
-inline PropertyPtr checkForRefPropAndGetBoundProp(PropertyPtr& prop, const PropertyObjectPtr& objPtr, bool* isReferenced = nullptr)
+inline PropertyPtr checkForRefPropAndGetBoundProp(const PropertyPtr& prop, const PropertyObjectPtr& objPtr, bool* isReferenced = nullptr)
 {
     if (!prop.assigned())
     {
@@ -643,32 +620,29 @@ inline PropertyPtr checkForRefPropAndGetBoundProp(PropertyPtr& prop, const Prope
 // Checks whether the property is a reference property that references an already referenced property
 inline bool hasDuplicateReferences(const PropertyPtr& prop, const PropertyObjectPtr& objPtr)
 {
-    auto refEval = prop.asPtr<IPropertyInternal>().getReferencedPropertyUnresolved();
-    if (refEval.assigned())
+    const auto refEval = prop.asPtr<IPropertyInternal>().getReferencedPropertyUnresolved();
+    if (!refEval.assigned())
+        return false;
+
+    for (const auto& refPropName : refEval.getPropertyReferences())
     {
-        auto refNames = refEval.getPropertyReferences();
-        for (auto refPropName : refNames)
-        {
-            if (objPtr.hasProperty(refPropName) && objPtr.getProperty(refPropName).getIsReferenced())
-                return true;
-        }
+        if (objPtr.hasProperty(refPropName) && objPtr.getProperty(refPropName).getIsReferenced())
+            return true;
     }
 
     return false;
 }
 
-inline Bool checkIsReferenced(const StringPtr& referencedPropName, const PropertyInternalPtr& prop)
+inline bool checkIsReferenced(const StringPtr& referencedPropName, const PropertyInternalPtr& prop)
 {
     const auto refProp = prop.getReferencedPropertyUnresolved();
     if (!refProp.assigned())
         return false;
 
-    for (auto propName : refProp.getPropertyReferences())
+    for (const auto& propName : refProp.getPropertyReferences())
     {
         if (propName == referencedPropName)
-        {
             return true;
-        }
     }
 
     return false;
