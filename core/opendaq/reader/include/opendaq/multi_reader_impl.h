@@ -222,6 +222,9 @@ private:
     /// becomes DataLost once the input has less than one block left. Shared by every state that
     /// has to decide whether a deadline ends what it is doing.
     std::vector<SizeT> visibleLostSlotsLocked() const;
+    /// The synchronized start as a tick of the reader's resolved domain read type; empty while not
+    /// synchronized or when the start does not fit that type.
+    std::optional<std::int64_t> readOffsetLocked() const;
     /// Formats "<prefix> [i, j, ...]<suffix>" from the culprits before moving them into the fault -
     /// never both format and move in one argument list (evaluation order is unspecified).
     static Fault faultWithCulprits(FaultType type, const char* detailPrefix, const char* detailSuffix, std::vector<SizeT> culprits);

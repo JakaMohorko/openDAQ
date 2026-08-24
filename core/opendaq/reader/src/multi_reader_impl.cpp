@@ -532,6 +532,36 @@ bool MultiReaderImpl::exposeBuriedEventsLocked(const std::vector<SizeT>& culprit
     return exposed;
 }
 
+std::optional<std::int64_t> MultiReaderImpl::readOffsetLocked() const
+{
+    const auto* start = syncManager->getCommonStart();
+    if (start == nullptr)
+        return std::nullopt;
+
+    switch (resolvedDomainReadType)
+    {
+        case SampleType::Int64:
+            if (const auto* typed = dynamic_cast<const DomainValueImpl<std::int64_t>*>(start))
+                return typed->getValue();
+            break;
+        case SampleType::UInt64:
+            if (const auto* typed = dynamic_cast<const DomainValueImpl<std::uint64_t>*>(start))
+                return static_cast<std::int64_t>(typed->getValue());
+            break;
+        case SampleType::Int32:
+            if (const auto* typed = dynamic_cast<const DomainValueImpl<std::int32_t>*>(start))
+                return typed->getValue();
+            break;
+        case SampleType::UInt32:
+            if (const auto* typed = dynamic_cast<const DomainValueImpl<std::uint32_t>*>(start))
+                return typed->getValue();
+            break;
+        default:
+            break;
+    }
+    return std::nullopt;
+}
+
 std::vector<SizeT> MultiReaderImpl::visibleLostSlotsLocked() const
 {
     const auto lost = dataLossMonitor->lostSlots();
@@ -796,9 +826,110 @@ ReaderStateTransition MultiReaderImpl::evaluateEstablishingLocked()
     return {ReaderBehavior::Synchronizing, TransitionTrigger::InputsReady, std::nullopt};
 }
 
+// --- Synchronizing ------------------------------------------------------------------------------
+
+/**
+ * @brief Rank 2: everything Establishing checks already holds, so the only question left is the
+ * alignment itself.
+ *
+ * The model is trusted here rather than rebuilt. Descriptors move only through an event, and the
+ * used set, the main input and the configuration move only through a caller carrying a trigger -
+ * both routes go through Establishing, which is where the model is built. What this rank does
+ * re-read on every pass is the part of Establishing's ground truth a producer can change with no
+ * notification at all: connectivity and leading events.
+ */
 ReaderStateTransition MultiReaderImpl::evaluateSynchronizingLocked()
 {
-    return {ReaderBehavior::Synchronizing, TransitionTrigger::Settled, std::nullopt};
+    const auto settled = [](std::optional<Fault> fault = std::nullopt) -> ReaderStateTransition
+    { return {ReaderBehavior::Synchronizing, TransitionTrigger::Settled, std::move(fault)}; };
+    const auto faulted = [](Fault fault) -> ReaderStateTransition
+    { return {ReaderBehavior::Error, TransitionTrigger::Faulted, std::move(fault)}; };
+    const auto reestablish = [](TransitionTrigger trigger) -> ReaderStateTransition
+    { return {ReaderBehavior::Establishing, trigger, std::nullopt}; };
+
+    if (!isActive)
+        return reestablish(TransitionTrigger::ActiveChanged);
+
+    drainUnusedSlotsLocked();
+
+    std::vector<QueueReader*> readers;
+    std::vector<SizeT> slotIndices;
+    collectUsedReadersInto(readers, slotIndices);
+    if (readers.empty())
+        return reestablish(TransitionTrigger::UsedChanged);
+
+    // Clear-then-drain, the same ordering rule as Establishing: the producer path is lock-free, so a
+    // packet enqueued after the clear re-arms the flag instead of being stranded on the connection.
+    for (const auto index : slotIndices)
+    {
+        slots[index]->clearPacketPending();
+        slots[index]->adoptQueuedPackets();
+        if (!slots[index]->isConnected())
+            return reestablish(TransitionTrigger::ConnectionChanged);
+    }
+
+    // Leading events outrank the alignment: they have to be consumed before the data behind them
+    // means anything. Reported from here rather than handed back to Establishing - every input is
+    // connected and past its handshake by now, so neither of Establishing's cross-input event
+    // suppressions applies and there is nothing for it to add. Consuming the events is what returns
+    // the reader to Establishing (readEventsLocked's EventsConsumed trigger), since a descriptor
+    // change invalidates the model.
+    {
+        std::vector<SizeT> eventInputs;
+        for (SizeT position = 0; position < readers.size(); ++position)
+        {
+            const bool hasEvents = readers[position]->hasPendingEvents();
+            setSlotEventLocked(slots[slotIndices[position]], hasEvents);
+            if (hasEvents)
+                eventInputs.push_back(slotIndices[position]);
+        }
+        if (!eventInputs.empty())
+            return settled(faultWithCulprits(FaultType::EventPending, "Events pending on inputs", "", std::move(eventInputs)));
+    }
+
+    // Deadlines, by the shared in-band rule: a crossed deadline only counts once the input can no
+    // longer contribute a whole aligned block.
+    if (auto lost = visibleLostSlotsLocked(); !lost.empty())
+    {
+        invalidateSynchronizationLocked();
+        return faulted(faultWithCulprits(FaultType::DataLost, "Inputs", " missed their packet deadline", std::move(lost)));
+    }
+
+    // Every input needs something unread before an alignment attempt means anything. Its own stage
+    // rather than synchronize()'s NeedMoreData, because collectFirstSamples early-returns on the
+    // first empty input and would name one culprit where the reader should name all of them.
+    {
+        std::vector<SizeT> emptyInputs;
+        for (SizeT position = 0; position < readers.size(); ++position)
+        {
+            if (readers[position]->getAvailableSamples() == 0)
+                emptyInputs.push_back(slotIndices[position]);
+        }
+        if (!emptyInputs.empty())
+            return settled(faultWithCulprits(FaultType::NotAligned, "Waiting for data on inputs", "", std::move(emptyInputs)));
+    }
+
+    // The iterative alignment step, stateful across passes: a NeedMoreData attempt latches the
+    // target (SynchronizationManager::pendingCandidate) so the inputs that did reach it are waited
+    // on against THIS tick instead of a freshly derived, later one. Staying in this rank is what
+    // makes that latch legible - being here IS "a target is chosen and not yet reached".
+    auto result = syncManager->synchronize(readers, slotIndices);
+    switch (result.outcome)
+    {
+        case SyncOutcome::Synchronized:
+            readCoordinator->configure(readers, syncManager->getModel());
+            nextReadTick = readOffsetLocked();
+            return {ReaderBehavior::Ready, TransitionTrigger::SynchronizationSucceeded, std::nullopt};
+        case SyncOutcome::NeedMoreData:
+            return settled(Fault{FaultType::NotAligned, std::move(result.message), std::move(result.affectedInputs)});
+        case SyncOutcome::EventPending:
+            for (const auto index : result.affectedInputs)
+                setSlotEventLocked(slots[index], true);
+            return settled(Fault{FaultType::EventPending, std::move(result.message), std::move(result.affectedInputs)});
+        case SyncOutcome::Failed:
+            return faulted(Fault{FaultType::SynchronizationFailed, std::move(result.message), std::move(result.affectedInputs)});
+    }
+    return faulted(Fault{FaultType::SynchronizationFailed, "Unhandled synchronization outcome", {}});
 }
 ReaderStateTransition MultiReaderImpl::evaluateReadyLocked()
 {
