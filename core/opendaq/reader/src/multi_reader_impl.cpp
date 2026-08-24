@@ -931,13 +931,99 @@ ReaderStateTransition MultiReaderImpl::evaluateSynchronizingLocked()
     }
     return faulted(Fault{FaultType::SynchronizationFailed, "Unhandled synchronization outcome", {}});
 }
+// --- Ready --------------------------------------------------------------------------------------
+
+/**
+ * @brief The top rank: aligned blocks are readable, so there is nowhere higher to go and the only
+ * question is whether this is still true.
+ *
+ * Nothing config-driven is re-checked here. The active flag, the used set, the main input and
+ * connectivity all move only through a caller that forces Establishing with its own trigger, and
+ * descriptors move only through an event - which is the stage below. What is left are the two things
+ * a producer can change with no notification at all: an event becoming leading, and a packet
+ * deadline passing.
+ *
+ * Deliberately does NOT touch the slots' event bits. This rank's gate policy is data-first (an event
+ * behind a servable block stays quiet and surfaces in stream order), and the gate publication at the
+ * end of the settle owns that rule; setting the bits here from the plain "has pending events"
+ * question would fight it.
+ */
 ReaderStateTransition MultiReaderImpl::evaluateReadyLocked()
 {
-    return {ReaderBehavior::Ready, TransitionTrigger::Settled, std::nullopt};
+    const auto settled = [](std::optional<Fault> fault = std::nullopt) -> ReaderStateTransition
+    { return {ReaderBehavior::Ready, TransitionTrigger::Settled, std::move(fault)}; };
+    const auto faulted = [](Fault fault) -> ReaderStateTransition
+    { return {ReaderBehavior::Error, TransitionTrigger::Faulted, std::move(fault)}; };
+
+    drainUnusedSlotsLocked();
+
+    std::vector<QueueReader*> readers;
+    std::vector<SizeT> slotIndices;
+    collectUsedReadersInto(readers, slotIndices);
+
+    // Adopt what the producers enqueued, clear-then-drain as everywhere else: this is not a check
+    // but the only way the owner gets at what the lock-free path handed over, and both stages below
+    // read its result.
+    for (const auto index : slotIndices)
+    {
+        slots[index]->clearPacketPending();
+        slots[index]->adoptQueuedPackets();
+    }
+
+    // Precondition rather than a race guard: nothing can clear either while the reader sits in this
+    // rank, but the discard below needs a real blockLcm - with no model it would default to 1 and
+    // silently discard the wrong thing.
+    if (!syncManager->hasModel() || syncManager->getCommonStart() == nullptr)
+        return faulted(Fault{FaultType::Unknown, "Reader is synchronized without a cross-input model", {}});
+
+    // Partial blocks in front of an event are silently discarded so the event can surface - which is
+    // what makes the stage below able to see an event that was buried behind an unreadable residual.
+    // The only rank that can do this: it needs the model and the synchronized start, both of which
+    // are gone by the time Establishing runs.
+    readCoordinator->discardLeftoverSegments(readers, syncManager->getModel(), minReadCount);
+
+    // A leading event blocks data until it is consumed, but reporting one does NOT end the
+    // synchronization - only consuming it does, which arrives as readEventsLocked's EventsConsumed
+    // trigger. So this rank holds the event from within and keeps its aligned start.
+    {
+        std::vector<SizeT> eventInputs;
+        for (SizeT position = 0; position < readers.size(); ++position)
+        {
+            if (readers[position]->hasPendingEvents())
+                eventInputs.push_back(slotIndices[position]);
+        }
+        if (!eventInputs.empty())
+            return settled(faultWithCulprits(FaultType::EventPending, "Events pending on inputs", "", std::move(eventInputs)));
+    }
+
+    // Deadlines, by the shared in-band rule. Unlike an event, a lost input cannot be recovered by
+    // reading: the producer went silent, so the consumer has to park the input.
+    if (auto lost = visibleLostSlotsLocked(); !lost.empty())
+    {
+        invalidateSynchronizationLocked();
+        return faulted(faultWithCulprits(FaultType::DataLost, "Inputs", " missed their packet deadline", std::move(lost)));
+    }
+
+    return settled();
 }
+
+// --- Error --------------------------------------------------------------------------------------
+
+/**
+ * @brief Off the ladder: the fault names what the consumer has to fix, and this evaluation
+ * deliberately re-derives nothing.
+ *
+ * That is the whole explicit-recovery property. A packet, a deadline or a coalesced task can drive
+ * an evaluation here and it will always settle, so nothing the producers do can climb the reader
+ * back onto the ladder; only a caller carrying a trigger (a connect, a used-set change, a
+ * reactivation, consumed events) forces the transition out.
+ *
+ * Returns the standing fault rather than nothing: this rank's answer is "I still hold what I was
+ * given", which stays correct even if settleStateLocked stops special-casing Error.
+ */
 ReaderStateTransition MultiReaderImpl::evaluateErrorLocked()
 {
-    return {ReaderBehavior::Error, TransitionTrigger::Settled, std::nullopt};
+    return {ReaderBehavior::Error, TransitionTrigger::Settled, currentFault};
 }
 
 // --- State machine ----------------------------------------------------------------------------
