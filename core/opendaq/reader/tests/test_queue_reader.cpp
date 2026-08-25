@@ -55,7 +55,11 @@ protected:
     void drainReader()
     {
         if (drainTarget != nullptr)
+        {
+            // Producer step (no Input wraps the reader here), then the consumer collect
+            drainTarget->onPacketReceived();
             drainTarget->drain();
+        }
     }
 
     void setDomainDescriptor(const DataDescriptorPtr& descriptor)
@@ -317,10 +321,12 @@ TEST_F(QueueReaderTest, CreateBeforeConnection)
     bool valid = false;
     ASSERT_NO_THROW(valid = reader.isValid());
     ASSERT_FALSE(valid);
+    ASSERT_EQ(reader.getState(), InputState::Disconnected);
 
     // The connection requirement lives on the explicit drain point (#10); every accessor
     // is a pure query over the (empty) adopted state
-    ASSERT_NO_THROW(reader.drain());  // unconnected drain is a no-op
+    ASSERT_NO_THROW(reader.onPacketReceived());  // unconnected producer call is a no-op
+    ASSERT_NO_THROW(reader.drain());             // unconnected drain is a no-op
     ASSERT_NO_THROW(reader.getDomainInfo());
     ASSERT_EQ(reader.getFirstSampleDomainValue(), nullptr);
     ASSERT_EQ(reader.advanceToDomainValue(domainValue.get()).result, AdvanceResult::NeedMoreData);
@@ -328,6 +334,60 @@ TEST_F(QueueReaderTest, CreateBeforeConnection)
     ASSERT_NO_THROW(reader.dropOutdatedPacketSegments());
     ASSERT_FALSE(reader.hasPendingEvents());
     ASSERT_EQ(reader.popFrontEvent(), nullptr);
+}
+
+TEST_F(QueueReaderTest, AdoptionFollowsInputState)
+{
+    constexpr Int sampleRate = 10000;
+    setDomainDescriptor(DataDescriptorBuilder()
+                            .setSampleType(SampleType::Int64)
+                            .setTickResolution(Ratio(1, sampleRate))
+                            .setOrigin("1970-01-01T00:00:00+00:00")
+                            .setRule(LinearDataRule(1, 0))
+                            .setUnit(Unit("s", -1, "second", "time"))
+                            .build());
+    setValueDescriptor(DataDescriptorBuilder().setSampleType(SampleType::Float64).build());
+    setPacketSize(5);
+
+    auto inputPort = InputPort(context, nullptr, "port", true);
+    inputPort.connect(signal);
+    auto& reader = createReader(inputPort);
+    ASSERT_EQ(reader.getState(), InputState::Valid);  // interim: updateConnection derives it
+    while (reader.hasPendingEvents())
+        reader.popFrontEvent();
+
+    // Valid keeps data
+    sendNextPacket();
+    ASSERT_EQ(reader.getAvailableSamples(), 5u);
+
+    // The transition to Unused pops-and-classifies: the adopted data is gone
+    reader.setState(InputState::Unused);
+    ASSERT_EQ(reader.getAvailableSamples(), 0u);
+
+    // Unused drops data at adoption but keeps (and reports) events. Same sample type, new
+    // unit: still a descriptor-change event, and the fixture keeps writing Float64 samples.
+    sendNextPacket();
+    ASSERT_EQ(reader.getAvailableSamples(), 0u);
+    setValueDescriptor(
+        DataDescriptorBuilder().setSampleType(SampleType::Float64).setUnit(Unit("V", -1, "volt", "voltage")).build());
+    ASSERT_TRUE(reader.hasPendingEvents());
+    while (reader.hasPendingEvents())
+        reader.popFrontEvent();
+
+    // Invalid keeps only descriptor events
+    reader.setState(InputState::Invalid);
+    sendNextPacket();
+    ASSERT_EQ(reader.getAvailableSamples(), 0u);
+    setValueDescriptor(
+        DataDescriptorBuilder().setSampleType(SampleType::Float64).setUnit(Unit("A", -1, "ampere", "current")).build());
+    ASSERT_TRUE(reader.hasPendingEvents());
+    while (reader.hasPendingEvents())
+        reader.popFrontEvent();
+
+    // Back to Valid: adoption resumes
+    reader.setState(InputState::Valid);
+    sendNextPacket();
+    ASSERT_EQ(reader.getAvailableSamples(), 5u);
 }
 
 TEST_F(QueueReaderTest, CreateBeforeConnectionRecovery)

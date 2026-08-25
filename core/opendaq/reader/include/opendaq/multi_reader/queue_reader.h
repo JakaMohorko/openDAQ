@@ -24,9 +24,11 @@
 #include <opendaq/sample_reader.h>
 #include <opendaq/typed_reading_utils.h>
 
+#include <atomic>
 #include <chrono>
 #include <deque>
 #include <memory>
+#include <mutex>
 #include <optional>
 
 BEGIN_NAMESPACE_OPENDAQ
@@ -82,6 +84,17 @@ struct AdvanceOutcome
     std::unique_ptr<DomainValue> reachedValue;
 };
 
+/// Per-input state deciding what onPacketReceived keeps at adoption (D5). Transitions are
+/// externally triggered with the producer gate-quiesced.
+enum class InputState
+{
+    Disconnected = 0,  ///< no connection - nothing arrives, nothing is kept
+    Establishing,      ///< reader not ready overall - keep only descriptor events
+    Invalid,           ///< signal rejected/invalid - keep only descriptor events
+    Unused,            ///< input not read - drop data, keep every event
+    Valid              ///< fully operational - keep everything
+};
+
 enum class QueueReaderIssue : uint32_t
 {
     None                            = 0,
@@ -106,8 +119,17 @@ public:
                  bool globalIdFromSignal);
 
 public:
-    /// Adopt everything currently queued on the connection into the local packet deque,
-    /// applying leading events; every other accessor is a pure query over adopted state.
+    /// Producer entry (single producer, port's packetReceived): dequeue everything queued on
+    /// the connection and adopt into the inbox what the current state keeps.
+    void onPacketReceived();
+
+    /// Externally triggered transition (producer must be gate-quiesced): reclassifies
+    /// everything already adopted under the new state's rules.
+    void setState(InputState newState);
+    InputState getState() const;
+
+    /// Consumer sync point: move the inbox into the local packet deque and apply leading
+    /// events; every other accessor is a pure query over collected state.
     void drain();
 
     DomainInfo getDomainInfo() const;
@@ -122,10 +144,6 @@ public:
     Int getSampleRate() const;
 
     void dropOutdatedPacketSegments();
-
-    /// Deactivation drop: discard queued data packets and gap events, keeping descriptor-change
-    /// events pending so type state stays consistent while inactive.
-    void dropForInactive();
 
     /// Available samples from the cursor up to the next event packet or the queue end,
     /// in common rate equivalent.
@@ -158,6 +176,7 @@ public:
 
     /// Bind the port's current connection, unconditionally discarding everything adopted from
     /// the previous one. Call only from connect/disconnect notifications.
+    /// Interim (until reader-level transitions land): derives the state from the connection.
     void updateConnection();
 
     void setSampleRateDivider(SizeT divider);
@@ -176,7 +195,8 @@ private:
     /// Reset to the just-constructed state: adopted packets, pending events, cached descriptors
     /// and everything derived from them are forgotten. Only updateConnection calls this.
     void reset();
-    void adoptPackets();
+    /// Move the inbox into the consumer-side packet deque (one brief lock).
+    void collect();
     void consumeLeadingEventPackets();
     
     SizeT getAvailableSamplesNative() const;
@@ -192,10 +212,17 @@ private:
     bool dropUntilEvent();
 
 private:
+    /// Adoption state; producer reads it per packetReceived, transitions store it quiesced.
+    std::atomic<InputState> state{InputState::Disconnected};
+
+    /// Producer-filled by onPacketReceived, moved to `packets` by collect().
+    std::deque<PacketPtr> inbox;
+    std::mutex inboxMutex;
+
     std::deque<PacketPtr> packets;
     std::deque<SignalEvent> events;
 
-    /// Reused batch buffer for adoptPackets (one connection lock per batch, not per packet).
+    /// Reused batch buffer for onPacketReceived (one connection lock per batch, not per packet).
     std::vector<IPacket*> adoptBuffer;
 
     SizeT readingPosition = 0;

@@ -124,32 +124,104 @@ QueueReader::QueueReader(const InputPortConfigPtr& port,
     parseValueDescriptor();
 }
 
-void QueueReader::adoptPackets()
+/// Adopt-time classification (D5): which packets a state keeps.
+static bool keepsPacket(InputState state, const PacketPtr& packet)
 {
-    invalidateAvailable();
+    switch (state)
+    {
+        case InputState::Valid:
+            return true;
+        case InputState::Unused:
+            return packet.getType() == PacketType::Event;
+        case InputState::Establishing:
+        case InputState::Invalid:
+            return packet.getType() == PacketType::Event &&
+                   packet.asPtr<IEventPacket>(true).getEventId() == event_packet_id::DATA_DESCRIPTOR_CHANGED;
+        case InputState::Disconnected:
+        default:
+            return false;
+    }
+}
+
+void QueueReader::onPacketReceived()
+{
+    if (!connection.assigned())
+        return;
 
     // dequeueUpTo detaches many packets under a single connection lock
     constexpr SizeT batchSize = 64;
     if (adoptBuffer.size() < batchSize)
         adoptBuffer.resize(batchSize);
 
+    // One load per call: a transition quiesces this producer path first
+    const InputState currentState = state.load();
+
     SizeT dequeued;
     do
     {
         dequeued = batchSize;
         connection.asPtr<IConnectionInternal>(true)->dequeueUpTo(adoptBuffer.data(), &dequeued);
+        std::lock_guard lock(inboxMutex);
         for (SizeT i = 0; i < dequeued; ++i)
         {
             // dequeueUpTo detached each packet (ownership transferred); Adopt takes that
             // reference without an extra AddRef.
             PacketPtr packet = PacketPtr::Adopt(adoptBuffer[i]);
-            // Sticky marker for hasQueuedEventPackets: the fast read path (owner's steady
-            // state) must learn about adopted events without scanning the queue per read
-            if (packet.getType() == PacketType::Event)
-                eventPacketAdopted = true;
-            packets.push_back(std::move(packet));
+            if (keepsPacket(currentState, packet))
+                inbox.push_back(std::move(packet));
         }
     } while (dequeued == batchSize);  // buffer was filled - the connection may hold more
+}
+
+void QueueReader::collect()
+{
+    std::lock_guard lock(inboxMutex);
+    if (inbox.empty())
+        return;
+
+    for (auto& packet : inbox)
+    {
+        // Sticky marker for hasQueuedEventPackets: the fast read path (owner's steady
+        // state) must learn about adopted events without scanning the queue per read
+        if (packet.getType() == PacketType::Event)
+            eventPacketAdopted = true;
+        packets.push_back(std::move(packet));
+    }
+    inbox.clear();
+    invalidateAvailable();
+}
+
+void QueueReader::setState(InputState newState)
+{
+    if (state.exchange(newState) == newState)
+        return;
+
+    // Pop-and-classify (D5): re-run the adopt-time rules over everything already adopted;
+    // anything arriving afterwards is classified under the new state at adoption.
+    collect();
+    if (newState != InputState::Valid)
+    {
+        packets.erase(
+            std::remove_if(packets.begin(), packets.end(), [newState](const PacketPtr& p) { return !keepsPacket(newState, p); }),
+            packets.end());
+        readingPosition = 0;
+        invalidateAvailable();
+
+        // Pending gap events are meaningless once the data flow is cut off (Unused reports all)
+        if (newState != InputState::Unused)
+        {
+            events.erase(std::remove_if(events.begin(),
+                                        events.end(),
+                                        [](const SignalEvent& event) { return event.getType() == SignalEventType::Gap; }),
+                         events.end());
+        }
+    }
+    consumeLeadingEventPackets();
+}
+
+InputState QueueReader::getState() const
+{
+    return state.load();
 }
 
 bool QueueReader::hasQueuedEventPackets()
@@ -164,13 +236,7 @@ bool QueueReader::hasQueuedEventPackets()
 
 void QueueReader::drain()
 {
-    if (!connection.assigned())
-        return;
-
-    if (!connection.peek().assigned())
-        return;
-
-    adoptPackets();
+    collect();
     consumeLeadingEventPackets();
 }
 
@@ -311,34 +377,6 @@ void QueueReader::consumeLeadingEventPackets()
     }
 }
 
-void QueueReader::dropForInactive()
-{
-    invalidateAvailable();
-    drain();
-
-    // Pending gap events are meaningless once the data flow is suspended
-    events.erase(std::remove_if(events.begin(),
-                                events.end(),
-                                [](const SignalEvent& event) { return event.getType() == SignalEventType::Gap; }),
-                 events.end());
-
-    // Drop data packets and gap events up to the first descriptor event, which stays -
-    // the reader's type state must not silently diverge from the signal's
-    while (!packets.empty())
-    {
-        const auto& front = packets.front();
-        if (front.getType() == PacketType::Event)
-        {
-            const EventPacketPtr eventPacket = front.asPtr<IEventPacket>(true);
-            if (eventPacket.getEventId() != event_packet_id::IMPLICIT_DOMAIN_GAP_DETECTED)
-                break;
-        }
-        packets.pop_front();
-        readingPosition = 0;
-    }
-    consumeLeadingEventPackets();
-}
-
 void QueueReader::dropOutdatedPacketSegments()
 {
     while (getNumberOfEventPacketsInQueue() >= 2)
@@ -467,11 +505,18 @@ void QueueReader::updateConnection()
     // every connect carries a fresh connection - so the previous state is dropped unconditionally.
     reset();
     connection = port.getConnection();
+    // Interim until the reader-level transitions land: a bound connection means Valid.
+    state.store(connection.assigned() ? InputState::Valid : InputState::Disconnected);
+    onPacketReceived();  // adopt what the connect already enqueued (initial descriptor event)
     drain();
 }
 
 void QueueReader::reset()
 {
+    {
+        std::lock_guard lock(inboxMutex);
+        inbox.clear();
+    }
     packets.clear();
     events.clear();
     readingPosition = 0;

@@ -269,7 +269,7 @@ TEST_F(MultiReaderInputTest, AvailabilityAndMinimumAcrossTheSlotLifecycle)
     // Adopting moves the same samples from one half to the other. The count only survives the move
     // because the owner republishes: the producer cannot read the queue, so an owner pass that
     // moves samples and forgets to publish would strand the slot reporting the pre-drain basis.
-    reader.drain();
+    slot->adoptQueuedPackets();
     publishSlotAvailability(*slot);
     ASSERT_EQ(reader.getAvailableSamples(), 5u);
     ASSERT_EQ(slot->getAvailableSamples(), 5u);
@@ -304,7 +304,7 @@ TEST_F(MultiReaderInputTest, AvailabilityAndMinimumAcrossTheSlotLifecycle)
 
     // Adopting pulls the event into the adopted queue (still buried behind the 10 samples). Now the
     // basis is what bounds the count, and the whole connection queue is behind that event.
-    reader.drain();
+    slot->adoptQueuedPackets();
     publishSlotAvailability(*slot);
     ASSERT_EQ(slot->getAvailableSamples(), 20u);
 

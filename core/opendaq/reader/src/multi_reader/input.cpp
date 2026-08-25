@@ -254,7 +254,11 @@ void Input::rebindConnection()
 void Input::adoptQueuedPackets()
 {
     if (connectedState.load())
+    {
+        // Interim consumer-side pull until packetReceived is wired to onPacketReceived (D5).
+        queueReader.onPacketReceived();
         queueReader.drain();
+    }
 }
 
 bool Input::isUsed() const
