@@ -173,7 +173,6 @@ public:
     bool discardLeftoverSegment(SizeT samplesInBlock);
     
 private:
-    void drainConnection();
     /// Forget the previous connection's signal entirely: adopted packets, pending events, cached
     /// descriptors and the state derived from them. Only updateConnection calls this.
     void dropForConnectionChange();

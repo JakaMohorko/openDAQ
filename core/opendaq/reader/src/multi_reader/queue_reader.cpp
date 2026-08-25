@@ -170,7 +170,14 @@ bool QueueReader::hasQueuedEventPackets()
 
 void QueueReader::drain()
 {
-    drainConnection();
+    if (!connection.assigned())
+        return;
+
+    if (!connection.peek().assigned())
+        return;
+
+    adoptPackets();
+    consumeLeadingEventPackets();
 }
 
 DomainInfo QueueReader::getDomainInfo() const
@@ -313,7 +320,7 @@ void QueueReader::consumeLeadingEventPackets()
 void QueueReader::dropForInactive()
 {
     invalidateAvailable();
-    drainConnection();
+    drain();
 
     // Pending gap events are meaningless once the data flow is suspended
     events.erase(std::remove_if(events.begin(),
@@ -470,7 +477,7 @@ void QueueReader::updateConnection()
 
     connection = newConnection;
     refreshConnectionInternal();
-    drainConnection();
+    drain();
 }
 
 void QueueReader::dropForConnectionChange()
@@ -660,17 +667,6 @@ AdvanceResult QueueReader::skip(SizeT* count)
     return read(nullptr, nullptr, count);
 }
 
-void QueueReader::drainConnection()
-{
-    if (!connection.assigned())
-        return;
-
-    if (!connection.peek().assigned())
-        return;
-
-    adoptPackets();
-    consumeLeadingEventPackets();
-}
 
 bool QueueReader::discardLeftoverSegment(SizeT samplesInBlock)
 {
