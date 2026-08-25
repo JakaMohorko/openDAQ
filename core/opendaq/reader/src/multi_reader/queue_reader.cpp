@@ -124,12 +124,6 @@ QueueReader::QueueReader(const InputPortConfigPtr& port,
     parseValueDescriptor();
 }
 
-void QueueReader::refreshConnectionInternal()
-{
-    // Every real connection implements IConnectionInternal; asPtr throws on a dummy/mock one
-    connectionInternal = connection.assigned() ? connection.asPtr<IConnectionInternal>() : nullptr;
-}
-
 void QueueReader::adoptPackets()
 {
     invalidateAvailable();
@@ -474,7 +468,8 @@ void QueueReader::updateConnection()
     dropForConnectionChange();
 
     connection = port.getConnection();
-    refreshConnectionInternal();
+    // Every real connection implements IConnectionInternal; asPtr throws on a dummy/mock one
+    connectionInternal = connection.assigned() ? connection.asPtr<IConnectionInternal>() : nullptr;
     drain();
 }
 

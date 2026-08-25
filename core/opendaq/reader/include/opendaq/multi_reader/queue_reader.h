@@ -177,8 +177,6 @@ private:
     /// descriptors and the state derived from them. Only updateConnection calls this.
     void dropForConnectionChange();
     void adoptPackets();
-    /// Re-query the IConnectionInternal view after `connection` changes (see connectionInternal).
-    void refreshConnectionInternal();
     void consumeLeadingEventPackets();
     
     SizeT getAvailableSamplesNative() const;
