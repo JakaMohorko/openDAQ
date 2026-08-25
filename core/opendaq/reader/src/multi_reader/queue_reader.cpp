@@ -137,7 +137,7 @@ void QueueReader::adoptPackets()
     do
     {
         dequeued = batchSize;
-        connectionInternal->dequeueUpTo(adoptBuffer.data(), &dequeued);
+        connection.asPtr<IConnectionInternal>(true)->dequeueUpTo(adoptBuffer.data(), &dequeued);
         for (SizeT i = 0; i < dequeued; ++i)
         {
             // dequeueUpTo detached each packet (ownership transferred); Adopt takes that
@@ -465,15 +465,12 @@ void QueueReader::updateConnection()
 {
     // Called only from connect/disconnect notifications, where something always changed and
     // every connect carries a fresh connection - so the previous state is dropped unconditionally.
-    dropForConnectionChange();
-
+    reset();
     connection = port.getConnection();
-    // Every real connection implements IConnectionInternal; asPtr throws on a dummy/mock one
-    connectionInternal = connection.assigned() ? connection.asPtr<IConnectionInternal>() : nullptr;
     drain();
 }
 
-void QueueReader::dropForConnectionChange()
+void QueueReader::reset()
 {
     packets.clear();
     events.clear();

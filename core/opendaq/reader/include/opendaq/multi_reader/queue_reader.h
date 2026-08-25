@@ -173,9 +173,9 @@ public:
     bool discardLeftoverSegment(SizeT samplesInBlock);
     
 private:
-    /// Forget the previous connection's signal entirely: adopted packets, pending events, cached
-    /// descriptors and the state derived from them. Only updateConnection calls this.
-    void dropForConnectionChange();
+    /// Reset to the just-constructed state: adopted packets, pending events, cached descriptors
+    /// and everything derived from them are forgotten. Only updateConnection calls this.
+    void reset();
     void adoptPackets();
     void consumeLeadingEventPackets();
     
@@ -211,8 +211,6 @@ private:
 
     InputPortConfigPtr port;
     ConnectionPtr connection;
-    /// Cached IConnectionInternal view of `connection` for batch dequeue; null if unsupported.
-    ObjectPtr<IConnectionInternal> connectionInternal;
 
     LoggerComponentPtr loggerComponent;
 
