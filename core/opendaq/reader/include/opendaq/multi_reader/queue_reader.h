@@ -156,8 +156,8 @@ public:
 
     void domainChangeHandled();
 
-    /// Re-query the port's connection and adopt whatever it already holds; a change of
-    /// connection identity discards everything adopted from the previous one.
+    /// Bind the port's current connection, unconditionally discarding everything adopted from
+    /// the previous one. Call only from connect/disconnect notifications.
     void updateConnection();
 
     void setSampleRateDivider(SizeT divider);

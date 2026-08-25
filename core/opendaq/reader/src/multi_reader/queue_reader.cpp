@@ -469,13 +469,11 @@ const FunctionPtr& QueueReader::getDomainTransformFunction() const
 
 void QueueReader::updateConnection()
 {
-    const auto newConnection = port.getConnection();
-    // Identity comparison covers connect, disconnect and replace in one place: a port can be
-    // reconnected to a different signal without ever reporting a disconnect.
-    if (newConnection.getObject() != connection.getObject())
-        dropForConnectionChange();
+    // Called only from connect/disconnect notifications, where something always changed and
+    // every connect carries a fresh connection - so the previous state is dropped unconditionally.
+    dropForConnectionChange();
 
-    connection = newConnection;
+    connection = port.getConnection();
     refreshConnectionInternal();
     drain();
 }
