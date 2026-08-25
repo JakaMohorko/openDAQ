@@ -322,20 +322,7 @@ void QueueReader::dropForInactive()
                                 [](const SignalEvent& event) { return event.getType() == SignalEventType::Gap; }),
                  events.end());
 
-    // Drop data packets and gap events up to the first descriptor event, which stays -
-    // the reader's type state must not silently diverge from the signal's
-    while (!packets.empty())
-    {
-        const auto& front = packets.front();
-        if (front.getType() == PacketType::Event)
-        {
-            const EventPacketPtr eventPacket = front.asPtr<IEventPacket>(true);
-            if (eventPacket.getEventId() != event_packet_id::IMPLICIT_DOMAIN_GAP_DETECTED)
-                break;
-        }
-        packets.pop_front();
-        readingPosition = 0;
-    }
+    dropData(DropMode::KeepDescriptorEvents);
     consumeLeadingEventPackets();
 }
 
@@ -343,11 +330,11 @@ void QueueReader::dropOutdatedPacketSegments()
 {
     while (getNumberOfEventPacketsInQueue() >= 2)
     {
-        [[maybe_unused]] auto foundEvent = dropUntilEvent();  // asserted only; NDEBUG drops the use
+        [[maybe_unused]] auto foundEvent = dropData(DropMode::UntilAnyEvent);  // asserted only; NDEBUG drops the use
         assert(foundEvent && "Event should have been found.");
         consumeLeadingEventPackets();
     }
-    dropUntilEvent();
+    dropData(DropMode::UntilAnyEvent);
     consumeLeadingEventPackets();
 }
 
@@ -463,8 +450,6 @@ const FunctionPtr& QueueReader::getDomainTransformFunction() const
 
 void QueueReader::updateConnection()
 {
-    // Called only from connect/disconnect notifications, where something always changed and
-    // every connect carries a fresh connection - so the previous state is dropped unconditionally.
     reset();
     connection = port.getConnection();
     drain();
@@ -682,7 +667,7 @@ bool QueueReader::discardLeftoverSegment(SizeT samplesInBlock)
 
     // Silent discard: the trailing partial block is dropped without a synthetic event or
     // dropped-sample count; the original event packets ending the segment become pending.
-    dropUntilEvent();
+    dropData(DropMode::UntilAnyEvent);
     consumeLeadingEventPackets(); // Transition to new segment
     return true;
 }
@@ -915,27 +900,35 @@ size_t QueueReader::getNumberOfEventPacketsInQueue()
     return numberOfEventPackets;
 }
 
-bool QueueReader::dropUntilEvent()
+bool QueueReader::dropData(DropMode mode)
 {
     invalidateAvailable();
-    // Queue: d1 d2 E d3 -> E d3
-    bool foundEvent = false;
-    size_t end = 0;
-    for (const auto& packet : packets)
+
+    if (mode == DropMode::UntilAnyEvent)
     {
-        if (packet.getType() == PacketType::Event)
+        // Queue: d1 d2 E d3 -> E d3; no-op when no event ends the segment
+        for (auto it = packets.begin(); it != packets.end(); ++it)
         {
-            foundEvent = true;
-            break;
+            if (it->getType() == PacketType::Event)
+            {
+                packets.erase(packets.begin(), it);
+                readingPosition = 0;
+                return true;
+            }
         }
-        ++end;
+        return false;
     }
-    if (foundEvent)
+
+    // KeepDescriptorEvents: repeated drop over the whole queue - every data run and gap
+    // event goes, every descriptor-change event stays
+    const auto dropped = [](const PacketPtr& packet)
     {
-        packets.erase(packets.begin(), packets.begin() + end);
-        readingPosition = 0;
-    }
-    return foundEvent;
+        return packet.getType() != PacketType::Event ||
+               packet.asPtr<IEventPacket>(true).getEventId() == event_packet_id::IMPLICIT_DOMAIN_GAP_DETECTED;
+    };
+    packets.erase(std::remove_if(packets.begin(), packets.end(), dropped), packets.end());
+    readingPosition = 0;
+    return !packets.empty();
 }
 
 }  // namespace multi_reader

@@ -57,7 +57,6 @@ public:
 
 private:
     void updateType();
-private:
     SignalEventType eventType;
     DataDescriptorPtr domainDescriptor;
     DataDescriptorPtr valueDescriptor;
@@ -189,7 +188,17 @@ private:
     void parseValueDescriptor();
     void parseCachedDescriptors();
     size_t getNumberOfEventPacketsInQueue();
-    bool dropUntilEvent();
+
+    enum class DropMode
+    {
+        /// Drop the leading data run up to the first event packet (any kind); no-op when no
+        /// event ends the segment. @return true if an event was found.
+        UntilAnyEvent,
+        /// Drop every data run and gap event in the whole queue, keeping only descriptor-change
+        /// events (deactivation semantics). @return true if any descriptor event survived.
+        KeepDescriptorEvents,
+    };
+    bool dropData(DropMode mode);
 
 private:
     std::deque<PacketPtr> packets;
