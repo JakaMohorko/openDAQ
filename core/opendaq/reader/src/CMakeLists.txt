@@ -137,15 +137,8 @@ function(create_component_source_groups_${BASE_NAME})
         ${SDK_HEADERS_DIR}/multi_reader_builder_impl.h
         ${SDK_HEADERS_DIR}/multi_reader.h
         ${SDK_HEADERS_DIR}/multi_reader/queue_reader.h
-        ${SDK_HEADERS_DIR}/multi_reader/data_loss_monitor.h
         ${SDK_HEADERS_DIR}/multi_reader/input.h
-        ${SDK_HEADERS_DIR}/multi_reader/synchronization_manager.h
         ${SDK_HEADERS_DIR}/multi_reader/callback_gate.h
-        ${SDK_HEADERS_DIR}/multi_reader/notification_coordinator.h
-        ${SDK_HEADERS_DIR}/multi_reader/read_coordinator.h
-        ${SDK_HEADERS_DIR}/multi_reader/reader_state.h
-        ${SDK_HEADERS_DIR}/multi_reader/state_context.h
-        ${SDK_HEADERS_DIR}/multi_reader/state_machine.h
         ${SDK_HEADERS_DIR}/multi_reader_impl.h
 		${SDK_HEADERS_DIR}/multi_reader_status.h
         ${SDK_HEADERS_DIR}/multi_reader_status_builder.h
@@ -154,13 +147,7 @@ function(create_component_source_groups_${BASE_NAME})
         ${SDK_SRC_DIR}/multi_reader_builder_impl.cpp
         ${SDK_SRC_DIR}/multi_reader_status_builder_impl.cpp
         ${SDK_SRC_DIR}/multi_reader/queue_reader.cpp
-        ${SDK_SRC_DIR}/multi_reader/data_loss_monitor.cpp
         ${SDK_SRC_DIR}/multi_reader/input.cpp
-        ${SDK_SRC_DIR}/multi_reader/synchronization_manager.cpp
-        ${SDK_SRC_DIR}/multi_reader/notification_coordinator.cpp
-        ${SDK_SRC_DIR}/multi_reader/read_coordinator.cpp
-        ${SDK_SRC_DIR}/multi_reader/state_context.cpp
-        ${SDK_SRC_DIR}/multi_reader/state_machine.cpp
     )
 endfunction()
 
@@ -189,15 +176,8 @@ set(SRC_PrivateHeaders_Component
     multi_reader_builder_impl.h
     multi_reader_status_builder_impl.h
     multi_reader/queue_reader.h
-    multi_reader/data_loss_monitor.h
     multi_reader/input.h
-    multi_reader/synchronization_manager.h
     multi_reader/callback_gate.h
-    multi_reader/notification_coordinator.h
-    multi_reader/read_coordinator.h
-    multi_reader/reader_state.h
-    multi_reader/state_context.h
-    multi_reader/state_machine.h
     reader_status_impl.h
     reader_impl.h
     enum_flags.h
@@ -220,13 +200,7 @@ set(SRC_Cpp_Component
     multi_reader_builder_impl.cpp
     multi_reader_status_builder_impl.cpp
     multi_reader/queue_reader.cpp
-    multi_reader/data_loss_monitor.cpp
     multi_reader/input.cpp
-    multi_reader/synchronization_manager.cpp
-    multi_reader/notification_coordinator.cpp
-    multi_reader/read_coordinator.cpp
-    multi_reader/state_context.cpp
-    multi_reader/state_machine.cpp
     reader.natvis
     PARENT_SCOPE
 )

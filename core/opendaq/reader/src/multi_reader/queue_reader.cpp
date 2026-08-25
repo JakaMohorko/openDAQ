@@ -25,10 +25,8 @@ SignalEvent::SignalEvent(const EventPacketPtr& packet)
     }
     else
     {
-        // Tri-state per descriptor, carried by the descriptor itself: unassigned = unchanged
-        // (parameter absent), the explicit NullDataDescriptor marker (sample type Null) =
-        // descriptor unset, anything else = changed to it. A removed descriptor is therefore
-        // never mistaken for no change without needing separate flags.
+        // Tri-state per descriptor: unassigned = unchanged, the NullDataDescriptor marker =
+        // descriptor unset, anything else = changed to it.
         const auto [newValueDescriptor, newDomainDescriptor] = unpackDataDescriptorEventPacket(packet);
         domainDescriptor = newDomainDescriptor;
         valueDescriptor = newValueDescriptor;
@@ -136,9 +134,8 @@ void QueueReader::adoptPackets()
 {
     invalidateAvailable();
 
-    // Batch path: dequeueUpTo detaches many packets under a single connection lock, instead of
-    // one lock (and one counter update) per packet. Falls back below if the connection does not
-    // implement IConnectionInternal.
+    // Batch path: dequeueUpTo detaches many packets under a single connection lock;
+    // falls back below if the connection does not implement IConnectionInternal.
     if (connectionInternal.assigned())
     {
         constexpr SizeT batchSize = 64;
@@ -323,9 +320,7 @@ void QueueReader::consumeLeadingEventPackets()
 
         ++end;
     }
-    // Removing leading events can expose a new leading data run behind them, changing the
-    // available count; when nothing is removed (front is already data) the count is unchanged,
-    // so the incrementally maintained cache stays valid (steady-stream fast path).
+    // Removing leading events can expose a new leading data run, changing the available count
     if (end > 0)
     {
         packets.erase(packets.begin(), packets.begin() + end);
@@ -503,13 +498,8 @@ const FunctionPtr& QueueReader::getDomainTransformFunction() const
 void QueueReader::updateConnection()
 {
     const auto newConnection = port.getConnection();
-    // Everything adopted belongs to ONE connection, so a change of connection identity discards it.
-    // Identity, not "is it null", because a port can be reconnected to a different signal without
-    // ever reporting a disconnect: InputPortImpl::connectInternal replaces the connection with
-    // notifyListener = false, so the slot sees only connected(). Comparing the objects covers all
-    // three transitions - connect, disconnect and replace - in one place, and leaves the first
-    // rebind of an already-connected port (construction, adoption, setInputUsed) untouched: same
-    // connection, nothing to discard, so the descriptor setListener front-loaded survives.
+    // Identity comparison covers connect, disconnect and replace in one place: a port can be
+    // reconnected to a different signal without ever reporting a disconnect.
     if (newConnection.getObject() != connection.getObject())
         dropForConnectionChange();
 
@@ -526,9 +516,8 @@ void QueueReader::dropForConnectionChange()
     eventPacketAdopted = false;
     invalidateAvailable();
 
-    // The descriptors and everything derived from them described the old signal. The new
-    // connection's own descriptor event re-establishes them, and until it is consumed the owner
-    // truthfully reports the input as waiting for descriptors.
+    // The descriptors described the old signal; the new connection's own descriptor event
+    // re-establishes them.
     typeCtx.valueLayout = {};
     typeCtx.domainLayout = {};
     typeCtx.domainInfo = {};
@@ -540,12 +529,8 @@ void QueueReader::dropForConnectionChange()
     packetDelta = 0;
     domainChanged = false;
 
-    // The read types stay: a dynamically resolved value type (SampleType::Undefined configured) is
-    // fixed for the reader's lifetime, so a new signal is converted to it or reported incompatible.
-    //
-    // Recompute the issue flags from the now-absent descriptors rather than clearing them: the two
-    // "descriptor null" issues must be set, and the parse functions return early on a null
-    // descriptor without touching the rest, so the slate has to be clean first.
+    // Read types stay (fixed for the reader's lifetime); issue flags are recomputed from the
+    // now-absent descriptors rather than cleared.
     issues = EnumFlags<QueueReaderIssue>{};
     parseCachedDescriptors();
 }
@@ -583,10 +568,8 @@ AdvanceResult QueueReader::read(void* valueBuffer, void* domainBuffer, SizeT* co
 
 AdvanceResult QueueReader::readNative(void* valueBuffer, void* domainBuffer, SizeT* count)
 {
-    // Availability is maintained incrementally, not invalidated: this read consumes exactly the
-    // samples it copies (decremented below), and consumeLeadingEventPackets invalidates only if
-    // it crosses an event boundary. This keeps the count O(1) on the steady read path instead of
-    // an O(buffered-packets) rescan after every read.
+    // Availability is maintained incrementally (decremented below), keeping the count O(1)
+    // on the steady read path.
     if (count == nullptr)
         return AdvanceResult::Error;
 
@@ -693,9 +676,7 @@ AdvanceResult QueueReader::readNative(void* valueBuffer, void* domainBuffer, Siz
     packets.erase(packets.begin(), packets.begin() + end);
     *count = requested - remainingToRead;
 
-    // Maintain the native available-count cache: exactly *count native samples were consumed from
-    // the leading data run. Guarded on validity so a lazy/invalid cache stays invalid (recomputed
-    // on the next query). consumeLeadingEventPackets below re-invalidates if it crosses an event.
+    // Maintain the available-count cache: exactly *count native samples were consumed
     if (availableNativeValid)
         availableNativeCache -= *count;
 

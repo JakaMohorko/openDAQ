@@ -26,31 +26,9 @@ namespace multi_reader
 {
 
 /**
- * @brief Lock-free callback-gate state shared between the multi reader (owner) and its
- * per-input slots (producer threads).
- *
- * The gate decides whether the public onDataAvailable callback is worth scheduling:
- *
- *     event > 0  ||  (used > 0 && ready >= used)  ||  stateChangeNotify
- *
- * `ready`/`event` are counters over the per-slot flag words (SlotGateFlags below); `used` is
- * the number of used slots, owner-maintained. Events on unused slots participate deliberately:
- * they are the recovery signal consumers answer with setInputUsed. `ready >= used` (not ==)
- * tolerates a transient straggler flag on a slot leaving the used set; the scheduled
- * evaluation re-verifies against ground truth before the user callback fires, so a stale
- * counter can only cost a spurious task, never a missed callback.
- *
- * The pass epoch is the producers' consistency guard: the owner brackets every state-lock
- * section that can move samples (adopt, read, drop) with a PassGuard, making the epoch odd
- * for its duration. A producer computing flag raises from the published per-slot basis plus
- * the connection counters samples an even epoch before and the same value after; anything
- * else means the basis may be torn and the producer must fall back to requesting an
- * evaluation instead of trusting its arithmetic.
- *
- * Threading: everything here is atomic; raises can arrive from any producer thread while
- * the owner reconciles under its state lock. Producers only ever RAISE flags - a stale raise
- * costs one spurious evaluation (which reconciles), while lowering is reserved to the owner,
- * so a producer can never suppress a wake-up it should have caused.
+ * @brief Lock-free callback-gate state shared between the multi reader (owner) and its per-input
+ * slots (producer threads). Satisfied when: event > 0 || (used > 0 && ready >= used) ||
+ * stateChangeNotify. Producers only ever RAISE flags; lowering is reserved to the owner.
  */
 class CallbackGate
 {
@@ -95,11 +73,8 @@ public:
         return (value & 1u) == 0;
     }
 
-    /**
-     * @brief RAII marker for an owner pass (state lock held) that may move samples between a
-     * connection and its QueueReader or consume them. Producers observing an odd or changed
-     * epoch do not trust their availability arithmetic and conservatively request an evaluation.
-     */
+    /// RAII marker for an owner pass that may move or consume samples; producers observing an
+    /// odd or changed epoch do not trust their arithmetic and request an evaluation instead.
     class PassGuard
     {
     public:
@@ -141,28 +116,9 @@ private:
 };
 
 /**
- * @brief One slot's ready/event gate flags, packed with an armed bit into a single atomic word
- * so flag transitions and the shared counters can never diverge: every observed transition
- * adjusts the matching CallbackGate counter exactly once, and disarm() atomically retires the
- * slot's contribution - a producer raise racing the owner's removal either lands before the
- * disarm (and is subtracted by it) or loses the CAS and sees the slot disarmed.
- *
- * Producers use raiseReady/raiseEvent only (flags only ever go up on the producer path); the owner
- * sets both in either direction while holding its state lock.
- *
- * Both flags are producer-raisable because a slot can answer both questions locally, and both are
- * monotone under a quiet, unchanged epoch: samples and events only accumulate until an owner pass
- * consumes them, and an owner pass moves the epoch. The policy is data-first: readiness is
- * "servable samples before the next event boundary reach the minimum", and the event bit is
- * "blocked on an event - nothing servable before the boundary". The two are therefore mutually
- * exclusive per slot and stable between owner passes: availability never counts across a boundary,
- * so a ready block cannot shrink and a blocked slot cannot gain readable data until an owner pass
- * consumes. The cross-input event suppressions (deriveInputBlocker) belong to states that are not
- * Synchronized, and a slot only self-gates while it is (wakeOnAnyPacket == false).
- *
- * The owner remains the authority: it publishes both flags from ground truth at every full
- * evaluation, so a producer raise is at worst one spurious wake-up that the next read reconciles,
- * and never a missed one.
+ * @brief One slot's ready/event gate flags, packed with an armed bit into a single atomic word so
+ * flag transitions and the shared counters can never diverge. Producers use raiseReady/raiseEvent
+ * only; the owner sets both in either direction under its state lock and remains the authority.
  */
 class SlotGateFlags
 {

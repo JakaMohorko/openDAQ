@@ -34,13 +34,8 @@ namespace multi_reader
 {
 
 /**
- * @brief Semantic notifications an Input raises toward its owner (the multi reader).
- *
- * Non-owning: the owner holds the strong reference to every slot and detaches itself
- * (detachListener) before it goes away. Calls arrive on producer/connection threads and
- * must stay bounded: implementations record the fact, take the owner state lock outside
- * this callback where needed, and never call back into the slot from inside the callback
- * except through the owner-locked slot API.
+ * @brief Semantic notifications an Input raises toward its owner (the multi reader). Non-owning;
+ * calls arrive on producer/connection threads and must stay bounded.
  */
 struct IInputListener
 {
@@ -52,43 +47,15 @@ struct IInputListener
     virtual void slotConnected(SizeT slotIndex) = 0;
     /// The signal was disconnected from the slot's port.
     virtual void slotDisconnected(SizeT slotIndex) = 0;
-    /**
-     * @brief Every packet arrival (bounded producer path). The slot has already updated its
-     * gate flags from a minimal connection introspection; the listener decides whether the
-     * shared gate warrants scheduling an evaluation. forceEvaluation is the conservative
-     * escape hatch: the slot could not trust its snapshot (owner pass in flight, connection
-     * mid-rebind) or the reader is in a state where every packet must re-enter the state
-     * machine (anything but steady Synchronized) - the listener then schedules
-     * unconditionally, restoring the classic packet-per-evaluation behavior.
-     */
+    /// Every packet arrival (bounded producer path); forceEvaluation means the slot could not
+    /// trust its snapshot and the listener should evaluate unconditionally.
     virtual void slotPacketReceived(SizeT slotIndex, bool forceEvaluation) = 0;
 };
 
 /**
  * @brief One input of the multi reader: owns the port reference and the per-input QueueReader,
  * implements IInputPortNotifications for that port, and holds the used/connected/pending flags
- * plus this slot's producer-facing callback-gate state.
- *
- * Availability and gate state (all atomics, producer-readable):
- * - gate flags (SlotGateFlags): this slot's ready/event contribution to the shared CallbackGate.
- * - basis: the adopted queue's availability-until-event (native samples) and whether any event
- *   packet is adopted - published by the owner after every pass that moves or consumes samples.
- *   The producer adds the connection's own O(1) counters on top to get the current truth.
- * - minReadNative: how much this slot must have before it counts as readable, in NATIVE samples.
- *   Set through setMinReadCount, which takes the owner's common-rate unit and converts once, on
- *   the owner thread, using the QueueReader's divider - which is why the producer path compares
- *   native against native and never has to read that (non-atomic) divider. NeverReadable is a
- *   minimum nothing can meet (no model, unused, unconnected).
- * - wakeOnAnyPacket: every packet forces an evaluation (any state but steady Synchronized).
- *
- * Threading contract:
- * - The IInputPortNotifications entry points are bounded: they update atomics, read two O(1)
- *   connection counters and forward one semantic notification; no dequeue, no descriptor
- *   parsing, no reader-state locks, no user callbacks.
- * - Everything under "owner-side API" must be called with the owner's state lock held; the
- *   QueueReader has no lock of its own.
- * - The port holds only a weak reference to this object (its listener), so the owner's strong
- *   reference controls the lifetime; once it is dropped, port notifications stop.
+ * plus this slot's producer-facing callback-gate state. Owner-side API needs the owner's lock.
  */
 class Input final : public ImplementationOfWeak<IInputPortNotifications>
 {
@@ -112,39 +79,12 @@ public:
     ErrCode INTERFACE_FUNC disconnected(IInputPort* inputPort) override;
     ErrCode INTERFACE_FUNC packetReceived(IInputPort* inputPort) override;
 
-    /**
-     * @brief Take over the port as its listener. Must run before anything drains the connection:
-     * InputPort::setListener front-loads the connection's cached descriptor through
-     * Connection::enqueueLastDescriptor, and that descriptor has to end up AHEAD of any data
-     * already queued behind it. Draining first would invert the two.
-     *
-     * The slot cannot do this in its own constructor (the port would reference an interface of an
-     * object that is not finished yet), so the owner calls it right after construction.
-     *
-     * @param self the owner's strong reference to this slot, installed as the port's (weak)
-     *             listener reference.
-     */
+    /// Take over the port as its listener; must run before anything drains the connection
+    /// (setListener front-loads the cached descriptor ahead of already-queued data).
     void listen(const ObjectPtr<IInputPortNotifications>& self);
 
-    /**
-     * @brief Replay the port callbacks that were never delivered for an already-connected port,
-     * completing the port's notification history.
-     *
-     * InputPort delivers connected() only from connectInternal, and only to a listener that was
-     * already installed. A port connected earlier therefore produces no callback at all - which is
-     * every adopted port, and every port the reader connected itself before the slot existed. On
-     * top of that, listen()'s setListener front-loads a descriptor event without notifying anyone.
-     * Replaying both here is what allows the rest of the reader to assume that every connection it
-     * knows about arrived through the normal notification path, and therefore to stop polling the
-     * port for connectivity (see adoptQueuedPackets).
-     *
-     * Call WITHOUT the owner's state lock held: the replayed callbacks re-enter the owner through
-     * slotConnected/slotPacketReceived, which take that lock themselves.
-     *
-     * Replaying is safe even if the port delivers the real thing concurrently: connected() is
-     * idempotent (rebind + invalidate + re-evaluate) and packetReceived() only sets flags and
-     * requests an evaluation, so a duplicate costs at most one spurious evaluation.
-     */
+    /// Replay the port callbacks never delivered for an already-connected port; call WITHOUT
+    /// the owner's state lock (the replayed callbacks re-enter the owner, which takes it).
     void replayMissedPortCallbacks();
 
     // --- Owner-side API (owner state lock held) ---
@@ -153,11 +93,8 @@ public:
     /// Owner reindexes remaining slots after removeInput; buffer order follows slot order.
     void setIndex(SizeT newIndex);
 
-    /**
-     * @brief Identity used by removeInput/setInputUsed and the status event dictionary:
-     * the connected signal's global id when the reader was constructed from signals,
-     * otherwise the port's global id. Falls back to the port id while no signal is connected.
-     */
+    /// Input identity: the connected signal's global id when built from signals, otherwise
+    /// the port's global id (fallback while no signal is connected).
     StringPtr getInputId() const;
 
     const InputPortConfigPtr& getPort() const;
@@ -168,23 +105,10 @@ public:
     /// Point the QueueReader at the port's current connection (connect, reconnect and disconnect alike).
     void rebindConnection();
 
-    /**
-     * @brief Adopt whatever the producers enqueued on the connection since the last evaluation.
-     *
-     * This is the only refresh the evaluation points need. It deliberately does NOT re-read the
-     * port's connection: connect/disconnect/reconnect all arrive as callbacks (attach() replays
-     * the ones the port skipped for a pre-connected port), and the rebind that follows a connect
-     * happens in slotConnected under the owner's lock. Connectivity is therefore notification-
-     * driven; only the queue contents are polled, because the lock-free producer path cannot
-     * hand them over itself.
-     */
+    /// Adopt whatever the producers enqueued on the connection since the last evaluation.
     void adoptQueuedPackets();
 
-    /**
-     * @brief Used flag only - excluding the slot from the gate, compatibility, synchronization and
-     * availability is the owner's responsibility, as is deactivating the port (setPortActive)
-     * and resetting/revalidating on re-enable.
-     */
+    /// Used flag only - all consequences of the flag are the owner's responsibility.
     bool isUsed() const;
     void setUsed(bool value);
 
@@ -196,59 +120,20 @@ public:
 
     // --- Availability (owner state lock held unless noted) ---
 
-    /**
-     * @brief Samples this input can contribute right now, common-rate equivalent: what the
-     * QueueReader has already adopted plus what the connection still holds, stopping at the first
-     * event on either.
-     *
-     * The event boundary is where the samples are, not merely whether an event exists: data queued
-     * in FRONT of a buried event still counts, on both halves. Only an event in the adopted queue
-     * excludes the connection outright, because everything there is behind it in stream order.
-     *
-     * Owner thread only - it needs the QueueReader's divider to express the connection's native
-     * count in the common rate. Exact there, since the owner cannot race itself. Equal to
-     * getQueueReader().getAvailableSamples() immediately after a drain, which is what lets the read
-     * path keep planning off the adopted count alone.
-     */
+    /// Samples this input can contribute right now (adopted + connection, stopping at the first
+    /// event), common-rate equivalent. Owner thread only.
     SizeT getAvailableSamples() const;
 
-    /**
-     * @brief How many samples this input needs before it counts as readable, common-rate
-     * equivalent. 1 at construction, so any single sample is enough; the owner raises it to the
-     * effective minimum (max(blockLcm, minReadCount) rounded up to whole blocks) once a model
-     * exists, and to NeverReadable while the slot is unused or unconnected.
-     *
-     * NOT the reader's builder-level minReadCount - it is what ReadCoordinator::effectiveMinimum
-     * makes of it. Owner thread only: the value is stored natively, converted here with the
-     * QueueReader's current divider, so it must be re-set after anything changes that divider.
-     */
+    /// Minimum samples (common-rate) before the slot counts as readable; NeverReadable while
+    /// unused/unconnected. Owner thread only; re-set after anything changes the divider.
     void setMinReadCount(SizeT countCommon);
     SizeT getMinReadCount() const;
 
-    /**
-     * @brief getAvailableSamples() >= getMinReadCount(), and the question the PRODUCER path asks.
-     * Safe on any thread: both sides are native there, so no divider is involved.
-     *
-     * Off the owner thread the answer is advisory - the adopted basis and the connection counters
-     * are read without a lock, so an owner pass in between can make the sum stale. That can only
-     * cost a spurious evaluation, never a missed one; see tryRaiseGateFlags for the epoch guard
-     * that keeps it that way.
-     *
-     * Do NOT use this on the owner paths, even though it is correct there: reaching the connection
-     * costs a getConnection() (a recursive component config lock) per call, which measured at
-     * ~180 ns per input per read - a third of the whole read. Use hasAdoptedDataToRead().
-     */
+    /// getAvailableSamples() >= getMinReadCount(); the PRODUCER-path question, safe on any thread.
+    /// Advisory off the owner thread; on owner paths use hasAdoptedDataToRead() (much cheaper).
     bool hasDataToRead() const;
 
-    /**
-     * @brief The same minimum against the adopted half alone, and the question the OWNER paths ask.
-     * Two atomic loads, no connection, no lock.
-     *
-     * Identical to hasDataToRead() wherever the owner asks it, because the owner drains and
-     * republishes before asking, so the connection holds nothing the basis does not already count.
-     * It is also the more honest question there: a read serves from the adopted queue, so samples
-     * that are still on the connection cannot contribute to it.
-     */
+    /// The same minimum against the adopted half alone; the OWNER-path question (two atomic loads).
     bool hasAdoptedDataToRead() const;
 
     // --- Gate maintenance (owner state lock held unless noted) ---
@@ -257,11 +142,8 @@ public:
     /// owner-only for lowering.
     SlotGateFlags& gateFlags();
 
-    /**
-     * @brief Publish the adopted queue's producer-visible basis: availability until the next
-     * event (native samples) and whether any event packet (leading or buried) is adopted.
-     * Owner-called after every pass that adopts or consumes samples on this slot.
-     */
+    /// Publish the adopted queue's producer-visible basis; owner-called after every pass that
+    /// adopts or consumes samples on this slot.
     void publishAvailability(SizeT availableNativeUntilEvent, bool hasEventPackets);
 
     /// True in every state but steady Synchronized: each packet forces an evaluation.
@@ -272,28 +154,15 @@ public:
 
 private:
     IInputListener* getListener() const;
-    /**
-     * @brief Producer-side gate maintenance, guarded by the owner-pass epoch: raise this slot's
-     * ready flag once it has an aligned block to read, or its event flag when the next thing to
-     * read is an event instead.
-     *
-     * Events go through the flag system like readiness - forcing an evaluation is reserved for a
-     * snapshot that cannot be trusted, not for a condition the slot can state.
-     *
-     * @return false when the snapshot cannot be trusted (owner pass in flight, epoch moved,
-     * connection unassigned) - the caller then forces an evaluation instead.
-     */
+    /// Producer-side gate maintenance (epoch-guarded): raise ready or event as appropriate.
+    /// @return false when the snapshot cannot be trusted - the caller forces an evaluation.
     bool tryRaiseGateFlags();
 
     /// Re-check the epoch, then raise the ready (event == false) or event flag.
     /// @return false when an owner pass ran under the caller's snapshot.
     bool raiseUnderEpoch(std::uint64_t epochBefore, bool event);
 
-    /**
-     * @brief Native samples until the first event: the owner-published adopted basis plus whatever
-     * the connection still holds. The shared core of getAvailableSamples and hasDataToRead, and
-     * the only one of the three that is safe to call off the owner thread.
-     */
+    /// Native samples until the first event (adopted basis + connection); producer-safe.
     SizeT availableNative() const;
 
     std::atomic<SizeT> index;
@@ -314,24 +183,20 @@ private:
     SlotGateFlags flags;
     std::atomic<SizeT> availableNativeBasis{0};
     std::atomic_bool basisHasEventPackets{false};
-    /// Native equivalent of the common-rate minimum handed to setMinReadCount. Defaults to 1:
-    /// until the first evaluation publishes a policy, any sample counts.
+    /// Native equivalent of the common-rate minimum handed to setMinReadCount; defaults to 1.
     std::atomic<SizeT> minReadNative{1};
-    /// Defaults to true: until the first full evaluation publishes a steady Synchronized
-    /// state, every packet re-enters the state machine (classic behavior).
+    /// Defaults to true: until an owner publishes otherwise, every packet forces an evaluation.
     std::atomic_bool wakeOnAnyPacket{true};
 
     LoggerComponentPtr loggerComponent;
 };
 
 // --- Operations over a slot vector -------------------------------------------------------------
-// Shared by the facade's read/query/callback paths and by the state evaluation
-// (multi_reader/state_context.h), so they belong to neither and live here.
+// Shared helpers over the facade's slot vector; they belong to no single slot and live here.
 
 constexpr SizeT slotNotFound = static_cast<SizeT>(-1);
 
-/// Owner-side gate writes. Producers only ever raise, and only readiness; the owner is the
-/// authority on both flags (the flag word maintains the shared counters itself).
+/// Owner-side gate writes; the owner is the authority on both flags.
 inline void setSlotReady(Input& slot, bool ready)
 {
     slot.gateFlags().setReady(ready);
@@ -342,9 +207,8 @@ inline void setSlotEvent(Input& slot, bool event)
     slot.gateFlags().setEvent(event);
 }
 
-/// Publish one slot's producer-visible availability from its adopted queue: samples until the next
-/// event (native) plus whether any event packet is adopted. Every owner pass that moves or consumes
-/// samples on a slot has to end in one of these, or the producer arithmetic goes stale.
+/// Publish one slot's producer-visible availability from its adopted queue; every owner pass
+/// that moves or consumes samples on a slot must end in one of these.
 void publishSlotAvailability(Input& slot);
 
 /// Used inputs in slot order plus their slot indices; reuses the vectors' capacity.

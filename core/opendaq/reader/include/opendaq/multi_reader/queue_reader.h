@@ -74,11 +74,8 @@ enum class AdvanceResult
     Error
 };
 
-/**
- * @brief Result of an advance operation. On Success, reachedValue holds the domain value of the
- * first sample actually reached (in the signal's own domain) - the owner verifies it against the
- * requested target in the common domain instead of trusting target rounding.
- */
+/// Result of an advance operation; on Success, reachedValue holds the domain value of the
+/// first sample actually reached (in the signal's own domain).
 struct AdvanceOutcome
 {
     AdvanceResult result;
@@ -109,57 +106,35 @@ public:
                  bool globalIdFromSignal);
 
 public:
-    /**
-     * @brief Adopt everything currently queued on the connection into the local packet
-     * deque, applying leading events. The owner calls this at its evaluation points; every
-     * other accessor is a pure query over the already-adopted state.
-     */
+    /// Adopt everything currently queued on the connection into the local packet deque,
+    /// applying leading events; every other accessor is a pure query over adopted state.
     void drain();
 
     DomainInfo getDomainInfo() const;
     std::unique_ptr<DomainValue> getFirstSampleDomainValue() const;
 
-    /**
-     * @brief System-clock time of the first unread sample, for synchronization-distance diagnostics.
-     * Empty when no data packet is at the front of the queue.
-     */
+    /// System-clock time of the first unread sample; empty when no data packet is at the front.
     std::optional<std::chrono::system_clock::time_point> getFirstSampleAbsoluteTime() const;
 
-    /**
-     * @brief Advance the cursor to the first sample at or after domainValue (signal-domain target).
-     * Pending events block advancing (returns Error); the owner must pop them first. This method
-     * advances the packet queue by discarding all packets that don't contain ticks >= domainValue.
-     */
+    /// Advance the cursor to the first sample at or after domainValue (signal-domain target);
+    /// pending events block advancing (returns Error).
     AdvanceOutcome advanceToDomainValue(const DomainValue* domainValue);
     Int getSampleRate() const;
 
     void dropOutdatedPacketSegments();
 
-    /**
-     * @brief Deactivation drop: discard queued data packets and gap events (raw and pending),
-     * keeping descriptor-change events pending so type state stays consistent while inactive.
-     */
+    /// Deactivation drop: discard queued data packets and gap events, keeping descriptor-change
+    /// events pending so type state stays consistent while inactive.
     void dropForInactive();
-    
-    /**
-     * @brief Available samples from the cursor up to the next event packet or the queue end,
-     * in common rate equivalent (native samples multiplied by the sample rate divider).
-     *
-     * The count always stops at the next event: the adopted queue is a run of data packets followed
-     * by whatever event ends the segment, and nothing behind that event is readable until it has
-     * been consumed.
-     */
+
+    /// Available samples from the cursor up to the next event packet or the queue end,
+    /// in common rate equivalent.
     SizeT getAvailableSamples() const;
 
     bool hasPendingEvents() const;
 
-    /**
-     * @brief True while any event packet sits in the adopted queue, including behind data
-     * (hasPendingEvents covers only leading events). Conservative and cheap: a sticky
-     * adoption-time marker re-verified by a scan only while it is set - built for the
-     * owner's read fast path, which must escalate to a full evaluation whenever an event
-     * could surface.
-     */
+    /// True while any event packet sits in the adopted queue, including behind data
+    /// (hasPendingEvents covers only leading events). Conservative and cheap.
     bool hasQueuedEventPackets();
 
     EventPacketPtr popFrontEvent();
@@ -170,11 +145,8 @@ public:
     const DataDescriptorPtr& getValueDescriptor() const;
     const DataDescriptorPtr& getDomainDescriptor() const;
     
-    /**
-     * @brief Adopt already-active descriptors from a previous reader over the same connection
-     * (reader-from-existing migration). The originals were consumed from the shared connection
-     * by the previous owner, so no pending event is created here.
-     */
+    /// Adopt already-active descriptors from a previous reader over the same connection
+    /// (reader-from-existing migration); no pending event is created.
     void seedDescriptors(const DataDescriptorPtr& valueDescriptor, const DataDescriptorPtr& domainDescriptor);
 
     /// Effective read types; a dynamically resolved Undefined value type reflects the signal's type.
@@ -188,40 +160,20 @@ public:
 
     void domainChangeHandled();
 
-    /**
-     * @brief Re-query the port's connection and adopt whatever it already holds. A change of
-     * connection identity discards everything adopted from the previous one - queued packets,
-     * pending events and the cached descriptors - because a port can be reconnected to a different
-     * signal (see the definition).
-     */
+    /// Re-query the port's connection and adopt whatever it already holds; a change of
+    /// connection identity discards everything adopted from the previous one.
     void updateConnection();
 
     void setSampleRateDivider(SizeT divider);
     SizeT getSampleRateDivider() const;
 
-    /**
-     * @brief Read common rate equivalent samples into the buffer. There will be nativeSamples = count / sampleRateDivider
-     * samples read from the packets into the buffer.
-     * 
-     * @param buffer Buffer that has capacity of at least count / sampleRateDivider
-     * @param count Desired sample count in common rate equivalent. 
-     * @return AdvanceResult 
-     */
+    /// Read `count` common-rate-equivalent samples (count / sampleRateDivider native samples)
+    /// from the packets into the buffers.
     AdvanceResult read(void* valueBuffer, void* domainBuffer, SizeT* count);
     AdvanceResult skip(SizeT* count);
 
-    /**
-     * @brief Silently discard the current data segment, if there are fewer than samplesInBlock samples available (common rate equivalent).
-     *
-     * For example: If there are 3 samples available before next event, samplesInBlock=10 (this is dividerLCM in terms of multireading)
-     * and divider for the queue reader is 2, then 5 native samples are required as minimum aligned read. Since 3 < 5, the 3 samples
-     * are discarded and the original event packets ending the segment become pending. No synthetic event is created and no dropped
-     * count is reported; the discontinuity is observable from the next read's domain output.
-     *
-     * @param samplesInBlock Number of samples (common rate equivalent).
-     * @return true If samples were discarded.
-     * @return false If samples were not discarded - data segment is long enough or there is no event in the queue to end the segment.
-     */
+    /// Silently discard the current data segment if fewer than samplesInBlock samples (common
+    /// rate equivalent) are available before the next event. @return true if discarded.
     bool discardLeftoverSegment(SizeT samplesInBlock);
     
 private:
@@ -251,8 +203,7 @@ private:
     std::deque<PacketPtr> packets;
     std::deque<SignalEvent> events;
 
-    /// Reused batch buffer for adoptPackets: IConnectionInternal::dequeueUpTo detaches up to
-    /// buffer-size packets under a single connection lock, avoiding one lock per packet.
+    /// Reused batch buffer for adoptPackets (one connection lock per batch, not per packet).
     std::vector<IPacket*> adoptBuffer;
 
     SizeT readingPosition = 0;
@@ -260,10 +211,7 @@ private:
     /// after the event left the queue; never false while one is in it)
     bool eventPacketAdopted = false;
 
-    /// O(1) cache of getAvailableSamplesNative (leading-data-packet samples). Recomputed lazily
-    /// on the first query after any packets/readingPosition mutation (invalidateAvailable()),
-    /// then reused - main's reader gets this count in O(1) from the connection, so without the
-    /// cache repeated availability queries on a buffered backlog are an O(packets) regression.
+    /// O(1) lazy cache of getAvailableSamplesNative, invalidated on any packets/cursor mutation.
     mutable bool availableNativeValid = false;
     mutable SizeT availableNativeCache = 0;
     void invalidateAvailable() { availableNativeValid = false; }
@@ -271,9 +219,7 @@ private:
 
     InputPortConfigPtr port;
     ConnectionPtr connection;
-    /// Cached IConnectionInternal view of `connection` for batch dequeue; null if the connection
-    /// does not implement it (adoptPackets then falls back to per-packet dequeue). Refreshed
-    /// whenever `connection` is reassigned.
+    /// Cached IConnectionInternal view of `connection` for batch dequeue; null if unsupported.
     ObjectPtr<IConnectionInternal> connectionInternal;
 
     LoggerComponentPtr loggerComponent;
@@ -295,9 +241,8 @@ private:
         ReadLayout valueLayout;
         FunctionPtr valueTransform = nullptr;
 
-        // Copy/convert specializations resolved once per descriptor (parseValue/parseDomain), so
-        // the per-packet read is a single indirect call instead of a runtime double type-switch.
-        // Null until a compatible descriptor is parsed - the owner never reads an incompatible input.
+        // Copy/convert specializations resolved once per descriptor; null until a compatible
+        // descriptor is parsed.
         TypedReadingUtils::ReadDataFn valueReadFn = nullptr;
         TypedReadingUtils::ReadDataFn domainReadFn = nullptr;
     };

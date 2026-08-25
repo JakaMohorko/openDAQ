@@ -70,9 +70,7 @@ ErrCode Input::disconnected(IInputPort* /*inputPort*/)
 
 void Input::listen(const ObjectPtr<IInputPortNotifications>& self)
 {
-    // The owner passes its own strong reference rather than the slot deriving one from `this`:
-    // the port stores only a weak listener reference, so the owner's ref is what keeps the slot
-    // alive, and it is the owner that must be able to end the slot's lifetime (removeInput).
+    // The port stores only a weak listener reference; the owner's strong ref controls lifetime.
     port.setListener(self);
 }
 
@@ -84,8 +82,7 @@ void Input::replayMissedPortCallbacks()
 
     checkErrorInfo(connected(port));
 
-    // The connection can already hold packets - at minimum the descriptor event that listen()'s
-    // setListener front-loaded without notifying.
+    // The connection can already hold packets - at minimum the front-loaded descriptor event
     checkErrorInfo(packetReceived(port));
 }
 
@@ -95,9 +92,8 @@ ErrCode Input::packetReceived(IInputPort* /*inputPort*/)
     {
         packetPending = true;
 
-        // Steady Synchronized state: raise the gate flags from a minimal introspection and let
-        // the listener schedule only when the gate is open. Any other state (or an untrusted
-        // snapshot) forces the evaluation - the classic packet-per-evaluation behavior.
+        // Raise the gate flags from a minimal introspection; an untrusted snapshot (or
+        // wakeOnAnyPacket) forces the evaluation instead.
         bool force = wakeOnAnyPacket.load();
         if (!force)
             force = !tryRaiseGateFlags();
@@ -110,9 +106,7 @@ ErrCode Input::packetReceived(IInputPort* /*inputPort*/)
 
 SizeT Input::availableNative() const
 {
-    // The adopted basis already stops at the first event in the adopted queue. If there is one, the
-    // whole connection queue is behind it in stream order - leading or buried makes no difference -
-    // so nothing there is available until that event has been consumed.
+    // An adopted event bounds everything: the whole connection queue is behind it in stream order
     const SizeT adopted = availableNativeBasis.load();
     if (basisHasEventPackets.load())
         return adopted;
@@ -121,14 +115,8 @@ SizeT Input::availableNative() const
     if (!connection.assigned())
         return adopted;  // mid-(dis)connect
 
-    // No guard on Connection::hasEventPacket() here: that means "an event is queued somewhere", not
-    // "the queue starts with one", so it would drop the data packets in FRONT of a buried event -
-    // which are readable. getSamplesUntilNextEventPacket already stops exactly at the boundary.
-    //
-    // It is an O(1) counter read while no event is queued and a deque walk otherwise. The producer
-    // path pays the walk at most once per event episode: the first packet after an event queues
-    // raises one of the gate flags (data-first in tryRaiseGateFlags), and every later packet
-    // short-circuits on the raised flag before it ever gets here.
+    // getSamplesUntilNextEventPacket stops exactly at the event boundary, keeping data in
+    // front of a buried event countable.
     return adopted + static_cast<SizeT>(connection.getSamplesUntilNextEventPacket());
 }
 
@@ -147,10 +135,7 @@ void Input::setMinReadCount(SizeT countCommon)
     }
 
     const SizeT divider = queueReader.getSampleRateDivider();
-    // Rounded UP, not truncated: one common-rate sample on an input running at half the common
-    // rate is still one native sample to wait for, and a minimum of zero would make hasDataToRead
-    // unconditionally true. Exact for every real minimum anyway - effectiveMinimum is a multiple
-    // of blockLcm, and blockLcm is a multiple of every divider.
+    // Rounded UP, not truncated: a minimum of zero would make hasDataToRead unconditionally true
     const SizeT effectiveDivider = divider > 0 ? divider : 1;
     minReadNative.store((countCommon + effectiveDivider - 1) / effectiveDivider);
 }
@@ -177,11 +162,7 @@ bool Input::hasAdoptedDataToRead() const
     if (minimum == NeverReadable)
         return false;  // unused or unconnected: no basis is maintained for these
 
-    // The producer can only ever see this snapshot - it has no lock and the adopted deque is
-    // owner-only - so every owner pass that moves samples has to republish it. Catching a missed
-    // publishSlotAvailability here names the pass that skipped it, instead of leaving a gate that
-    // goes quiet (or opens early) several passes later. Same shape as the stale-cache assert in
-    // QueueReader::getAvailableSamplesNative.
+    // Catches an owner pass that moved samples without republishing the producer-visible basis
     [[maybe_unused]] const SizeT divider = queueReader.getSampleRateDivider();
     assert(availableNativeBasis.load() * (divider > 0 ? divider : 1) == queueReader.getAvailableSamples() &&
            "stale availability basis - a pass moved samples without republishing it");
@@ -191,8 +172,7 @@ bool Input::hasAdoptedDataToRead() const
 
 bool Input::raiseUnderEpoch(std::uint64_t epochBefore, bool event)
 {
-    // The owner's end-of-pass truth wins: if a pass ran between the snapshot this raise was
-    // computed from and now, the arithmetic is not trustworthy and the caller forces an evaluation.
+    // If an owner pass ran since the snapshot, the arithmetic is not trustworthy
     if (callbackGate->passEpoch() != epochBefore)
         return false;
 
@@ -205,35 +185,22 @@ bool Input::raiseUnderEpoch(std::uint64_t epochBefore, bool event)
 
 bool Input::tryRaiseGateFlags()
 {
-    // Epoch guard (see CallbackGate): an owner pass can move samples or events between our reads,
-    // so nothing computed across one is trustworthy. A raise can never be wrong for long (the
-    // evaluation reconciles), but a SKIPPED raise could silence the gate forever - so anything
-    // inconsistent returns false and the caller forces an evaluation instead.
+    // Epoch guard (see CallbackGate): a skipped raise could silence the gate forever, so
+    // anything inconsistent returns false and the caller forces an evaluation instead.
     const auto epochBefore = callbackGate->passEpoch();
     if (!CallbackGate::epochQuiet(epochBefore))
         return false;
 
-    // Either flag up means this slot's gate contribution is complete; the caller schedules via
-    // gateSatisfied. The two flags are mutually exclusive and stable between owner passes under
-    // the data-first rule below: availability never counts across an event boundary, so a ready
-    // block cannot shrink and a blocked slot cannot gain readable data until an owner pass
-    // consumes - and every owner pass republishes both flags from ground truth.
+    // Either flag up means this slot's gate contribution is complete
     if (flags.ready() || flags.event())
         return true;
 
-    // Data-first, which is exactly the owner's rule for these bits (publishProducerGate), and the
-    // two must agree or a flag oscillates between them. A servable block before the next event
-    // boundary raises readiness, and an event behind it stays quiet: the consumer sits at the
-    // common cursor and receives events in stream order, once the data ahead of them is consumed.
-    // The availability query stops at the boundary on both halves (the adopted basis and
-    // getSamplesUntilNextEventPacket), so this can never count across an event.
+    // Data-first (the owner's rule too): a servable block before the next event boundary
+    // raises readiness, an event behind it stays quiet until the data is consumed
     if (hasDataToRead())
         return raiseUnderEpoch(epochBefore, false);
 
-    // No servable data before the boundary: an event - leading at the cursor, or buried behind a
-    // sub-minimum residual that can never grow past the boundary - is the only thing that can
-    // wake the consumer, so it opens the gate now. Raised, not forced: an event is a condition
-    // the slot can state, and forcing an evaluation is reserved for a snapshot it cannot trust.
+    // No servable data before the boundary: an event is the only thing that can wake the consumer
     if (basisHasEventPackets.load())
         return raiseUnderEpoch(epochBefore, true);
 
@@ -241,8 +208,7 @@ bool Input::tryRaiseGateFlags()
     if (!connection.assigned())
         return false;  // mid-(dis)connect: let the evaluation sort it out
 
-    // Same rule on the connection side: an event the owner has not adopted yet, with nothing
-    // servable in front of it anywhere.
+    // Same rule for an event the owner has not adopted yet
     if (connection.hasEventPacket())
         return raiseUnderEpoch(epochBefore, true);
 
@@ -261,10 +227,8 @@ void Input::setIndex(SizeT newIndex)
 
 StringPtr Input::getInputId() const
 {
-    // Cached: getGlobalId walks the component's parent chain and builds a path string, and the
-    // status path calls this per slot per read. The id is stable per connection, so it is only
-    // recomputed after a connect/disconnect (which clears the cache). A connected signal being
-    // renamed/reparented in place is out of contract and not reflected until reconnect.
+    // Cached: getGlobalId is expensive and the id is stable per connection
+    // (connect/disconnect clears the cache).
     if (cachedInputId.assigned())
         return cachedInputId;
 
@@ -302,7 +266,6 @@ void Input::rebindConnection()
 
 void Input::adoptQueuedPackets()
 {
-    // The owner's evaluation points are the only places queues are refreshed.
     if (connectedState.load())
         queueReader.drain();
 }
@@ -364,7 +327,7 @@ void publishSlotAvailability(Input& slot)
 {
     auto& reader = slot.getQueueReader();
     const SizeT divider = reader.getSampleRateDivider() > 0 ? reader.getSampleRateDivider() : 1;
-    // Buried-inclusive: a queued event behind data still bounds what the connection can add.
+    // Buried-inclusive: a queued event behind data still bounds what the connection can add
     const bool hasEventPackets = reader.hasPendingEvents() || reader.hasQueuedEventPackets();
     slot.publishAvailability(reader.getAvailableSamples() / divider, hasEventPackets);
 }
