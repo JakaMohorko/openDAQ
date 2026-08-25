@@ -416,9 +416,18 @@ ErrCode MultiReaderImpl::getActive(Bool* isActive)
     return OPENDAQ_SUCCESS;
 }
 
-ErrCode MultiReaderImpl::addInput(IComponent* /*port*/)
+ErrCode MultiReaderImpl::addInput(IComponent* port)
 {
-    return OPENDAQ_SUCCESS;
+    OPENDAQ_PARAM_NOT_NULL(port);
+
+    return daqTry([&]
+    {
+        // D1: the reader only accepts unconnected ports
+        auto inputPort = ComponentPtr::Borrow(port).asPtrOrNull<IInputPort>();
+        if (inputPort.assigned() && inputPort.getConnection().assigned())
+            return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPARAMETER, "Multi reader inputs must be unconnected ports");
+        return OPENDAQ_SUCCESS;
+    });
 }
 
 ErrCode MultiReaderImpl::removeInput(IString* /*id*/)
