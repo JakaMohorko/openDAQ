@@ -127,7 +127,6 @@ MultiReaderImpl::MultiReaderImpl(MultiReaderImpl* old, SampleType valueReadType,
                 slots[i]->getQueueReader().seedDescriptors(oldValueDescriptors[i], oldDomainDescriptors[i]);
             }
         }
-        replaySlotCallbacks();
     }
     catch (...)
     {
@@ -173,18 +172,26 @@ MultiReaderImpl::MultiReaderImpl(const MultiReaderBuilderPtr& builder)
 
         callbackGate = std::make_shared<CallbackGate>();
 
-        auto ports = createOrAdoptPorts(sourceComponents);
+        std::vector<SignalPtr> signalsToConnect;
+        auto ports = createOrAdoptPorts(sourceComponents, signalsToConnect);
         createSlots(ports);
+
+        // Connect only now that the slots listen, so every connection (and its initial
+        // descriptor event) arrives through the normal notification path. No state lock held:
+        // the callbacks re-enter through slotConnected/slotPacketReceived.
+        for (SizeT i = 0; i < signalsToConnect.size(); ++i)
+        {
+            if (signalsToConnect[i].assigned())
+                ports[i].connect(signalsToConnect[i]);
+        }
 
         {
             std::lock_guard lock(mutex);
             if (mainInputId.assigned() && findSlotById(slots, mainInputId) == notFound)
                 DAQ_THROW_EXCEPTION(NotFoundException, "The selected main input does not match any source component");
-            // Adopted ports may arrive deactivated; their active state belongs to this reader now
             for (auto* slot : slots)
                 slot->setPortActive(isActive);
         }
-        replaySlotCallbacks();
     }
     catch (...)
     {
@@ -227,7 +234,7 @@ void MultiReaderImpl::normalizeSources(const ListPtr<IComponent>& list)
     }
 }
 
-ListPtr<IInputPortConfig> MultiReaderImpl::createOrAdoptPorts(const ListPtr<IComponent>& list) const
+ListPtr<IInputPortConfig> MultiReaderImpl::createOrAdoptPorts(const ListPtr<IComponent>& list, std::vector<SignalPtr>& signalsToConnect) const
 {
     auto portList = List<IInputPortConfig>();
     for (const auto& el : list)
@@ -240,8 +247,9 @@ ListPtr<IInputPortConfig> MultiReaderImpl::createOrAdoptPorts(const ListPtr<ICom
             auto port = InputPort(context, nullptr, fmt::format("multi_reader_signal_{}", signal.getLocalId()));
             port.getTags().asPtr<ITagsPrivate>().add("MultiReaderInternalPort");
 
-            port.connect(signal);
+            // Connected by the caller once the slot listens, so no notification is missed
             portList.pushBack(port);
+            signalsToConnect.push_back(signal);
         }
         else if (auto port = el.asPtrOrNull<IInputPortConfig>(); port.assigned())
         {
@@ -249,6 +257,7 @@ ListPtr<IInputPortConfig> MultiReaderImpl::createOrAdoptPorts(const ListPtr<ICom
                 DAQ_THROW_EXCEPTION(InvalidParameterException, "Cannot pass both input ports and signals as items");
 
             portList.pushBack(port);
+            signalsToConnect.push_back(nullptr);
         }
         else
         {
@@ -314,14 +323,6 @@ void MultiReaderImpl::createSlots(const ListPtr<IInputPortConfig>& inputPorts)
         slots.push_back(slot);
         ++position;
     }
-}
-
-void MultiReaderImpl::replaySlotCallbacks(SizeT firstSlot)
-{
-    // Must run WITHOUT the state lock: the replayed callbacks re-enter through
-    // slotConnected/slotPacketReceived, which take it themselves.
-    for (SizeT i = firstSlot; i < slots.size(); ++i)
-        slots[i]->replayMissedPortCallbacks();
 }
 
 // --- IInputListener (blank stubs) --------------------------------------------------------------

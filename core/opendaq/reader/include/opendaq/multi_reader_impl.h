@@ -111,12 +111,10 @@ private:
     // --- Construction ---
     /// Validates the source list, caches the context and narrows typeOfInputs exactly once.
     void normalizeSources(const ListPtr<IComponent>& list);
-    ListPtr<IInputPortConfig> createOrAdoptPorts(const ListPtr<IComponent>& list) const;
+    /// Creates ports for signals (collected into signalsToConnect, connected only after the
+    /// slots listen) and adopts user-supplied ports, which must not be connected yet.
+    ListPtr<IInputPortConfig> createOrAdoptPorts(const ListPtr<IComponent>& list, std::vector<SignalPtr>& signalsToConnect) const;
     void createSlots(const ListPtr<IInputPortConfig>& inputPorts);
-
-    /// Replays undelivered port callbacks for already-connected ports (see
-    /// Input::replayMissedPortCallbacks); must run WITHOUT the state lock.
-    void replaySlotCallbacks(SizeT firstSlot = 0);
 
     static constexpr SizeT notFound = multi_reader::slotNotFound;
 

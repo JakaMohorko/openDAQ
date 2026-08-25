@@ -74,18 +74,6 @@ void Input::listen(const ObjectPtr<IInputPortNotifications>& self)
     port.setListener(self);
 }
 
-void Input::replayMissedPortCallbacks()
-{
-    // Nothing to replay if no signal is connected yet: a later connect() delivers the real thing.
-    if (!port.getConnection().assigned())
-        return;
-
-    checkErrorInfo(connected(port));
-
-    // The connection can already hold packets - at minimum the front-loaded descriptor event
-    checkErrorInfo(packetReceived(port));
-}
-
 ErrCode Input::packetReceived(IInputPort* /*inputPort*/)
 {
     return daqTry([&]

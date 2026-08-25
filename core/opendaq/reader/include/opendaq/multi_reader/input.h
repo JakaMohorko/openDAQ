@@ -83,10 +83,6 @@ public:
     /// (setListener front-loads the cached descriptor ahead of already-queued data).
     void listen(const ObjectPtr<IInputPortNotifications>& self);
 
-    /// Replay the port callbacks never delivered for an already-connected port; call WITHOUT
-    /// the owner's state lock (the replayed callbacks re-enter the owner, which takes it).
-    void replayMissedPortCallbacks();
-
     // --- Owner-side API (owner state lock held) ---
 
     SizeT getIndex() const;
