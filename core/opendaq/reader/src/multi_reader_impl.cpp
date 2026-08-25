@@ -181,6 +181,10 @@ ListPtr<IInputPortConfig> MultiReaderImpl::createOrAdoptPorts(const ListPtr<ICom
             if (typeOfInputs == InputType::Signals)
                 DAQ_THROW_EXCEPTION(InvalidParameterException, "Cannot pass both input ports and signals as items");
 
+            // D1: the reader only accepts unconnected ports
+            if (port.getConnection().assigned())
+                DAQ_THROW_EXCEPTION(InvalidParameterException, "Multi reader inputs must be unconnected ports");
+
             portList.pushBack(port);
             signalsToConnect.push_back(nullptr);
         }
