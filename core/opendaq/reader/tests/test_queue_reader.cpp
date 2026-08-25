@@ -46,8 +46,9 @@ protected:
     {
         readerHolder = std::make_unique<QueueReader>(port, valueReadType, domainReadType, mode, loggerComponent, false);
         drainTarget = readerHolder.get();
+        // The ctor no longer binds the connection; mirror Input::rebindConnection on connect
         if (port.getConnection().assigned())
-            drainTarget->drain();
+            drainTarget->updateConnection();
         return *drainTarget;
     }
 

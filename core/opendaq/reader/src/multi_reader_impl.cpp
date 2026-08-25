@@ -246,8 +246,6 @@ void MultiReaderImpl::createSlots(const ListPtr<IInputPortConfig>& inputPorts)
         auto* slot = static_cast<Input*>(slotObject.getObject());
         // Slots default to used; the gate's used count follows the slot set
         callbackGate->adjustUsed(1);
-        // Must happen before anything drains the connection: setListener front-loads the cached
-        // descriptor, which has to sit ahead of data already queued behind it (see Input::listen)
         slot->listen(slotObject);
 
         slotObjects.push_back(std::move(slotObject));

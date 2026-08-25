@@ -79,8 +79,7 @@ public:
     ErrCode INTERFACE_FUNC disconnected(IInputPort* inputPort) override;
     ErrCode INTERFACE_FUNC packetReceived(IInputPort* inputPort) override;
 
-    /// Take over the port as its listener; must run before anything drains the connection
-    /// (setListener front-loads the cached descriptor ahead of already-queued data).
+    /// Take over the port as its listener; the owner's strong ref keeps the slot alive.
     void listen(const ObjectPtr<IInputPortNotifications>& self);
 
     // --- Owner-side API (owner state lock held) ---

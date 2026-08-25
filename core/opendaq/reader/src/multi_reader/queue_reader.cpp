@@ -110,15 +110,14 @@ QueueReader::QueueReader(const InputPortConfigPtr& port,
                          bool globalIdFromSignal)
     // Init order matches the member declaration order in the header (avoids C5038)
     : port(port)
-    , connection(port.getConnection())
     , loggerComponent(logger)
     , readMode(mode)
 {
+    // The port is never connected at construction; updateConnection() binds on connect.
     typeCtx.domainIn = SampleType::Undefined;
     typeCtx.domainOut = domainReadType;
     typeCtx.valueIn = SampleType::Undefined;
     typeCtx.valueOut = mode == ReadMode::RawValue ? SampleType::Undefined : valueReadType;
-    refreshConnectionInternal();
 
     // Start with issues set - without descriptors the queue reader cannot be valid.
     parseDomainDescriptor();
