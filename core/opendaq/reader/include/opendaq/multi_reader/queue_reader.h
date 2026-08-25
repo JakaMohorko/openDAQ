@@ -145,10 +145,6 @@ public:
     const DataDescriptorPtr& getValueDescriptor() const;
     const DataDescriptorPtr& getDomainDescriptor() const;
     
-    /// Adopt already-active descriptors from a previous reader over the same connection
-    /// (reader-from-existing migration); no pending event is created.
-    void seedDescriptors(const DataDescriptorPtr& valueDescriptor, const DataDescriptorPtr& domainDescriptor);
-
     /// Effective read types; a dynamically resolved Undefined value type reflects the signal's type.
     SampleType getValueReadType() const;
     SampleType getDomainReadType() const;

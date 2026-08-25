@@ -46,9 +46,6 @@ public:
                     Bool startOnFullUnitOfDomain = false,
                     SizeT minReadCount = 1);
 
-    /// Deprecated MultiReaderFromExisting path; scheduled for removal.
-    MultiReaderImpl(MultiReaderImpl* old, SampleType valueReadType, SampleType domainReadType);
-
     MultiReaderImpl(const MultiReaderBuilderPtr& builder);
 
     ~MultiReaderImpl() override;

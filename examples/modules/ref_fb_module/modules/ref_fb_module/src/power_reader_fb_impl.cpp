@@ -192,11 +192,6 @@ void PowerReaderFbImpl::onDataReceived()
             if (voltageDescriptor.assigned() || currentDescriptor.assigned() || domainChanged)
                 configure(domainDescriptor, voltageDescriptor, currentDescriptor);
         }
-
-        if (!status.getValid())
-        {
-            reader = MultiReaderFromExisting(reader, SampleType::Float64, SampleType::Int64);
-        }
     }
 }
 

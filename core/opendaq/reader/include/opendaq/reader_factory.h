@@ -466,11 +466,6 @@ inline MultiReaderPtr MultiReaderEx(const ListPtr<ISignal>& signals,
     return MultiReaderEx_Create(signals, valueReadType, domainReadType, mode, timeoutType, requiredCommonSampleRate, startOnFullUnitOfDomain, minReadCount);
 }
 
-inline MultiReaderPtr MultiReaderFromExisting(const MultiReaderPtr& invalidatedReader, SampleType valueReadType, SampleType domainReadType)
-{
-    return MultiReaderFromExisting_Create(invalidatedReader, valueReadType, domainReadType);
-}
-
 template <typename TValueType = double, typename TDomainType = ClockTick>
 MultiReaderPtr MultiReader(ListPtr<ISignal> signals, ReadTimeoutType timeoutType = ReadTimeoutType::All)
 {
@@ -526,16 +521,5 @@ MultiReaderPtr MultiReaderRaw(ListPtr<ISignal> signals, ReadTimeoutType timeoutT
         timeoutType
     );
 }
-
-template <typename TValueType = double, typename TDomainType = ClockTick>
-MultiReaderPtr MultiReaderFromExisting(MultiReaderPtr invalidatedReader)
-{
-    return MultiReaderFromExisting(
-        invalidatedReader,
-        SampleTypeFromType<TValueType>::SampleType,
-        SampleTypeFromType<TDomainType>::SampleType
-    );
-}
-
 
 END_NAMESPACE_OPENDAQ

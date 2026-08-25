@@ -107,11 +107,3 @@ daqErrCode daqMultiReader_createMultiReaderEx(daqMultiReader** obj, daqList* sig
     *obj = reinterpret_cast<daqMultiReader*>(ptr);
     return err;
 }
-
-daqErrCode daqMultiReader_createMultiReaderFromExisting(daqMultiReader** obj, daqMultiReader* invalidatedReader, daqSampleType valueReadType, daqSampleType domainReadType)
-{
-    daq::IMultiReader* ptr = nullptr;
-    daqErrCode err = daq::createMultiReaderFromExisting(&ptr, reinterpret_cast<daq::IMultiReader*>(invalidatedReader), static_cast<daq::SampleType>(valueReadType), static_cast<daq::SampleType>(domainReadType));
-    *obj = reinterpret_cast<daqMultiReader*>(ptr);
-    return err;
-}

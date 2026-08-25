@@ -455,16 +455,6 @@ const DataDescriptorPtr& QueueReader::getDomainDescriptor() const
     return typeCtx.domainLayout.descriptor;
 }
 
-void QueueReader::seedDescriptors(const DataDescriptorPtr& valueDescriptor, const DataDescriptorPtr& domainDescriptor)
-{
-    if (valueDescriptor.assigned())
-        typeCtx.valueLayout.descriptor = valueDescriptor;
-    if (domainDescriptor.assigned())
-        typeCtx.domainLayout.descriptor = domainDescriptor;
-    if (typeCtx.valueLayout.descriptor.assigned() || typeCtx.domainLayout.descriptor.assigned())
-        parseCachedDescriptors();
-}
-
 SampleType QueueReader::getValueReadType() const
 {
     return typeCtx.valueOut;

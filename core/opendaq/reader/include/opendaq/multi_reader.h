@@ -240,13 +240,6 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     SizeT, minReadCount
 )
 
-OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
-    LIBRARY_FACTORY, MultiReaderFromExisting, IMultiReader,
-    IMultiReader*, invalidatedReader,
-    SampleType, valueReadType,
-    SampleType, domainReadType
-)
-
 /*!
  * @brief Creates a MultiReader with Builder
  * @param builder MultiReader Builder

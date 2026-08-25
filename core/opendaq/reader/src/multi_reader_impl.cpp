@@ -66,75 +66,6 @@ MultiReaderImpl::MultiReaderImpl(const ListPtr<IComponent>& list,
 {
 }
 
-MultiReaderImpl::MultiReaderImpl(MultiReaderImpl* old, SampleType valueReadType, SampleType domainReadType)
-    : valueReadType(valueReadType)
-    , domainReadType(domainReadType)
-{
-    ListPtr<IInputPortConfig> ports = List<IInputPortConfig>();
-    std::vector<bool> usedFlags;
-    std::vector<DataDescriptorPtr> oldValueDescriptors;
-    std::vector<DataDescriptorPtr> oldDomainDescriptors;
-
-    {
-        std::scoped_lock lock(old->mutex);
-        old->invalid = true;
-
-        loggerComponent = old->loggerComponent;
-        readMode = old->readMode;
-        typeOfInputs = old->typeOfInputs;
-        portBinder = old->portBinder;
-        startOnFullUnitOfDomain = old->startOnFullUnitOfDomain;
-        isActive = old->isActive;
-        minReadCount = old->minReadCount;
-        tickOffsetTolerance = old->tickOffsetTolerance;
-        mainInputId = old->mainInputId;
-        maxSynchronizationDistance = old->maxSynchronizationDistance;
-        dataLossTimeout = old->dataLossTimeout;
-        requiredCommonSampleRate = old->requiredCommonSampleRate;
-        allowDifferentRates = old->allowDifferentRates;
-        notificationMethod = old->notificationMethod;
-        notificationMethodsList = old->notificationMethodsList;
-        context = old->context;
-
-        for (auto* slot : old->slots)
-        {
-            ports.pushBack(slot->getPort());
-            usedFlags.push_back(slot->isUsed());
-            // The old reader consumed the initial descriptor events; adopt its active descriptors
-            oldValueDescriptors.push_back(slot->getQueueReader().getValueDescriptor());
-            oldDomainDescriptors.push_back(slot->getQueueReader().getDomainDescriptor());
-        }
-    }
-
-    resolvedDomainReadType = domainReadType == SampleType::Undefined ? SampleType::Int64 : domainReadType;
-
-    this->internalAddRef();
-    try
-    {
-        callbackGate = std::make_shared<CallbackGate>();
-
-        createSlots(ports);
-
-        {
-            std::lock_guard lock(mutex);
-            for (SizeT i = 0; i < usedFlags.size() && i < slots.size(); ++i)
-            {
-                if (!usedFlags[i])
-                {
-                    slots[i]->setUsed(false);
-                    callbackGate->adjustUsed(-1);
-                }
-                slots[i]->getQueueReader().seedDescriptors(oldValueDescriptors[i], oldDomainDescriptors[i]);
-            }
-        }
-    }
-    catch (...)
-    {
-        this->releaseWeakRefOnException();
-        throw;
-    }
-}
-
 MultiReaderImpl::MultiReaderImpl(const MultiReaderBuilderPtr& builder)
     : tickOffsetTolerance(builder.getTickOffsetTolerance())
     , requiredCommonSampleRate(builder.getRequiredCommonSampleRate())
@@ -632,41 +563,6 @@ OPENDAQ_DEFINE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC_OBJ(LIBRARY_FACTORY,
                                                                startOnFullUnitOfDomain,
                                                                SizeT,
                                                                minReadCount)
-
-template <>
-struct ObjectCreator<IMultiReader>
-{
-    static ErrCode Create(IMultiReader** out, IMultiReader* toCopy, SampleType valueReadType, SampleType domainReadType) noexcept
-    {
-        OPENDAQ_PARAM_NOT_NULL(out);
-
-        if (toCopy == nullptr)
-        {
-            return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_ARGUMENT_NULL, "Existing reader must not be null");
-        }
-
-        auto old = ReaderConfigPtr::Borrow(toCopy);
-        auto impl = dynamic_cast<MultiReaderImpl*>(old.getObject());
-
-        if (impl == nullptr)
-        {
-            return DAQ_MAKE_ERROR_INFO(OPENDAQ_ERR_INVALIDPARAMETER,
-                                       "MultiReader from existing can only be used with the base multi reader implementation");
-        }
-
-        return createObject<IMultiReader, MultiReaderImpl>(out, impl, valueReadType, domainReadType);
-    }
-};
-
-OPENDAQ_DEFINE_CUSTOM_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC_OBJ(LIBRARY_FACTORY,
-                                                                      IMultiReader,
-                                                                      createMultiReaderFromExisting,
-                                                                      IMultiReader*,
-                                                                      invalidatedReader,
-                                                                      SampleType,
-                                                                      valueReadType,
-                                                                      SampleType,
-                                                                      domainReadType)
 
 extern "C" daq::ErrCode PUBLIC_EXPORT createMultiReaderFromBuilder(IMultiReader** objTmp, IMultiReaderBuilder* builder)
 {

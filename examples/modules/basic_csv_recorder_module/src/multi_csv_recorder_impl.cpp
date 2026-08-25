@@ -292,9 +292,9 @@ void MultiCsvRecorderImpl::configureWriter(const DataDescriptorPtr& domainDescri
 {
     try
     {
-        if (!recoverReaderIfNecessary())
+        if (!reader.asPtr<IReaderConfig>().getIsValid())
         {
-            throw std::runtime_error("Reader failed to recover from invalid state");
+            throw std::runtime_error("Reader is in invalid state");
         }
 
         if (!domainDescriptor.assigned() || domainDescriptor == NullDataDescriptor())
@@ -353,16 +353,6 @@ void MultiCsvRecorderImpl::reconfigureWriter()
     {
         configureWriter(recorderDomainDataDescriptor, descriptorList, signalNameList);
     }
-}
-
-bool MultiCsvRecorderImpl::recoverReaderIfNecessary()
-{
-    if (reader.asPtr<IReaderConfig>().getIsValid())
-        return true;
-
-    LOG_D("Sum Reader FB: Attempting reader recovery")
-    reader = MultiReaderFromExisting(reader, SampleType::Float64, SampleType::Int64);
-    return reader.asPtr<IReaderConfig>().getIsValid();
 }
 
 void MultiCsvRecorderImpl::onPropertiesChanged()

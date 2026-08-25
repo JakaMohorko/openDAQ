@@ -27,7 +27,6 @@ Input::Input(SizeT index,
     , flags(callbackGate)
     , loggerComponent(logger)
 {
-    connectedState = port.getConnection().assigned();
 }
 
 ErrCode Input::acceptsSignal(IInputPort* inputPort, ISignal* signal, Bool* accept)

@@ -41,7 +41,6 @@ void defineIMultiReader(pybind11::module_ m, PyDaqIntf<daq::IMultiReader, daq::I
     py::arg("read_mode") = daq::ReadMode::Scaled,
     py::arg("timeout_type") = daq::ReadTimeoutType::All,
     "Creates a MultiReader object that reads multiple signals at once.");
-    m.def("MultiReaderFromExisting", &daq::MultiReaderFromExisting_Create);
 
     cls.def("read",
         [](daq::IMultiReader *object, size_t count, const size_t timeoutMs, bool returnStatus)

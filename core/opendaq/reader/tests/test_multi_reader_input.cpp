@@ -107,20 +107,6 @@ protected:
     Input* slot{};
 };
 
-TEST_F(MultiReaderInputTest, InitialConnectedStateFromPort)
-{
-    RecordingSlotListener listener;
-
-    auto unconnectedPort = createPort("unconnected");
-    createSlot(0, unconnectedPort, &listener);
-    ASSERT_FALSE(slot->isConnected());
-
-    auto connectedPort = createPort("connected");
-    connectedPort.connect(signal);
-    createSlot(1, connectedPort, &listener);
-    ASSERT_TRUE(slot->isConnected());
-}
-
 TEST_F(MultiReaderInputTest, ConnectedNotificationUpdatesStateAndForwards)
 {
     RecordingSlotListener listener;
