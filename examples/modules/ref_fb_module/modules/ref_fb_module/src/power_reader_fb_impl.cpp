@@ -71,11 +71,6 @@ void PowerReaderFbImpl::initProperties()
     objPtr.getOnPropertyValueWrite("UseCustomOutputRange") +=
         [this](PropertyObjectPtr& obj, PropertyValueEventArgsPtr& args) { propertyChanged(true); };
 
-    const auto tickOffsetToleranceUsProp = IntProperty("TickOffsetToleranceUs", 0.0);
-    objPtr.addProperty(tickOffsetToleranceUsProp);
-    objPtr.getOnPropertyValueWrite("TickOffsetToleranceUs") +=
-        [this](PropertyObjectPtr& obj, PropertyValueEventArgsPtr& args) { propertyChanged(true); createReader(); };
-
     readProperties();
 }
 
@@ -96,7 +91,6 @@ void PowerReaderFbImpl::readProperties()
     useCustomOutputRange = objPtr.getPropertyValue("UseCustomOutputRange");
     powerHighValue = objPtr.getPropertyValue("CustomHighValue");
     powerLowValue = objPtr.getPropertyValue("CustomLowValue");
-    tickOffsetToleranceUs = std::chrono::milliseconds(objPtr.getPropertyValue("TickOffsetToleranceUs"));
 }
 
 FunctionBlockTypePtr PowerReaderFbImpl::CreateType(const ModuleInfoPtr& moduleInfo)
@@ -309,9 +303,6 @@ void PowerReaderFbImpl::createInputPorts()
 
 void PowerReaderFbImpl::createReader()
 {
-    auto tolerance = SimplifiedRatio(tickOffsetToleranceUs.count(), 1'000'000);
-    tolerance = tolerance.simplify();
-
     reader.release();
 
     reader = MultiReaderBuilder()
@@ -319,7 +310,6 @@ void PowerReaderFbImpl::createReader()
         .addInputPort(currentInputPort)
         .setDomainReadType(SampleType::Int64)
         .setValueReadType(SampleType::Float64)
-        .setTickOffsetTolerance(tolerance)
         .setAllowDifferentSamplingRates(false)
         .setInputPortNotificationMethod(PacketReadyNotification::Unspecified)
         .build();

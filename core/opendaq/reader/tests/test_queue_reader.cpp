@@ -320,7 +320,7 @@ TEST_F(QueueReaderTest, CreateBeforeConnection)
 
     // The connection requirement lives on the explicit drain point (#10); every accessor
     // is a pure query over the (empty) adopted state
-    ASSERT_THROW(reader.drain(), InvalidOperationException);
+    ASSERT_NO_THROW(reader.drain());  // unconnected drain is a no-op
     ASSERT_NO_THROW(reader.getDomainInfo());
     ASSERT_EQ(reader.getFirstSampleDomainValue(), nullptr);
     ASSERT_EQ(reader.advanceToDomainValue(domainValue.get()).result, AdvanceResult::NeedMoreData);
@@ -354,7 +354,7 @@ TEST_F(QueueReaderTest, CreateBeforeConnectionRecovery)
     auto& reader = createReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled);
 
     ASSERT_FALSE(reader.isValid());
-    ASSERT_THROW(reader.drain(), InvalidOperationException);
+    ASSERT_NO_THROW(reader.drain());  // unconnected drain is a no-op
 
     inputPort.connect(signal);
     reader.updateConnection();
@@ -402,7 +402,7 @@ TEST_F(QueueReaderTest, InvalidDomainAndBack)
     auto& reader = createReader(inputPort, SampleType::Float64, SampleType::Int64, ReadMode::Scaled);
 
     ASSERT_FALSE(reader.isValid());
-    ASSERT_THROW(reader.drain(), InvalidOperationException);
+    ASSERT_NO_THROW(reader.drain());  // unconnected drain is a no-op
 
     inputPort.connect(signal);
     reader.updateConnection();

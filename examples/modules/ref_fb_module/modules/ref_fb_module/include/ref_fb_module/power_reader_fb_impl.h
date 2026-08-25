@@ -65,7 +65,6 @@ private:
     Float powerHighValue;
     Float powerLowValue;
     Bool useCustomOutputRange;
-    std::chrono::milliseconds tickOffsetToleranceUs;
 
     MultiReaderPtr reader;
 

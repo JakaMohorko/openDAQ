@@ -122,16 +122,6 @@ daqErrCode daqMultiReaderBuilder_getMinReadCount(daqMultiReaderBuilder* self, da
     return reinterpret_cast<daq::IMultiReaderBuilder*>(self)->getMinReadCount(minReadCount);
 }
 
-daqErrCode daqMultiReaderBuilder_setTickOffsetTolerance(daqMultiReaderBuilder* self, daqRatio* offsetTolerance)
-{
-    return reinterpret_cast<daq::IMultiReaderBuilder*>(self)->setTickOffsetTolerance(reinterpret_cast<daq::IRatio*>(offsetTolerance));
-}
-
-daqErrCode daqMultiReaderBuilder_getTickOffsetTolerance(daqMultiReaderBuilder* self, daqRatio** offsetTolerance)
-{
-    return reinterpret_cast<daq::IMultiReaderBuilder*>(self)->getTickOffsetTolerance(reinterpret_cast<daq::IRatio**>(offsetTolerance));
-}
-
 daqErrCode daqMultiReaderBuilder_setAllowDifferentSamplingRates(daqMultiReaderBuilder* self, daqBool allowDifferentRates)
 {
     return reinterpret_cast<daq::IMultiReaderBuilder*>(self)->setAllowDifferentSamplingRates(allowDifferentRates);

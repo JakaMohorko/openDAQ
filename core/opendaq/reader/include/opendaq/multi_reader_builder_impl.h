@@ -55,8 +55,6 @@ public:
     ErrCode INTERFACE_FUNC setMinReadCount(SizeT minReadCount) override;
     ErrCode INTERFACE_FUNC getMinReadCount(SizeT* minReadCount) override;
 
-    ErrCode INTERFACE_FUNC setTickOffsetTolerance(IRatio* offsetTolerance) override;
-    ErrCode INTERFACE_FUNC getTickOffsetTolerance(IRatio** offsetTolerance) override;
 
     ErrCode INTERFACE_FUNC setAllowDifferentSamplingRates(Bool allowDifferentRates) override;
     ErrCode INTERFACE_FUNC getAllowDifferentSamplingRates(Bool* allowDifferentRates) override;
@@ -85,7 +83,6 @@ private:
     Int requiredCommonSampleRate;
     Bool startOnFullUnitOfDomain;
     SizeT minReadCount;
-    RatioPtr offsetTolerance;
     Bool allowDifferentRates;
     PacketReadyNotification notificationMethod;
     ListPtr<PacketReadyNotification> notificationMethodsList;

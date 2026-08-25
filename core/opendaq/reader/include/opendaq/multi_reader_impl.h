@@ -132,7 +132,6 @@ private:
     ContextPtr context;
 
     // --- Configuration ---
-    RatioPtr tickOffsetTolerance;  // deprecated; value ignored
     StringPtr mainInputId;         // explicitly selected main input; null -> first used input
     RatioPtr maxSynchronizationDistance;  // seconds; null/zero disables
     RatioPtr dataLossTimeout;             // seconds; null/zero disables
@@ -145,8 +144,7 @@ private:
     ListPtr<PacketReadyNotification> notificationMethodsList;
 
     SampleType valueReadType{SampleType::Undefined};
-    SampleType domainReadType{SampleType::Undefined};   // as configured
-    SampleType resolvedDomainReadType{SampleType::Int64};  // integral type driving the QueueReaders
+    SampleType domainReadType{SampleType::Int64};  // resolved at construction (Undefined -> Int64)
     ReadMode readMode{ReadMode::Scaled};
 
     InputType typeOfInputs{InputType::Unknown};

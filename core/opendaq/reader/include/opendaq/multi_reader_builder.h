@@ -182,19 +182,6 @@ DECLARE_OPENDAQ_INTERFACE(IMultiReaderBuilder, IBaseObject)
 
     // [returnSelf]
     /*!
-     * @brief Set maximum distance between signals in fractions of domain unit
-     * @param offsetTolerance Ratio that define offset tolerance as a fraction of domain unit.
-     */
-    virtual ErrCode INTERFACE_FUNC setTickOffsetTolerance(IRatio* offsetTolerance) = 0;
-
-    /*!
-     * @brief Get maximum distance between signals in fractions of domain unit
-     * @param offsetTolerance[out] Ratio that define offset tolerance as a fraction of domain unit.
-     */
-    virtual ErrCode INTERFACE_FUNC getTickOffsetTolerance(IRatio** offsetTolerance) = 0;
-
-    // [returnSelf]
-    /*!
      * @brief Sets the "AllowDifferentSamplingRates" multi reader parameter.
      * @param allowDifferentRates If set to `false`, the multi reader will only accept signals with the same sampling rate.
      */

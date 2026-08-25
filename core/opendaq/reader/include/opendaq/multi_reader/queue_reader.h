@@ -185,7 +185,6 @@ private:
     SizeT getAvailableSamplesNative() const;
     AdvanceResult readNative(void* valueBuffer, void* domainBuffer, SizeT* count);
 
-    void checkConnection() const;
     
     SignalEventType addEncounteredEvent(const EventPacketPtr& packet);
     void addToEventQueue(SignalEvent&& event);

@@ -14,7 +14,6 @@ MultiReaderBuilderImpl::MultiReaderBuilderImpl()
     , requiredCommonSampleRate(-1)
     , startOnFullUnitOfDomain(false)
     , minReadCount(1)
-    , offsetTolerance(nullptr)
     , allowDifferentRates(true)
     , notificationMethod(PacketReadyNotification::SameThread)
     , notificationMethodsList(List<PacketReadyNotification>())
@@ -177,20 +176,6 @@ ErrCode MultiReaderBuilderImpl::getMinReadCount(SizeT* minReadCount)
     *minReadCount = this->minReadCount;
     return OPENDAQ_SUCCESS;
 }
-ErrCode MultiReaderBuilderImpl::setTickOffsetTolerance(IRatio* offsetTolerance)
-{
-    this->offsetTolerance = offsetTolerance;
-
-    return OPENDAQ_SUCCESS;
-}
-ErrCode MultiReaderBuilderImpl::getTickOffsetTolerance(IRatio** offsetTolerance)
-{
-    OPENDAQ_PARAM_NOT_NULL(offsetTolerance);
-
-    *offsetTolerance = this->offsetTolerance.addRefAndReturn();
-    return OPENDAQ_SUCCESS;
-}
-
 ErrCode MultiReaderBuilderImpl::setAllowDifferentSamplingRates(Bool allowDifferentRates)
 {
     this->allowDifferentRates = allowDifferentRates;

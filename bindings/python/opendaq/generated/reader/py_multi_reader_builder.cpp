@@ -193,21 +193,6 @@ void defineIMultiReaderBuilder(pybind11::module_ m, PyDaqIntf<daq::IMultiReaderB
             objectPtr.setMinReadCount(minReadCount);
         },
         "Gets the minimal number of samples to read. / Sets the minimal number of samples to read.");
-    cls.def_property("tick_offset_tolerance",
-        [](daq::IMultiReaderBuilder *object)
-        {
-            py::gil_scoped_release release;
-            const auto objectPtr = daq::MultiReaderBuilderPtr::Borrow(object);
-            return objectPtr.getTickOffsetTolerance().detach();
-        },
-        [](daq::IMultiReaderBuilder *object, std::variant<daq::IRatio*, std::pair<int64_t, int64_t>>& offsetTolerance)
-        {
-            py::gil_scoped_release release;
-            const auto objectPtr = daq::MultiReaderBuilderPtr::Borrow(object);
-            objectPtr.setTickOffsetTolerance(getVariantValue<daq::IRatio*>(offsetTolerance));
-        },
-        py::return_value_policy::take_ownership,
-        "Get maximum distance between signals in fractions of domain unit / Set maximum distance between signals in fractions of domain unit");
     cls.def_property("allow_different_sampling_rates",
         [](daq::IMultiReaderBuilder *object)
         {

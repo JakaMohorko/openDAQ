@@ -126,50 +126,36 @@ QueueReader::QueueReader(const InputPortConfigPtr& port,
 
 void QueueReader::refreshConnectionInternal()
 {
-    connectionInternal = connection.assigned() ? connection.asPtrOrNull<IConnectionInternal>() : nullptr;
+    // Every real connection implements IConnectionInternal; asPtr throws on a dummy/mock one
+    connectionInternal = connection.assigned() ? connection.asPtr<IConnectionInternal>() : nullptr;
 }
 
 void QueueReader::adoptPackets()
 {
     invalidateAvailable();
 
-    // Batch path: dequeueUpTo detaches many packets under a single connection lock;
-    // falls back below if the connection does not implement IConnectionInternal.
-    if (connectionInternal.assigned())
-    {
-        constexpr SizeT batchSize = 64;
-        if (adoptBuffer.size() < batchSize)
-            adoptBuffer.resize(batchSize);
+    // dequeueUpTo detaches many packets under a single connection lock
+    constexpr SizeT batchSize = 64;
+    if (adoptBuffer.size() < batchSize)
+        adoptBuffer.resize(batchSize);
 
-        SizeT dequeued;
-        do
+    SizeT dequeued;
+    do
+    {
+        dequeued = batchSize;
+        connectionInternal->dequeueUpTo(adoptBuffer.data(), &dequeued);
+        for (SizeT i = 0; i < dequeued; ++i)
         {
-            dequeued = batchSize;
-            connectionInternal->dequeueUpTo(adoptBuffer.data(), &dequeued);
-            for (SizeT i = 0; i < dequeued; ++i)
-            {
-                // dequeueUpTo detached each packet (ownership transferred); Adopt takes that
-                // reference without an extra AddRef.
-                PacketPtr packet = PacketPtr::Adopt(adoptBuffer[i]);
-                // Sticky marker for hasQueuedEventPackets: the fast read path (owner's steady
-                // state) must learn about adopted events without scanning the queue per read
-                if (packet.getType() == PacketType::Event)
-                    eventPacketAdopted = true;
-                packets.push_back(std::move(packet));
-            }
-        } while (dequeued == batchSize);  // buffer was filled - the connection may hold more
-        return;
-    }
-
-    // Fallback: take ownership one packet at a time
-    PacketPtr packet = connection.dequeue();
-    while (packet.assigned())
-    {
-        if (packet.getType() == PacketType::Event)
-            eventPacketAdopted = true;
-        packets.push_back(std::move(packet));
-        packet = connection.dequeue();
-    }
+            // dequeueUpTo detached each packet (ownership transferred); Adopt takes that
+            // reference without an extra AddRef.
+            PacketPtr packet = PacketPtr::Adopt(adoptBuffer[i]);
+            // Sticky marker for hasQueuedEventPackets: the fast read path (owner's steady
+            // state) must learn about adopted events without scanning the queue per read
+            if (packet.getType() == PacketType::Event)
+                eventPacketAdopted = true;
+            packets.push_back(std::move(packet));
+        }
+    } while (dequeued == batchSize);  // buffer was filled - the connection may hold more
 }
 
 bool QueueReader::hasQueuedEventPackets()
@@ -184,7 +170,6 @@ bool QueueReader::hasQueuedEventPackets()
 
 void QueueReader::drain()
 {
-    checkConnection();
     drainConnection();
 }
 
@@ -244,7 +229,6 @@ AdvanceOutcome QueueReader::advanceToDomainValue(const DomainValue* domainValue)
 
             readingPosition = 0;
             ++end;
-            continue;
         }
         else if (packet.getType() == PacketType::Event)
         {
@@ -257,7 +241,6 @@ AdvanceOutcome QueueReader::advanceToDomainValue(const DomainValue* domainValue)
             {
                 break;
             }
-            continue;
         }
         else
         {
@@ -327,17 +310,10 @@ void QueueReader::consumeLeadingEventPackets()
     }
 }
 
-void QueueReader::checkConnection() const
-{
-    if (!connection.assigned())
-        DAQ_THROW_EXCEPTION(InvalidOperationException, "Connection must be assigned for this operation.");
-}
-
 void QueueReader::dropForInactive()
 {
     invalidateAvailable();
-    if (connection.assigned())
-        drainConnection();
+    drainConnection();
 
     // Pending gap events are meaningless once the data flow is suspended
     events.erase(std::remove_if(events.begin(),

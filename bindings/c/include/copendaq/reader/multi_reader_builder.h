@@ -64,8 +64,6 @@ extern "C"
     daqErrCode EXPORTED daqMultiReaderBuilder_getStartOnFullUnitOfDomain(daqMultiReaderBuilder* self, daqBool* enabled);
     daqErrCode EXPORTED daqMultiReaderBuilder_setMinReadCount(daqMultiReaderBuilder* self, daqSizeT minReadCount);
     daqErrCode EXPORTED daqMultiReaderBuilder_getMinReadCount(daqMultiReaderBuilder* self, daqSizeT* minReadCount);
-    daqErrCode EXPORTED daqMultiReaderBuilder_setTickOffsetTolerance(daqMultiReaderBuilder* self, daqRatio* offsetTolerance);
-    daqErrCode EXPORTED daqMultiReaderBuilder_getTickOffsetTolerance(daqMultiReaderBuilder* self, daqRatio** offsetTolerance);
     daqErrCode EXPORTED daqMultiReaderBuilder_setAllowDifferentSamplingRates(daqMultiReaderBuilder* self, daqBool allowDifferentRates);
     daqErrCode EXPORTED daqMultiReaderBuilder_getAllowDifferentSamplingRates(daqMultiReaderBuilder* self, daqBool* allowDifferentRates);
     daqErrCode EXPORTED daqMultiReaderBuilder_setInputPortNotificationMethod(daqMultiReaderBuilder* self, daqPacketReadyNotification notificationMethod);

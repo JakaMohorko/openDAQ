@@ -67,8 +67,7 @@ MultiReaderImpl::MultiReaderImpl(const ListPtr<IComponent>& list,
 }
 
 MultiReaderImpl::MultiReaderImpl(const MultiReaderBuilderPtr& builder)
-    : tickOffsetTolerance(builder.getTickOffsetTolerance())
-    , requiredCommonSampleRate(builder.getRequiredCommonSampleRate())
+    : requiredCommonSampleRate(builder.getRequiredCommonSampleRate())
     , allowDifferentRates(builder.getAllowDifferentSamplingRates())
     , startOnFullUnitOfDomain(builder.getStartOnFullUnitOfDomain())
     , minReadCount(builder.getMinReadCount())
@@ -86,20 +85,15 @@ MultiReaderImpl::MultiReaderImpl(const MultiReaderBuilderPtr& builder)
 
         loggerComponent = context.getLogger().getOrAddComponent("MultiReader");
 
-        // Deprecated: the value is ignored; kept on the builder for compatibility
-        if (tickOffsetTolerance.assigned() && tickOffsetTolerance.getNumerator() != 0)
-        {
-            LOG_W("MultiReaderBuilder::setTickOffsetTolerance is deprecated and its value is ignored; "
-                  "use setMaxSynchronizationDistance instead");
-        }
-
         mainInputId = builder.getMainInput();
         if (mainInputId.assigned() && mainInputId.getLength() == 0)
             mainInputId = nullptr;
         maxSynchronizationDistance = builder.getMaxSynchronizationDistance();
         dataLossTimeout = builder.getDataLossTimeout();
 
-        resolvedDomainReadType = domainReadType == SampleType::Undefined ? SampleType::Int64 : domainReadType;
+        // Single source of truth: the multi reader always reads an integral common domain
+        if (domainReadType == SampleType::Undefined)
+            domainReadType = SampleType::Int64;
 
         callbackGate = std::make_shared<CallbackGate>();
 
@@ -237,7 +231,7 @@ void MultiReaderImpl::createSlots(const ListPtr<IInputPortConfig>& inputPorts)
         auto slotObject = createWithImplementation<IInputPortNotifications, Input>(position,
                                                                                        port,
                                                                                        valueReadType,
-                                                                                       resolvedDomainReadType,
+                                                                                       domainReadType,
                                                                                        readMode,
                                                                                        loggerComponent,
                                                                                        static_cast<IInputListener*>(this),
