@@ -143,7 +143,18 @@ void ConfigProtocolStreamingConsumer::addExternalSignal(const MirroredSignalConf
         std::scoped_lock lock(sync);
         mirroredExternalSignalsIds.insert(signal.getLocalId());
     }
-    externalSignalsFolder.addItem(signal);
+    // the Id has to be known as owned by this session before the folder add triggers core events,
+    // but a failed add (e.g. a duplicate signal string Id from another client) must not leave it behind
+    try
+    {
+        externalSignalsFolder.addItem(signal);
+    }
+    catch (...)
+    {
+        std::scoped_lock lock(sync);
+        mirroredExternalSignalsIds.erase(signal.getLocalId());
+        throw;
+    }
     {
         std::scoped_lock lock(sync);
         mirroredExternalSignals.insert({signalNumericId, signal});

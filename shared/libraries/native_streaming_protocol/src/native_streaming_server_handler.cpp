@@ -842,13 +842,18 @@ void NativeStreamingServerHandler::handleClientSignal(const SignalNumericIdType&
 
     if (available)
     {
-        streamingManager.registerClientSignal(signalNumericId, signalStringId, clientId);
-        signalAvailableHandler(signalStringId, serializedSignal);
+        // skip the availability broadcast if the signal string Id is already registered by another
+        // client - re-announcing it would corrupt (or crash, via an unhandled exception on the
+        // processing thread) the server-side streaming which knows the Id as already available
+        if (streamingManager.registerClientSignal(signalNumericId, signalStringId, clientId))
+            signalAvailableHandler(signalStringId, serializedSignal);
     }
     else
     {
-        signalUnavailableHandler(signalStringId);
-        streamingManager.unregisterClientSignal(signalNumericId, signalStringId, clientId);
+        // announce unavailability only if the signal was registered by this very client,
+        // otherwise a rejected duplicate would tear down the owning client's signal on disconnect
+        if (streamingManager.unregisterClientSignal(signalNumericId, signalStringId, clientId))
+            signalUnavailableHandler(signalStringId);
     }
 }
 

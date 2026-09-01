@@ -4,6 +4,9 @@
 #include <native_streaming_protocol/native_streaming_client_handler.h>
 #include <native_streaming_protocol/native_streaming_server_handler.h>
 
+#include <atomic>
+#include <thread>
+
 using namespace daq;
 using namespace daq::opendaq_native_streaming_protocol;
 using namespace daq::packet_streaming;
@@ -286,6 +289,75 @@ TEST_P(ClientToDeviceStreamingTest, GeneralizedC2DStreaming)
     client.clientHandler->removeClientSignal(clientSignal);
     ASSERT_EQ(signalUnavailableFuture.wait_for(timeout), std::future_status::ready);
     ASSERT_EQ(signalUnavailableFuture.get(), clientSignal.getGlobalId());
+}
+
+TEST_P(ClientToDeviceStreamingTest, DuplicateClientSignalStringIdsFromTwoClients)
+{
+    // two clients advertising signals with the same global string Id: the second registration
+    // must be rejected without re-announcing the Id to the server-side streaming (which would
+    // throw on the processing thread and terminate the server process), and the duplicate
+    // client's signal removal must not tear down the owning client's signal
+    std::atomic<int> availableCount{0};
+    std::atomic<int> unavailableCount{0};
+    signalAvailableHandler = [&availableCount](const StringPtr&, const StringPtr&) { ++availableCount; };
+    signalUnavailableHandler = [&unavailableCount](const StringPtr&) { ++unavailableCount; };
+
+    const auto waitForCount = [this](std::atomic<int>& counter, int expected)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + timeout;
+        while (counter != expected && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        return counter == expected;
+    };
+
+    ClientAttributes client2;
+    client2.setUp();
+
+    const auto valueDescriptor = DataDescriptorBuilder().setSampleType(SampleType::Float32).build();
+    // same local Id in two separate client contexts - the global string Ids collide
+    auto clientSignal1 = SignalWithDescriptor(client.clientContext, valueDescriptor, nullptr, "signal");
+    auto clientSignal2 = SignalWithDescriptor(client2.clientContext, valueDescriptor, nullptr, "signal");
+    ASSERT_EQ(clientSignal1.getGlobalId(), clientSignal2.getGlobalId());
+
+    startServer();
+
+    ASSERT_TRUE(client.clientHandler->connect(SERVER_ADDRESS, NATIVE_STREAMING_LISTENING_PORT));
+    ASSERT_TRUE(client2.clientHandler->connect(SERVER_ADDRESS, NATIVE_STREAMING_LISTENING_PORT));
+
+    client.clientHandler->sendStreamingRequest();
+    ASSERT_EQ(client.streamingInitFuture.wait_for(timeout), std::future_status::ready);
+    client2.clientHandler->sendStreamingRequest();
+    ASSERT_EQ(client2.streamingInitFuture.wait_for(timeout), std::future_status::ready);
+
+    // the first client owns the signal string Id
+    client.clientHandler->addClientSignal(clientSignal1);
+    ASSERT_TRUE(waitForCount(availableCount, 1));
+
+    // the second client's colliding signal must be rejected silently
+    client2.clientHandler->addClientSignal(clientSignal2);
+    std::this_thread::sleep_for(timeout);
+    ASSERT_EQ(availableCount, 1);
+
+    // removing the rejected duplicate must not unregister the owning client's signal
+    client2.clientHandler->removeClientSignal(clientSignal2);
+    std::this_thread::sleep_for(timeout);
+    ASSERT_EQ(unavailableCount, 0);
+
+    // the owning client's signal still works: subscribe and receive a packet through it
+    serverHandler->doSubscribeSignal(clientSignal1.getGlobalId(), true);
+    ASSERT_EQ(subscribedAckFuture.wait_for(timeout), std::future_status::ready);
+    ASSERT_EQ(client.signalSubscribedFuture.wait_for(timeout), std::future_status::ready);
+
+    auto eventPacket = DataDescriptorChangedEventPacket(valueDescriptor, nullptr);
+    client.clientHandler->sendPacket(clientSignal1.getGlobalId().toStdString(), eventPacket);
+    ASSERT_EQ(generalizedStreamingPacketReceivedFuture.wait_for(timeout), std::future_status::ready);
+    ASSERT_EQ(std::get<0>(generalizedStreamingPacketReceivedFuture.get()), clientSignal1.getGlobalId());
+
+    // and its removal by the owning client is announced
+    client.clientHandler->removeClientSignal(clientSignal1);
+    ASSERT_TRUE(waitForCount(unavailableCount, 1));
+
+    client2.tearDown();
 }
 
 INSTANTIATE_TEST_SUITE_P(

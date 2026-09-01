@@ -203,7 +203,24 @@ void NativeStreamingServerImpl::startTransportOperations()
             daqNameThread("NatSrvStreamTrans");
             using namespace boost::asio;
             auto workGuard = make_work_guard(*transportIOContextPtr);
-            transportIOContextPtr->run();
+            // an exception escaping a posted handler exits run() and, if unhandled here,
+            // terminates the whole process; log it and resume processing remaining work
+            for (;;)
+            {
+                try
+                {
+                    transportIOContextPtr->run();
+                    break;
+                }
+                catch (const std::exception& e)
+                {
+                    LOG_E("Unhandled exception in native server transport IO thread: {}", e.what());
+                }
+                catch (...)
+                {
+                    LOG_E("Unhandled exception in native server transport IO thread");
+                }
+            }
             LOG_I("Transport IO thread finished");
         });
 }
@@ -238,7 +255,24 @@ void NativeStreamingServerImpl::startProcessingOperations()
 
             using namespace boost::asio;
             auto workGuard = make_work_guard(*processingIOContextPtr);
-            processingIOContextPtr->run();
+            // an exception escaping a posted handler exits run() and, if unhandled here,
+            // terminates the whole process; log it and resume processing remaining work
+            for (;;)
+            {
+                try
+                {
+                    processingIOContextPtr->run();
+                    break;
+                }
+                catch (const std::exception& e)
+                {
+                    LOG_E("Unhandled exception in native server processing thread: {}", e.what());
+                }
+                catch (...)
+                {
+                    LOG_E("Unhandled exception in native server processing thread");
+                }
+            }
             LOG_I("Processing thread finished");
         }
     );

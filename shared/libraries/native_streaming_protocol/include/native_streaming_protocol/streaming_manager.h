@@ -175,11 +175,17 @@ public:
     /// Common method for device-to-client and client-to-device streaming.
     static StreamingWriteTasks getStreamingWriteTasks(const PacketStreamingServerPtr& packetStreamingServer);
 
-    void registerClientSignal(const SignalNumericIdType& signalNumericId,
+    /// Registers a client-to-device streaming signal advertised by a client.
+    /// @return false if a signal with the same string ID is already registered (by any client),
+    /// true if the signal was registered successfully.
+    bool registerClientSignal(const SignalNumericIdType& signalNumericId,
                               const StringPtr& signalStringId,
                               const std::string& clientId);
 
-    void unregisterClientSignal(const SignalNumericIdType& signalNumericId,
+    /// Unregisters a client-to-device streaming signal previously registered by the specified client.
+    /// @return false if the signal is not registered or is owned by another client (nothing is removed),
+    /// true if the signal was unregistered successfully.
+    bool unregisterClientSignal(const SignalNumericIdType& signalNumericId,
                                 const StringPtr& signalStringId,
                                 const std::string& clientId);
 

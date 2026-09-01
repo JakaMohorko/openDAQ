@@ -537,7 +537,7 @@ StreamingWriteTasks StreamingManager::getStreamingWriteTasks(const PacketStreami
     return {tasks, timeStamp};
 }
 
-void StreamingManager::registerClientSignal(const SignalNumericIdType& signalNumericId,
+bool StreamingManager::registerClientSignal(const SignalNumericIdType& signalNumericId,
                                             const StringPtr& signalStringId,
                                             const std::string& clientId)
 {
@@ -546,6 +546,7 @@ void StreamingManager::registerClientSignal(const SignalNumericIdType& signalNum
     if (const auto it = registeredClientSignals.find(signalStringId); it == registeredClientSignals.end())
     {
         registeredClientSignals.insert({signalStringId, RegisteredClientSignal(signalStringId, signalNumericId, clientId)});
+        return true;
     }
     else
     {
@@ -553,17 +554,33 @@ void StreamingManager::registerClientSignal(const SignalNumericIdType& signalNum
               signalStringId,
               it->second.clientId,
               clientId);
-        return;
+        return false;
     }
 }
 
-void StreamingManager::unregisterClientSignal(const SignalNumericIdType& signalNumericId,
+bool StreamingManager::unregisterClientSignal(const SignalNumericIdType& signalNumericId,
                                               const StringPtr& signalStringId,
                                               const std::string& clientId)
 {
     std::scoped_lock lock(sync);
 
-    registeredClientSignals.erase(signalStringId);
+    if (const auto it = registeredClientSignals.find(signalStringId); it != registeredClientSignals.end())
+    {
+        // the signal registered under this string Id may belong to another client
+        // (e.g. when this client's own registration was rejected as a duplicate) -
+        // removing it would corrupt the owning client's streaming state
+        if (it->second.clientId != clientId)
+        {
+            LOG_E("Client signal with string Id {} is registered by client {}, not by client {} - skip unregistering",
+                  signalStringId,
+                  it->second.clientId,
+                  clientId);
+            return false;
+        }
+        registeredClientSignals.erase(it);
+        return true;
+    }
+    return false;
 }
 
 void StreamingManager::unregisterClientSignals(const std::string& clientId, SignalAvailableCallback cb)
