@@ -89,7 +89,10 @@ class OpenDaqError(Exception):
         self.code = code
         self.call = call
         self.message = message
-        super().__init__(f"{self.name or hex(code)}: {message or ''} ({call})" if call else f"{self.name or hex(code)}: {message or ''}")
+        text = self.name or hex(code)
+        if message:
+            text += f": {message}"
+        super().__init__(f"{text} ({call})" if call else text)
 
 
 def check(code, call=None):

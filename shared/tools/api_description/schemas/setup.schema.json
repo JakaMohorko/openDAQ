@@ -1,0 +1,143 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://opendaq.com/schemas/setup.schema.json",
+ "title": "openDAQ setup (saveConfiguration / loadConfiguration)",
+ "description": "The JSON an instance writes with saveConfiguration and reads with loadConfiguration. $defs are keyed by serialize ID. Checked against db12d91eb: hand-written, and validated by checks/test_setup.py against setups the core saves.",
+ "$ref": "#/$defs/Instance",
+ "$defs": {
+  "Instance": {
+   "type": "object",
+   "required": ["__type", "rootDevice"],
+   "properties": {
+    "__type": {"const": "Instance"},
+    "rootDevice": {
+     "description": "Exactly one key: the root device's local ID (not compared with the live root ID on load).",
+     "type": "object", "minProperties": 1, "maxProperties": 1,
+     "additionalProperties": {"$ref": "#/$defs/Device"}
+    }
+   }
+  },
+  "ComponentAttributes": {
+   "type": "object",
+   "properties": {
+    "name": {"type": "string", "description": "A missing name sets the name to an empty string on load."},
+    "description": {"type": "string"},
+    "active": {"type": "boolean", "description": "Missing means true."},
+    "visible": {"type": "boolean", "description": "Missing means true."},
+    "tags": {"$ref": "#/$defs/Tags"},
+    "propValues": {"$ref": "#/$defs/PropValues"},
+    "__version": {"type": "object", "description": "Written by save, ignored by load."},
+    "statuses": {"type": "object"},
+    "className": {"type": "string", "description": "Written by save, ignored by load."}
+   }
+  },
+  "Device": {
+   "allOf": [{"$ref": "#/$defs/ComponentAttributes"}],
+   "type": "object",
+   "required": ["__type"],
+   "properties": {
+    "__type": {"const": "Device"},
+    "connectionString": {"type": "string", "description": "Used to add a sub-device that does not exist yet."},
+    "manufacturer": {"type": "string", "description": "With serialNumber, makes the loader run discovery and prefer a matching device."},
+    "serialNumber": {"type": "string"},
+    "isRootDevice": {"type": "boolean"},
+    "ComponentConfig": {"$ref": "#/$defs/PropertyObjectValue"},
+    "Sig": {"$ref": "#/$defs/SignalFolder"},
+    "IO": {"$ref": "#/$defs/IoFolder"},
+    "FB": {"$ref": "#/$defs/FunctionBlockFolder"},
+    "Dev": {"$ref": "#/$defs/DeviceFolder"},
+    "Srv": {"type": "object", "description": "Written by save, not applied on load."},
+    "Synchronization": {"type": "object", "description": "Written by save, not applied on load."},
+    "deviceDomain": {"type": "object"}
+   }
+  },
+  "FunctionBlock": {
+   "allOf": [{"$ref": "#/$defs/ComponentAttributes"}],
+   "type": "object",
+   "required": ["__type", "typeId"],
+   "properties": {
+    "__type": {"const": "FunctionBlock"},
+    "typeId": {"type": "string", "description": "Function block type created on load; an unavailable type is skipped with a warning."},
+    "ComponentConfig": {"$ref": "#/$defs/PropertyObjectValue"},
+    "Sig": {"$ref": "#/$defs/SignalFolder"},
+    "IP": {"$ref": "#/$defs/InputPortFolder"},
+    "FB": {"$ref": "#/$defs/FunctionBlockFolder"}
+   }
+  },
+  "Channel": {
+   "allOf": [{"$ref": "#/$defs/ComponentAttributes"}],
+   "type": "object",
+   "required": ["__type"],
+   "properties": {
+    "__type": {"const": "Channel"},
+    "typeId": {"type": "string"},
+    "Sig": {"$ref": "#/$defs/SignalFolder"},
+    "IP": {"$ref": "#/$defs/InputPortFolder"},
+    "FB": {"$ref": "#/$defs/FunctionBlockFolder"}
+   }
+  },
+  "Signal": {
+   "allOf": [{"$ref": "#/$defs/ComponentAttributes"}],
+   "type": "object",
+   "required": ["__type"],
+   "properties": {
+    "__type": {"const": "Signal"},
+    "public": {"type": "boolean", "description": "Missing means true."},
+    "domainSignalId": {"type": "string"}
+   }
+  },
+  "InputPort": {
+   "allOf": [{"$ref": "#/$defs/ComponentAttributes"}],
+   "type": "object",
+   "required": ["__type"],
+   "properties": {
+    "__type": {"const": "InputPort"},
+    "signalId": {"type": "string", "pattern": "^/", "description": "Global ID of the signal to connect; its first segment is a device local ID in the loaded tree."},
+    "public": {"type": "boolean", "description": "Written by save, ignored by load."}
+   }
+  },
+  "Folder": {
+   "allOf": [{"$ref": "#/$defs/ComponentAttributes"}],
+   "type": "object",
+   "required": ["__type"],
+   "properties": {"__type": {"const": "Folder"}, "items": {"type": "object"}}
+  },
+  "SignalFolder": {"allOf": [{"$ref": "#/$defs/Folder"}], "properties": {"items": {"additionalProperties": {"$ref": "#/$defs/Signal"}}}},
+  "InputPortFolder": {"allOf": [{"$ref": "#/$defs/Folder"}], "properties": {"items": {"additionalProperties": {"$ref": "#/$defs/InputPort"}}}},
+  "FunctionBlockFolder": {"allOf": [{"$ref": "#/$defs/Folder"}], "properties": {"items": {"additionalProperties": {"$ref": "#/$defs/FunctionBlock"}}}},
+  "DeviceFolder": {"allOf": [{"$ref": "#/$defs/Folder"}], "properties": {"items": {"additionalProperties": {"$ref": "#/$defs/Device"}}}},
+  "IoFolder": {
+   "allOf": [{"$ref": "#/$defs/ComponentAttributes"}],
+   "type": "object",
+   "required": ["__type"],
+   "properties": {
+    "__type": {"const": "IoFolder"},
+    "items": {"type": "object", "additionalProperties": {"anyOf": [{"$ref": "#/$defs/Channel"}, {"$ref": "#/$defs/IoFolder"}]}}
+   }
+  },
+  "Tags": {"type": "object", "properties": {"__type": {"const": "Tags"}, "list": {"type": "array", "items": {"type": "string"}}}},
+  "PropValues": {"type": "object", "additionalProperties": {"$ref": "#/$defs/Value"}},
+  "PropertyObjectValue": {
+   "type": "object",
+   "required": ["__type"],
+   "description": "A nested property object (PropertyObject, DeviceInfo, Synchronization, SyncInterface, ...).",
+   "properties": {"__type": {"type": "string"}, "className": {"type": "string"}, "propValues": {"$ref": "#/$defs/PropValues"}}
+  },
+  "Value": {
+   "description": "Property value encodings. Never null.",
+   "anyOf": [
+    {"type": "boolean"}, {"type": "number"}, {"type": "string"},
+    {"type": "array", "items": {"$ref": "#/$defs/Value"}},
+    {"$ref": "#/$defs/List"}, {"$ref": "#/$defs/Dict"}, {"$ref": "#/$defs/Ratio"}, {"$ref": "#/$defs/ComplexNumber"},
+    {"$ref": "#/$defs/Struct"}, {"$ref": "#/$defs/Enumeration"}, {"$ref": "#/$defs/Range"}, {"$ref": "#/$defs/PropertyObjectValue"}
+   ]
+  },
+  "List": {"type": "object", "required": ["__type", "values"], "properties": {"__type": {"const": "List"}, "itemIntfID": {"type": "string"}, "values": {"type": "array", "items": {"$ref": "#/$defs/Value"}}}},
+  "Dict": {"type": "object", "required": ["__type", "values"], "properties": {"__type": {"const": "Dict"}, "values": {"type": "array", "items": {"type": "object", "required": ["key", "value"]}}}},
+  "Ratio": {"type": "object", "required": ["__type", "num", "den"], "properties": {"__type": {"const": "Ratio"}, "num": {"type": "integer"}, "den": {"type": "integer"}}},
+  "ComplexNumber": {"type": "object", "required": ["__type", "real", "imaginary"], "properties": {"__type": {"const": "ComplexNumber"}, "real": {"type": "number"}, "imaginary": {"type": "number"}}},
+  "Struct": {"type": "object", "required": ["__type", "typeName"], "properties": {"__type": {"const": "Struct"}, "typeName": {"type": "string"}, "fields": {"type": "object"}}},
+  "Enumeration": {"type": "object", "required": ["__type", "typeName", "value"], "properties": {"__type": {"const": "Enumeration"}, "typeName": {"type": "string"}, "value": {"type": ["string", "integer"]}}},
+  "Range": {"type": "object", "required": ["__type", "low", "high"], "properties": {"__type": {"const": "Range"}, "low": {"type": "number"}, "high": {"type": "number"}}}
+ }
+}

@@ -15,6 +15,7 @@ NOT_RETURNED = re.compile(r"(==|!=)\s*OPENDAQ_ERR_\w+|OPENDAQ_ERR_\w+\s*(==|!=)|
 class Emitter:
     def __init__(self, model: Model):
         self.m = model
+        self.smart_pointers = []
         self._macro_errs = {}
 
     # -- errors --------------------------------------------------------
@@ -66,6 +67,11 @@ class Emitter:
             chain = m.class_chain(name)
             if not explicit and name not in bases_used:
                 continue
+            if name == "ObjectPtr" or "ObjectPtr" in chain:
+                self.smart_pointers.append({"name": name, "interface": explicit[0] if explicit else None,
+                                            "templateParams": [tp["name"] for tp in rec["params"]] if rec.get("params") else None,
+                                            "bases": rec["bases"], "header": rel.split("/include/", 1)[1] if "/include/" in rel else None})
+                continue
             intfs = []
             for i in explicit:
                 x = i
@@ -101,6 +107,11 @@ class Emitter:
                         const=c.info["const"], hasBody=c.info.get("body") is not None,
                         audience=caud, labels=cmods or None, line=c.line,
                         doc=doc_from_comments(c.comments)))
+            if serialize_id is None:
+                for x in m.out_of_line.get((name, "SerializeId"), []):
+                    mm = re.search(r'return\s+"([^"]+)"', x["body"])
+                    if mm:
+                        serialize_id = mm.group(1)
             for f in functions:
                 f["implements"] = None
                 if f["override"] or f["virtual"]:
@@ -367,12 +378,53 @@ class Emitter:
             if k not in scalars and v in SCALARS:
                 scalars[k] = {"abi": SCALARS[v][0], "size": SCALARS[v][1], "alias": v}
         # serialization registry
+        bodies = self.method_bodies(impls)
+        WRITE_FN = ("serializeCustomObjectValues", "serialize", "serializeForUpdate", "serializeCustomValues",
+                    "serializePropertyValues", "serializeProperties", "serializeMembers")
+        READ_FN = ("Deserialize", "DeserializeComponent", "updateObject", "updateInternal", "deserializeCustomObjectValues",
+                   "deserializeComponent", "DeserializePropertyObject", "deserializeMembers", "deserializeProperties")
+
+        def keys(cls, fns, pattern):
+            found = []
+            for c in [cls] + impls[cls].get("baseChain", []):
+                for fn in fns:
+                    for b in bodies.get((c, fn), []):
+                        for k in re.findall(pattern, b):
+                            if k not in found:
+                                found.append(k)
+            return found
         ser = []
         for name, rec in sorted(impls.items()):
             if rec["serializeId"]:
                 ser.append({"serializeId": rec["serializeId"], "writtenBy": name,
                             "readBy": f"{name}::Deserialize" if any(fn["name"] == "Deserialize" for fn in rec["functions"]) else None,
-                            "registered": rec["serializeId"] in m.deserialize_registered or name in m.deserialize_registered})
+                            "registered": rec["serializeId"] in m.deserialize_registered or name in m.deserialize_registered,
+                            "keysWritten": keys(name, WRITE_FN, r'\.key\(\s*"([^"]+)"'),
+                            "keysRead": keys(name, READ_FN, r'(?:read\w*|hasKey|getKeys?)\(\s*"([^"]+)"')})
+        # aliases that name implementation classes, interfaces or smart pointers (Device = DeviceBase<IDevice>)
+        known = set(impls) | set(m.interfaces)
+        type_aliases = []
+        for name, a in sorted(m.aliases.items()):
+            target = split_template(a["value"])[0]
+            rel = a["file"]
+            if target in known or (target in m.aliases and split_template(m.aliases[target]["value"])[0] in known):
+                if "/include/" not in rel and "/src/" not in rel:
+                    continue
+                type_aliases.append({"name": name, "value": a["value"],
+                                     "templateParams": [{k: v for k, v in tp.items() if v not in (None, False)} for tp in a["params"]] if a["params"] else None,
+                                     "header": rel.split("/include/", 1)[1] if "/include/" in rel else None, "file": rel})
+        # hand-written serialization schemas and load rules (spec 0012: schema next to the code, checked by a test)
+        schema_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "schemas")
+        setup = None
+        sp = os.path.join(schema_dir, "setup.schema.json")
+        if os.path.exists(sp):
+            import json as _json
+            schema = _json.load(open(sp, encoding="utf-8"))
+            rules = _json.load(open(os.path.join(schema_dir, "setup_rules.json"), encoding="utf-8"))
+            setup = {"schema": schema, "rules": rules["rules"], "checkedAgainst": rules["checkedAgainst"]}
+            for e in ser:
+                if e["serializeId"] in schema["$defs"]:
+                    e["schema"] = {"$ref": f"#/setup/schema/$defs/{e['serializeId']}"}
         major = (version or "3").split(".")[0]
         libs = {k: {"binary": v["binary"], "windows": f"{v['binary']}-64-{major}.dll",
                     "linux": f"lib{v['binary']}-64-{major}.so", "macos": f"lib{v['binary']}-64-{major}.dylib",
@@ -397,7 +449,10 @@ class Emitter:
             "callbacks": [m.callbacks[k] for k in sorted(m.callbacks)],
             "cppFactories": sorted(m.cpp_factories, key=lambda x: (x["library"] or "", x["name"])),
             "implementations": [impls[k] for k in sorted(impls)],
+            "typeAliases": type_aliases,
+            "smartPointers": sorted(self.smart_pointers, key=lambda x: x["name"]),
             "serialization": ser,
+            "setup": setup,
         }
         return strip_empty(doc)
 

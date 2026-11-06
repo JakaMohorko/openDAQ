@@ -309,6 +309,11 @@ class Model:
         for a in attrs.get("templateType", []):
             if a and a[0] == name:
                 out["templateType"] = a[1:] if len(a) > 2 else a[1]
+                # on containers RTGen's templateType names the element (or key and value) types
+                if pp["base"] == "IList" and len(a) == 2 and "elementType" not in out:
+                    out["elementType"] = a[1]
+                if pp["base"] == "IDict" and len(a) == 3 and "keyType" not in out:
+                    out["keyType"], out["valueType"] = a[1], a[2]
         for a in attrs.get("arrayArg", []):
             if a and a[0] == name:
                 out["arraySize"] = a[1] if len(a) > 1 else None
