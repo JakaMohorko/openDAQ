@@ -1,0 +1,26 @@
+{
+ "comment": "Source trees scanned for usage evidence. Paths are relative to the openDAQ checkout; trees outside it are optional.",
+ "sources": [
+  {"name": "python-gui", "kind": "application", "path": "examples/applications/python/GUI Application"},
+  {"name": "examples-cpp", "kind": "application", "path": "examples/applications/cpp"},
+  {"name": "examples-python", "kind": "application", "path": "examples/applications/python"},
+  {"name": "examples-c", "kind": "application", "path": "examples/applications/c"},
+  {"name": "examples-dotnet", "kind": "application", "path": "examples/applications/dotnet"},
+  {"name": "docs", "kind": "application", "path": "docs/Antora"},
+  {"name": "simulator", "kind": "application", "path": "simulator"},
+  {"name": "C_examples", "kind": "application", "path": "../C_examples"},
+  {"name": "native-streaming", "kind": "module", "path": "modules"},
+  {"name": "example-modules", "kind": "module", "path": "examples/modules"},
+  {"name": "OpcUaModules", "kind": "module", "path": "../OpcUaModules/modules"},
+  {"name": "LTStreamingModulesModern", "kind": "module", "path": "../LTStreamingModulesModern/modules"},
+  {"name": "SimpleDeviceModule", "kind": "module", "path": "../SimpleDeviceModule"},
+  {"name": "SimpleFBModule", "kind": "module", "path": "../SimpleFBModule"},
+  {"name": "raspberry-module", "kind": "module", "path": "../raspberry-module"},
+  {"name": "universal-adapter-module", "kind": "module", "path": "../universal-adapter-module/module"},
+  {"name": "MQTTStreamingModule", "kind": "module", "path": "../MQTTStreamingModule"},
+  {"name": "audio-device-workshop", "kind": "module", "path": "../audio-device-workshop"},
+  {"name": "iDDS-Module", "kind": "module", "path": "../iDDS-Module"},
+  {"name": "unitreeOpenDAQdevice", "kind": "module", "path": "../unitreeOpenDAQdevice"},
+  {"name": "rfid-bridge-device", "kind": "module", "path": "../rfid-bridge-device"}
+ ]
+}
