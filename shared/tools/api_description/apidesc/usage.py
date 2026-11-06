@@ -126,7 +126,7 @@ class Usage:
             else:
                 self._scan_cpp_text(src, repo, kind, where)
                 if f.endswith((".h", ".hpp", ".cpp", ".cc")) and kind in ("module", "application"):
-                    self._scan_derived(f, repo, where)
+                    self._scan_derived(f, repo, where, kind)
 
     def _scan_cpp_text(self, src, repo, kind, where):
         toks = [t for t in tokenize(src) if t.kind not in ("comment", "pp", "str")]
@@ -193,7 +193,7 @@ class Usage:
         b = re.sub(r"<.*", "", base.split("::")[-1]).strip()
         return self.impl_alias.get(b)
 
-    def _scan_derived(self, path, repo, where):
+    def _scan_derived(self, path, repo, where, kind="module"):
         """Classes deriving from core implementation classes: overrides and member use."""
         try:
             p, decls = parse_file(path)
@@ -225,11 +225,16 @@ class Usage:
             self._pending_ool[cls].extend((repo, where, x) for x in lst)
         self._derived_classes = getattr(self, "_derived_classes", {})
         for cname, t in targets_by_class.items():
-            self._derived_classes[(repo, cname)] = (t, classes[cname], where)
+            self._derived_classes[(repo, cname)] = (t, classes[cname], where, kind)
 
     def finish(self):
         """Match member use once all files (headers and sources) are scanned."""
-        for (repo, cname), (target, d, where) in getattr(self, "_derived_classes", {}).items():
+        for (repo, cname), (target, d, where, kind) in getattr(self, "_derived_classes", {}).items():
+            # implementing (overriding) an interface method of the core class counts as using it
+            for ch in d.children or []:
+                if ch.kind == "function" and ch.info.get("override") and ch.info["name"] in self.method_owners:
+                    self.ev["methods"][ch.info["name"]][kind].add(repo)
+                    self._example(("m", ch.info["name"], kind), f"{where}:{ch.line} (override)")
             chain = [target] + self.impl[target].get("baseChain", []) if target in self.impl else [target]
             base_members = {}
             base_virtuals = {}
