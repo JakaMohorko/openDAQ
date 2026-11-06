@@ -1,0 +1,353 @@
+<title>openDAQ API Audiences</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Sans:wght@600&display=swap">
+<style>
+/* Layout: a review ledger. Summary matrix on top, sticky filter bar, one dense row per declaration. */
+:root {
+  --bg: #f4f6f8; --panel: #ffffff; --ink: #1a2130; --muted: #5d6779; --line: #d9dfe7; --hover: #eef2f6;
+  --app: #0d6b88; --app-soft: #dcf0f6; --mod: #9a5800; --mod-soft: #fbecd6; --core: #5a4a8c; --core-soft: #e9e4f6;
+  --inherit: #6b7280; --changed: #b4235a; --focus: #0d6b88;
+  --f-ui: "IBM Plex Sans Condensed", "Arial Narrow", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --f-display: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #11151b; --panel: #171c24; --ink: #e5e9ef; --muted: #96a0ae; --line: #2a313c; --hover: #1e2530;
+  --app: #5cb8d6; --app-soft: #15313b; --mod: #e5a446; --mod-soft: #352710; --core: #ab9be6; --core-soft: #27213d;
+  --inherit: #9aa3b0; --changed: #f0709f; --focus: #5cb8d6; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #11151b; --panel: #171c24; --ink: #e5e9ef; --muted: #96a0ae; --line: #2a313c; --hover: #1e2530;
+  --app: #5cb8d6; --app-soft: #15313b; --mod: #e5a446; --mod-soft: #352710; --core: #ab9be6; --core-soft: #27213d;
+  --inherit: #9aa3b0; --changed: #f0709f; --focus: #5cb8d6; color-scheme: dark }
+body { background: var(--bg); color: var(--ink); font-family: var(--f-ui); font-size: 14px; line-height: 1.4; }
+.wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 40px; max-width: 1500px; margin: 0 auto; display: grid; gap: 16px; }
+h1 { font-family: var(--f-display); font-size: 22px; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+.sub { color: var(--muted); max-width: 75ch; margin: 4px 0 0; }
+.top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; align-items: start; }
+@media (max-width: 900px) { .top { grid-template-columns: minmax(0, 1fr); } }
+.status { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; color: var(--muted); background: var(--panel); font-size: 12px; }
+.pill b { color: var(--ink); font-weight: 600; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--inherit); }
+.dot.ok { background: var(--app); } .dot.warn { background: var(--mod); }
+button { font: inherit; color: inherit; cursor: pointer; }
+.btn { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 5px 10px; }
+.btn:hover { background: var(--hover); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.matrix-wrap { overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+table.matrix { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+.matrix th, .matrix td { padding: 6px 12px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.matrix th:first-child, .matrix td:first-child { text-align: left; }
+.matrix thead th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 500; }
+.matrix tr:last-child td { border-bottom: 0; }
+.matrix td button { border: 0; background: none; padding: 2px 6px; border-radius: 4px; min-width: 3ch; text-align: right; }
+.matrix td button:hover { background: var(--hover); }
+.matrix td.z { color: var(--line); }
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); padding-block: 8px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border-bottom: 1px solid var(--line); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.bar input[type=search] { flex: 1 1 260px; min-width: 0; font: inherit; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); }
+.bar select { font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); }
+.bar label.chk { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); }
+.count { color: var(--muted); font-variant-numeric: tabular-nums; margin-left: auto; }
+.rows { display: grid; gap: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.row { display: grid; grid-template-columns: minmax(0, 2.2fr) auto minmax(0, 1.2fr) minmax(0, 1.6fr); gap: 6px 16px; padding: 10px 14px; border-bottom: 1px solid var(--line); align-items: start; }
+.row:last-child { border-bottom: 0; }
+.row.changed { box-shadow: inset 3px 0 0 var(--changed); }
+@media (max-width: 1000px) { .row { grid-template-columns: minmax(0, 1fr) auto; } .row .ev, .row .why { grid-column: 1 / -1; } }
+@media (max-width: 560px) { .row { grid-template-columns: minmax(0, 1fr); } }
+.key { font-family: var(--f-mono); font-size: 12.5px; overflow-wrap: anywhere; }
+.key .k { color: var(--muted); }
+.meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; font-size: 12px; color: var(--muted); }
+.kind { text-transform: uppercase; letter-spacing: 0.06em; font-size: 10.5px; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
+.brief { color: var(--muted); font-size: 12.5px; margin-top: 3px; max-width: 80ch; }
+.loc { font-family: var(--f-mono); font-size: 11px; overflow-wrap: anywhere; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; background: var(--panel); padding: 4px 9px; font-size: 12.5px; color: var(--muted); border-right: 1px solid var(--line); }
+.seg button:last-child { border-right: 0; }
+.seg button:hover { background: var(--hover); }
+.seg button[aria-pressed="true"].application { background: var(--app-soft); color: var(--app); font-weight: 600; }
+.seg button[aria-pressed="true"].module { background: var(--mod-soft); color: var(--mod); font-weight: 600; }
+.seg button[aria-pressed="true"].core { background: var(--core-soft); color: var(--core); font-weight: 600; }
+.seg button[aria-pressed="true"].inherit { background: var(--hover); color: var(--ink); font-weight: 600; }
+.ctl { display: grid; gap: 6px; justify-items: start; }
+.labels { display: flex; gap: 6px; flex-wrap: wrap; }
+.tog { border: 1px dashed var(--line); background: none; border-radius: 4px; padding: 1px 7px; font-size: 12px; color: var(--muted); }
+.tog[aria-pressed="true"] { border-style: solid; color: var(--ink); background: var(--hover); }
+.ev { display: flex; flex-wrap: wrap; gap: 4px; align-content: start; font-size: 12px; }
+.tag { border-radius: 4px; padding: 0 6px; background: var(--hover); color: var(--muted); }
+.tag.a { background: var(--app-soft); color: var(--app); }
+.tag.m { background: var(--mod-soft); color: var(--mod); }
+.tag.none { background: none; padding: 0; }
+.why { font-size: 12.5px; color: var(--ink); }
+.why .prop { color: var(--muted); font-size: 12px; }
+.note { width: 100%; font: inherit; font-size: 12.5px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); margin-top: 6px; }
+.more { padding: 10px; text-align: center; }
+details.rules { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; }
+details.rules summary { cursor: pointer; font-weight: 600; }
+.rules-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px 24px; margin-top: 10px; }
+.rules-grid h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 4px; font-weight: 500; }
+.rules-grid p, .rules-grid li { margin: 0; font-size: 13px; max-width: 65ch; }
+.rules-grid ul { margin: 0; padding-left: 18px; display: grid; gap: 3px; }
+code { font-family: var(--f-mono); font-size: 12px; }
+#copybox { width: 100%; height: 120px; font-family: var(--f-mono); font-size: 11px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <div class="top">
+    <div>
+      <h1>openDAQ API audiences</h1>
+      <p class="sub">Who may use each interface, method, factory, enum and inherited implementation member (spec 0010). Change an audience or a label and it is saved as a decision; Claude reads the decisions and writes them into the headers with <code>annotate.py</code>. <span id="srcinfo"></span></p>
+    </div>
+    <div class="status">
+      <span class="pill"><span class="dot" id="storedot"></span><span id="storetext">Decisions: loading</span></span>
+      <span class="pill">Changed <b id="nchanged">0</b></span>
+      <button class="btn" id="copybtn" type="button">Copy decisions</button>
+    </div>
+  </div>
+
+  <div class="matrix-wrap"><table class="matrix" id="matrix"></table></div>
+
+  <details class="rules">
+    <summary>How the proposal was made</summary>
+    <div class="rules-grid">
+      <div><h3>Audiences</h3><ul>
+        <li><b>application</b>: applications, modules and the core. Written <code>[api(application)]</code> because RTGen's lexer treats <code>public</code> as a keyword.</li>
+        <li><b>module</b>: modules and the core, never applications.</li>
+        <li><b>core</b>: the core only; free to change in any release.</li>
+        <li><b>inherit</b> (methods only): the method follows its interface. Only methods that differ carry a tag.</li>
+      </ul></div>
+      <div><h3>Interfaces</h3><ul>
+        <li>Coretypes are the wrappers of standard programming types that bindings map to native types, taken from what the Python, C# and C generators special-case: <span id="coretypes"></span>.</li>
+        <li>A name or header ending in Private/Internal is <b>module</b> when a scanned module uses it, otherwise <b>core</b>.</li>
+        <li>Everything else is <b>application</b> unless a reason on the row says otherwise.</li>
+      </ul></div>
+      <div><h3>Implementation members</h3><ul>
+        <li>Only non-private members of classes modules derive from (or their bases) are listed; interface overrides follow the interface and are not listed.</li>
+        <li>Overridden by a module, or a virtual <code>on*</code> hook: <b>module, override</b>. Called by a module: <b>module</b>. A variable written by a module: <b>module</b>; only read: <b>module, readOnly</b>. Anything else: <b>core</b>.</li>
+      </ul></div>
+      <div><h3>Factories</h3><ul>
+        <li><code>INTERNAL_FACTORY</code> (not exported): <b>core</b>. Component constructors taking a context and a parent: <b>module</b>. Otherwise the audience of the returned interface.</li>
+        <li>Evidence tags: <span class="tag a">A</span> applications, <span class="tag m">M</span> modules, with the repositories scanned (examples, docs, Python GUI; module repositories next to openDAQ).</li>
+      </ul></div>
+    </div>
+  </details>
+
+  <div class="bar" role="search">
+    <input type="search" id="q" placeholder="Search keys, reasons, briefs (e.g. ServerImpl, IComponentPrivate, readOnly)" aria-label="Search">
+    <select id="fkind" aria-label="Kind"></select>
+    <select id="faud" aria-label="Audience"></select>
+    <select id="fev" aria-label="Evidence">
+      <option value="">Any evidence</option><option value="a">Used by applications</option><option value="m">Used by modules</option>
+      <option value="monly">Modules only</option><option value="none">No usage found</option>
+    </select>
+    <label class="chk"><input type="checkbox" id="fchanged"> Changed only</label>
+    <label class="chk"><input type="checkbox" id="fcheck"> Needs a look</label>
+    <span class="count" id="count"></span>
+  </div>
+
+  <div class="rows" id="rows"></div>
+  <div class="more" id="more"></div>
+  <textarea id="copybox" hidden readonly aria-label="Decisions as JSON"></textarea>
+</div>
+
+<script id="data" type="application/json">/*__DATA__*/null</script>
+<script>
+(() => {
+  const DATA = JSON.parse(document.getElementById("data").textContent);
+  const E = DATA.entries;
+  const BY = new Map(E.map(e => [e.key, e]));
+  const KINDS = ["interface", "method", "factory", "cppfactory", "enum", "class", "function", "member"];
+  const KIND_LABEL = { interface: "Interfaces", method: "Interface methods", factory: "C factories", cppfactory: "C++ factories", enum: "Enums", class: "Implementation classes", function: "Implementation functions", member: "Member variables" };
+  const AUDS = ["application", "module", "core"];
+  const LABELS = { interface: ["coretype"], function: ["override"], member: ["readOnly"] };
+  const PAGE = 150;
+  const state = { decisions: {}, shown: PAGE, matrixCell: null };
+  let store = null;
+
+  document.getElementById("srcinfo").textContent = `Proposal from openDAQ ${DATA.openDaqVersion || ""} at ${DATA.commit || "?"}, ${E.length} entries.`;
+  document.getElementById("coretypes").textContent = DATA.rules.coretypes.join(", ");
+
+  const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const docId = k => k.replace(/[^A-Za-z0-9_.:@-]/g, c => "~" + c.charCodeAt(0).toString(16).padStart(2, "0"));
+
+  function effective(e) {
+    const d = state.decisions[e.key];
+    return d ? { audience: d.audience ?? null, labels: d.labels || [], note: d.note || "" } : { audience: e.audience ?? null, labels: e.labels || [], note: "" };
+  }
+  function isChanged(e) {
+    const d = state.decisions[e.key];
+    if (!d) return false;
+    return (d.audience ?? null) !== (e.audience ?? null) || JSON.stringify([...(d.labels || [])].sort()) !== JSON.stringify([...(e.labels || [])].sort()) || !!d.note;
+  }
+  const evKinds = e => { const u = e.usedBy || {}; const ev = e.evidence; return { a: !!u.application, m: !!u.module || !!(ev && ev.repos && ev.repos.length) }; };
+  const needsLook = e => /\[CHECK\]|no module overrides it yet|Follows the returned interface/.test(e.reason || "") && e.kind !== "cppfactory";
+
+  // ---------------------------------------------------------------- filters
+  const fkind = document.getElementById("fkind"), faud = document.getElementById("faud"), q = document.getElementById("q");
+  const fev = document.getElementById("fev"), fchanged = document.getElementById("fchanged"), fcheck = document.getElementById("fcheck");
+  fkind.innerHTML = `<option value="">All kinds</option>` + KINDS.map(k => `<option value="${k}">${KIND_LABEL[k]}</option>`).join("");
+  faud.innerHTML = `<option value="">Any audience</option>` + AUDS.map(a => `<option value="${a}">${a}</option>`).join("") + `<option value="inherit">inherit (methods)</option>`;
+  try { const saved = JSON.parse(localStorage.getItem("audience-review-filters") || "{}"); for (const [id, v] of Object.entries(saved)) { const el = document.getElementById(id); if (el) el.type === "checkbox" ? el.checked = v : el.value = v; } } catch (_) {}
+  function saveFilters() { try { localStorage.setItem("audience-review-filters", JSON.stringify({ q: q.value, fkind: fkind.value, faud: faud.value, fev: fev.value, fchanged: fchanged.checked, fcheck: fcheck.checked })); } catch (_) {} }
+
+  function filtered() {
+    const terms = q.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    return E.filter(e => {
+      if (fkind.value && e.kind !== fkind.value) return false;
+      const eff = effective(e);
+      if (faud.value) { if (faud.value === "inherit" ? eff.audience !== null : eff.audience !== faud.value) return false; }
+      if (fev.value) { const k = evKinds(e); if (fev.value === "a" && !k.a) return false; if (fev.value === "m" && !k.m) return false; if (fev.value === "monly" && !(k.m && !k.a)) return false; if (fev.value === "none" && (k.a || k.m)) return false; }
+      if (fchanged.checked && !isChanged(e)) return false;
+      if (fcheck.checked && !needsLook(e)) return false;
+      if (state.matrixCell) { const [k, a] = state.matrixCell; if (e.kind !== k || (eff.audience ?? "inherit") !== a) return false; }
+      if (terms.length) { const hay = `${e.key} ${e.reason || ""} ${e.brief || ""} ${(eff.labels || []).join(" ")} ${e.type || ""}`.toLowerCase(); if (!terms.every(t => hay.includes(t))) return false; }
+      return true;
+    });
+  }
+
+  // ---------------------------------------------------------------- render
+  function renderMatrix() {
+    const cols = [...AUDS, "inherit"];
+    const counts = {};
+    for (const e of E) { const a = effective(e).audience ?? "inherit"; counts[e.kind] = counts[e.kind] || {}; counts[e.kind][a] = (counts[e.kind][a] || 0) + 1; }
+    let h = `<thead><tr><th>Declarations</th>${cols.map(c => `<th>${c}</th>`).join("")}<th>Total</th></tr></thead><tbody>`;
+    for (const k of KINDS) {
+      const c = counts[k] || {}; const tot = Object.values(c).reduce((s, x) => s + x, 0);
+      h += `<tr><td>${KIND_LABEL[k]}</td>${cols.map(a => c[a] ? `<td><button type="button" data-cell="${k}|${a}" title="Show ${KIND_LABEL[k].toLowerCase()} with audience ${a}">${c[a]}</button></td>` : `<td class="z">0</td>`).join("")}<td>${tot}</td></tr>`;
+    }
+    document.getElementById("matrix").innerHTML = h + "</tbody>";
+  }
+
+  function evHtml(e) {
+    const u = e.usedBy || {}; const parts = [];
+    if (u.application) parts.push(...u.application.map(r => `<span class="tag a" title="Used by applications in ${esc(r)}">A ${esc(r)}</span>`));
+    if (u.module) parts.push(...u.module.map(r => `<span class="tag m" title="Used by modules in ${esc(r)}">M ${esc(r)}</span>`));
+    if (e.evidence) { for (const r of e.evidence.repos || []) parts.push(`<span class="tag m" title="${esc((e.evidence.examples || []).join("\n"))}">M ${esc(r)} · ${esc((e.evidence.how || []).join("/"))}</span>`); }
+    if (e.derivedBy) parts.push(`<span class="tag m" title="${esc(e.derivedBy.join("\n"))}">derived by ${e.derivedBy.length} module classes</span>`);
+    if (!parts.length) parts.push(`<span class="tag none">no usage found</span>`);
+    return parts.join("");
+  }
+
+  function rowHtml(e) {
+    const eff = effective(e); const ch = isChanged(e);
+    const auds = e.kind === "method" ? [...AUDS, "inherit"] : AUDS;
+    const cur = eff.audience ?? "inherit";
+    const seg = auds.map(a => `<button type="button" class="${a}" data-act="aud" data-v="${a}" aria-pressed="${cur === a}">${a === "application" ? "app" : a}</button>`).join("");
+    const labs = (LABELS[e.kind] || []).map(l => `<button type="button" class="tog" data-act="lab" data-v="${l}" aria-pressed="${eff.labels.includes(l)}">${l}</button>`).join("");
+    const extra = [];
+    if (e.kind === "method" && e.interfaceAudience) extra.push(`interface: ${e.interfaceAudience}`);
+    if (e.type) extra.push(esc(e.type));
+    if (e.returns && e.kind !== "method") extra.push("→ " + esc(e.returns));
+    if (e.exported === false && e.kind === "factory") extra.push("not exported");
+    if (e.access) extra.push(e.access);
+    const [k0, ...rest] = e.key.split(":");
+    const prop = ch ? `<div class="prop">Proposed: ${esc(e.audience ?? "inherit")}${(e.labels || []).length ? ", " + esc(e.labels.join(", ")) : ""}. ${esc(e.reason)}</div>` : "";
+    return `<div class="row${ch ? " changed" : ""}" data-key="${esc(e.key)}">
+      <div><div class="key"><span class="k">${esc(k0)}:</span>${esc(rest.join(":"))}</div>
+        ${e.brief ? `<div class="brief">${esc(e.brief)}</div>` : ""}
+        <div class="meta"><span class="kind">${e.kind}</span>${extra.map(x => `<span>${x}</span>`).join("")}<span class="loc">${esc(e.where || "")}</span></div></div>
+      <div class="ctl"><div class="seg" role="group" aria-label="Audience">${seg}</div>${labs ? `<div class="labels">${labs}</div>` : ""}</div>
+      <div class="ev">${evHtml(e)}</div>
+      <div class="why">${ch ? "<b>Changed.</b> " : ""}${esc(ch ? "" : e.reason)}${prop}
+        <input class="note" data-act="note" type="text" placeholder="Note for Claude (optional)" value="${esc(eff.note)}" aria-label="Note"></div>
+    </div>`;
+  }
+
+  let current = [];
+  function render(resetPage) {
+    if (resetPage) state.shown = PAGE;
+    current = filtered();
+    const rows = document.getElementById("rows");
+    rows.innerHTML = current.length ? current.slice(0, state.shown).map(rowHtml).join("") : `<div class="row"><div>No declarations match these filters.</div></div>`;
+    document.getElementById("count").textContent = `${Math.min(state.shown, current.length)} of ${current.length} shown`;
+    document.getElementById("more").innerHTML = current.length > state.shown ? `<button class="btn" type="button" id="morebtn">Show ${Math.min(PAGE, current.length - state.shown)} more</button>` : "";
+    document.getElementById("nchanged").textContent = E.filter(isChanged).length;
+    renderMatrix();
+  }
+  function rerenderRow(key) {
+    const el = document.querySelector(`.row[data-key="${CSS.escape(key)}"]`);
+    if (el) { const tmp = document.createElement("div"); tmp.innerHTML = rowHtml(BY.get(key)); el.replaceWith(tmp.firstElementChild); }
+    document.getElementById("nchanged").textContent = E.filter(isChanged).length;
+    renderMatrix();
+  }
+
+  // ---------------------------------------------------------------- decisions
+  const pending = new Map();
+  function decide(key, patch) {
+    const e = BY.get(key); const eff = effective(e);
+    const d = { key, audience: eff.audience, labels: [...eff.labels], note: eff.note, ...patch, at: new Date().toISOString() };
+    const same = (d.audience ?? null) === (e.audience ?? null) && JSON.stringify([...d.labels].sort()) === JSON.stringify([...(e.labels || [])].sort()) && !d.note;
+    if (same) delete state.decisions[key]; else state.decisions[key] = d;
+    rerenderRow(key);
+    persist(key, same ? null : { ...d, proposed: { audience: e.audience ?? null, labels: e.labels || [] } });
+  }
+  function persist(key, body) {
+    if (store) {
+      const prev = pending.get(key) || Promise.resolve();
+      const ref = store.collection("decisions").doc(docId(key));
+      const next = prev.then(() => body ? ref.set(body) : ref.delete()).catch(err => setStore("warn", `Save failed (${err && err.code || "error"}); copy the decisions to keep them`));
+      pending.set(key, next);
+    } else {
+      try { localStorage.setItem("audience-review-decisions", JSON.stringify(state.decisions)); } catch (_) {}
+    }
+  }
+  function setStore(cls, text) { document.getElementById("storedot").className = "dot " + cls; document.getElementById("storetext").textContent = text; }
+
+  // ---------------------------------------------------------------- events
+  document.getElementById("rows").addEventListener("click", ev => {
+    const b = ev.target.closest("button[data-act]"); if (!b) return;
+    const key = b.closest(".row").dataset.key; const eff = effective(BY.get(key));
+    if (b.dataset.act === "aud") decide(key, { audience: b.dataset.v === "inherit" ? null : b.dataset.v });
+    if (b.dataset.act === "lab") { const l = b.dataset.v; const labels = eff.labels.includes(l) ? eff.labels.filter(x => x !== l) : [...eff.labels, l]; decide(key, { labels }); }
+  });
+  let noteTimer = null;
+  document.getElementById("rows").addEventListener("change", ev => {
+    if (ev.target.dataset.act !== "note") return;
+    const key = ev.target.closest(".row").dataset.key; clearTimeout(noteTimer);
+    decide(key, { note: ev.target.value.trim() });
+  });
+  document.getElementById("more").addEventListener("click", ev => { if (ev.target.id === "morebtn") { state.shown += PAGE; render(false); } });
+  document.getElementById("matrix").addEventListener("click", ev => {
+    const b = ev.target.closest("button[data-cell]"); if (!b) return;
+    const cell = b.dataset.cell.split("|");
+    state.matrixCell = state.matrixCell && state.matrixCell.join("|") === cell.join("|") ? null : cell;
+    fkind.value = ""; faud.value = ""; render(true);
+    document.querySelector(".bar").scrollIntoView({ block: "start" });
+  });
+  let qTimer = null;
+  q.addEventListener("input", () => { clearTimeout(qTimer); qTimer = setTimeout(() => { saveFilters(); render(true); }, 150); });
+  for (const el of [fkind, faud, fev, fchanged, fcheck]) el.addEventListener("change", () => { state.matrixCell = null; saveFilters(); render(true); });
+
+  document.getElementById("copybtn").addEventListener("click", async () => {
+    const changes = {};
+    for (const [k, d] of Object.entries(state.decisions)) changes[k] = { audience: d.audience ?? null, labels: d.labels || [], ...(d.note ? { note: d.note } : {}) };
+    const text = JSON.stringify({ changes }, null, 1);
+    const box = document.getElementById("copybox");
+    try { await navigator.clipboard.writeText(text); document.getElementById("copybtn").textContent = `Copied ${Object.keys(changes).length}`; box.hidden = true; }
+    catch (_) { box.hidden = false; box.value = text; box.focus(); box.select(); document.getElementById("copybtn").textContent = "Select and copy below"; }
+  });
+
+  // ---------------------------------------------------------------- store
+  render(true);
+  try { const local = JSON.parse(localStorage.getItem("audience-review-decisions") || "{}"); if (local && typeof local === "object") state.decisions = local; } catch (_) {}
+  setStore("", "Decisions: connecting");
+  render(false);
+  (async () => {
+    let db = null;
+    try { db = window.claude && window.claude.use ? await window.claude.use("db") : null; } catch (_) { db = null; }
+    if (!db) { setStore("warn", "Decisions: kept in this browser only"); return; }
+    store = db;
+    const timer = setTimeout(() => setStore("warn", "Decisions: store not reachable yet"), 10000);
+    db.collection("decisions").onSnapshot(snap => {
+      if (!snap.metadata.fromCache) clearTimeout(timer);
+      const next = {};
+      for (const d of snap.docs) { const x = d.data(); if (x && x.key && BY.has(x.key)) next[x.key] = { audience: x.audience ?? null, labels: x.labels || [], note: x.note || "", at: x.at }; }
+      state.decisions = next;
+      setStore("ok", `Decisions: saved for Claude (${snap.size})`);
+      render(false);
+    }, err => { clearTimeout(timer); setStore("warn", `Decisions: store error (${err.code}); use Copy decisions`); });
+  })();
+})();
+</script>

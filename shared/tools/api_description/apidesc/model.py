@@ -83,7 +83,9 @@ class Model:
         self.scalars = {}
         self.deserialize_registered = {}  # serializeId-ish name -> file
         self.file_rt_attrs = {}
-        self.factory_delegates = {}  # create function -> create function it forwards to
+        self.factory_delegates = {}
+        self.functions = {}  # exported free functions (extern "C")
+        self.callbacks = {}  # C function-pointer typedefs  # create function -> create function it forwards to
 
     # ------------------------------------------------------------------
     def scan(self):
@@ -176,8 +178,25 @@ class Model:
                 self.aliases.setdefault(name, {"params": tp, "value": val, "file": rel})
                 if library_of(rel) == "coretypes" and not tp and re.match(r"^[\w:]+$", val):
                     self.scalars.setdefault(name, val)
+        elif k == "typedef" and "/include/" in rel:
+            from .cppparse import tokens_text
+            text = tokens_text(d.head)
+            mm = re.match(r"^typedef\s+(.+?)\s*\(\s*\*\s*(\w+)\s*\)\s*\((.*)\)$", text)
+            if mm:
+                from .cppparse import parse_params
+                params = parse_params([t for t in tokenize(mm.group(3)) if t.kind != "comment"])
+                self.callbacks[mm.group(2)] = {"name": mm.group(2), "returns": mm.group(1), "params": params,
+                                               "library": library_of(rel), "header": header_include(rel)}
         elif k == "function":
             q = d.info.get("qualifier")
+            if not q and d.info.get("body") is None and "/include/" in rel                     and any(t.text in ("PUBLIC_EXPORT", "LIBRARY_FACTORY") for t in d.head):
+                tags = tags_from_comments(d.comments)
+                aud, mods = api_tag(tags)
+                self.functions.setdefault(d.info["name"], {
+                    "name": d.info["name"], "returns": d.info["return"], "params": d.info["params"],
+                    "library": library_of(rel), "header": header_include(rel), "file": rel, "line": d.line,
+                    "audience": aud, "doc": doc_from_comments(d.comments)})
+                return
             if q and d.info.get("body") is not None:
                 cls = re.sub(r"<.*", "", q.split("::")[-1])
                 self.out_of_line[(cls, d.info["name"])].append({"file": rel, "line": d.line, "body": d.info["body"],
@@ -298,12 +317,18 @@ class Model:
                 out["allowNull"] = True
         ddir = (doc or {}).get("params", {}).get(name, {}).get("dir")
         out["direction"] = self._direction(pp, ddir)
+        if ddir and ddir.replace("in,out", "inout") != out["direction"]:
+            out["docDirection"] = ddir
         if (doc or {}).get("params", {}).get(name, {}).get("text"):
             out["doc"] = doc["params"][name]["text"]
         return out
 
     @staticmethod
     def _direction(pp, ddir):
+        base, ptr = pp["base"], pp["pointer"]
+        if ptr == 1 and (re.match(r"^I[A-Z]\w*$", base) or re.match(r"^I[A-Z]\w*<", base)):
+            # a single-pointer interface argument can only be an input; the object itself may be modified
+            return "inout" if ddir in ("in,out", "inout") else "in"
         if ddir in ("out",):
             return "out"
         if ddir in ("in,out", "inout"):

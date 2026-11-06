@@ -321,7 +321,7 @@ class Parser:
                 angle += 1
             elif x.text == ">" and angle > 0:
                 angle -= 1
-            elif x.text == "=" and angle == 0:
+            elif x.text == "=" and angle == 0 and not (idx > 0 and cc[idx - 1].text == "operator"):
                 break
             elif x.text == "(" and angle == 0:
                 paren_idx = idx

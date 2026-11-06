@@ -124,6 +124,7 @@ class Emitter:
                 "serializeId": serialize_id,
                 "members": members,
                 "functions": functions,
+            "callbacks": [m.callbacks[k] for k in sorted(m.callbacks)],
                 "doc": doc_from_comments(d.comments),
             }
         return out
@@ -169,12 +170,66 @@ class Emitter:
                             break
         return result
 
+    def type_kind(self, base, enum_names):
+        m = self.m
+        if base in m.callbacks:
+            return "callback"
+        if base in m.interfaces or re.match(r"^I[A-Z]\w*<", base):
+            return "interface"
+        if base in enum_names:
+            return "enum"
+        if base in SCALARS or m.scalars.get(base) in SCALARS:
+            return "scalar"
+        if base in m.aliases or base in m.classes:
+            rec = self.struct_record(base)
+            if rec and rec.get("fields"):
+                return "struct"
+        return "cpp"
+
+    def struct_record(self, name):
+        """Plain struct passed by value through an interface: fields in declaration order."""
+        m = self.m
+        cls, args = name, []
+        if name in m.aliases:
+            cls, args = split_template(m.aliases[name]["value"])
+        rec = m.classes.get(cls)
+        if not rec or not rec.get("decl"):
+            return None
+        rel, p, d = rec["decl"]
+        bind = {}
+        for i, prm in enumerate(rec.get("params") or []):
+            if i < len(args):
+                bind[prm["name"]] = args[i]
+        fields = []
+        for c in d.children or []:
+            if c.kind == "variable" and "static" not in c.info.get("specifiers", []):
+                t = c.info["type"]
+                t = bind.get(t, t)
+                fields.append({"name": c.info["name"], "type": t})
+            if c.kind == "type" and c.info.get("keyword") == "union" and c.children:
+                for u in c.children:
+                    if u.kind == "variable":
+                        fields.append({"name": u.info["name"], "type": u.info["type"], "union": True,
+                                       "array": u.info.get("array") or None})
+                        break
+        before = p.src[:d.src_span[0]]
+        packs = re.findall(r"#\s*pragma\s+pack\s*\(\s*(push\s*,\s*(\d+)|pop)\s*\)", before)
+        pack = None
+        for full, n in packs:
+            pack = int(n) if n else None
+        out = {"name": name, "cppType": f"{cls}<{', '.join(args)}>" if args else cls,
+               "header": rel.split("/include/", 1)[1] if "/include/" in rel else None, "fields": fields}
+        if pack:
+            out["pack"] = pack
+        return out
+
     # ------------------------------------------------------------------
     def build(self, version=None):
         m = self.m
         impls = self.impl_records()
         errs_by_method = self.method_errors(impls)
         # factories: link definitions
+        structs_extra = {}
         factories = []
         for func, f in sorted(m.factories.items(), key=lambda x: (x[1]["library"] or "", x[1]["name"])):
             f = dict(f)
@@ -185,6 +240,40 @@ class Emitter:
                 f["implementationClass"] = split_template(impl)[0]
                 f["definedIn"] = dfn["file"]
             factories.append(f)
+        # hand-declared exported create functions are factories too
+        for fn in m.functions.values():
+            ps = fn["params"]
+            if fn["name"].startswith("create") and ps and ps[0]["pointer"] == 2 and ps[0]["base"] in m.interfaces                     and not any(f.get("createFunction") == fn["name"] for f in factories):
+                f = {"name": fn["name"][len("create"):], "createFunction": fn["name"], "cppHelper": None,
+                     "returns": ps[0]["base"], "library": fn["library"], "group": None, "header": fn["header"],
+                     "file": fn["file"], "line": fn["line"], "exported": True, "audience": fn["audience"],
+                     "params": ps[1:], "doc": fn["doc"], "declaredBy": "function"}
+                dfn = m.factory_defs.get(fn["name"])
+                if dfn:
+                    f["implementation"] = dfn["implementation"]
+                    f["implementationClass"] = split_template(dfn["implementation"])[0]
+                    f["definedIn"] = dfn["file"]
+                factories.append(f)
+        factory_funcs = {f.get("createFunction") for f in factories}
+        functions = []
+        for name in sorted(m.functions):
+            fn = dict(m.functions[name])
+            if name in factory_funcs:
+                fn["factory"] = True
+            for prm in fn["params"]:
+                prm["base"] = re.sub(r"^daq::", "", prm["base"])
+            functions.append(fn)
+        for f in factories:
+            for prm in f.get("params", []):
+                prm["base"] = re.sub(r"^daq::", "", prm["base"])
+                prm["kind"] = self.type_kind(prm["base"], {e["name"] for e in m.enums.values() if e.get("header")})
+                if prm["kind"] == "struct":
+                    structs_extra.setdefault(prm["base"], self.struct_record(prm["base"]))
+            if f.get("params") is not None:
+                f["abi"] = "c" if all(p["kind"] in ("interface", "enum", "scalar", "struct", "callback") for p in f["params"]) else "cpp"
+        for fn in functions:
+            for prm in fn["params"]:
+                prm["kind"] = self.type_kind(prm["base"], {e["name"] for e in m.enums.values() if e.get("header")})
         by_impl = defaultdict(list)
         for f in factories:
             if f.get("implementationClass"):
@@ -200,6 +289,20 @@ class Emitter:
         for f in factories:
             if f.get("returns"):
                 created_by[f["returns"]].append(f["name"])
+        enum_names = {e["name"] for e in m.enums.values() if e.get("header")}
+        structs = {}
+        for name in sorted(m.interfaces):
+            for meth in m.interfaces[name]["methods"]:
+                for prm in meth["params"]:
+                    prm["base"] = re.sub(r"^daq::", "", prm["base"])
+                    kind = self.type_kind(prm["base"], enum_names)
+                    if kind == "struct":
+                        structs.setdefault(prm["base"], self.struct_record(prm["base"]))
+                    prm["kind"] = kind
+                ret = re.sub(r"^daq::", "", meth["returns"])
+                abi_ok = all(prm["kind"] in ("interface", "enum", "scalar", "struct") for prm in meth["params"])                     and (ret == "ErrCode" or (name == "IUnknown" and ret == "int"))
+                meth["abi"] = "c" if abi_ok else "cpp"
+            m.interfaces[name]["abi"] = "c" if all(x["abi"] == "c" for x in m.interfaces[name]["methods"]) else "cpp"
         interfaces = []
         for name in sorted(m.interfaces):
             rec = dict(m.interfaces[name])
@@ -285,10 +388,13 @@ class Emitter:
             },
             "libraries": libs,
             "scalars": scalars,
+            "structs": [v for k, v in sorted({**structs_extra, **structs}.items()) if v],
             "errors": errors,
             "enums": enums,
             "interfaces": interfaces,
             "factories": factories,
+            "functions": functions,
+            "callbacks": [m.callbacks[k] for k in sorted(m.callbacks)],
             "cppFactories": sorted(m.cpp_factories, key=lambda x: (x["library"] or "", x["name"])),
             "implementations": [impls[k] for k in sorted(impls)],
             "serialization": ser,
