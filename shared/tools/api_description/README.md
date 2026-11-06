@@ -80,3 +80,13 @@ A tag is one comment line directly above the declaration, in RTGen attribute syn
 | Method tags | Written only where a method differs from its interface (spec 0010); about 1280 methods follow their interface and carry no tag. |
 | Untagged implementation members | Members that are private, or classes no module derives from, carry no member tags; they are core by default. |
 | Source of truth | The header tags. `classify.py` re-derives a proposal for every entry and flags where a tag disagrees with it; `--prefer-rules` lets new evidence win before a review. |
+
+## Checked against other trees
+
+| Tree | Result |
+| ---- | ------ |
+| v3.40.3 (`../openDAQ-api-json-v3403`) | Parses without errors. The report against main (`generators/api_diff/diff.py`) lists 30 ABI breaks, mostly methods inserted mid-interface; see `ISSUES.md` #12. |
+| `multi-reader-2-v3.1` at 610aab89c (`../openDAQ-cmp-v3`, read only), against its fork point 891d4ae61 | Purely additive: interfaces `IMultiReader2`, `IMultiReader2Params`, `IMultiReader2Status`, `IMultiReader2InputStatus`, `IMultiReader2PortListener` and factories `MultiReader2`, `MultiReader2Params`; no ABI, API or setup-format change. Proposed audiences: `application` for the reader, its params, statuses and factories; `core` for `IMultiReader2PortListener`, an internal marker that `MultiReader2Impl` uses to recognise its own ports and that is declared in the implementation header `multi_reader2_impl.h`. Diffing that branch against main instead mixes in what main gained since 891d4ae61. |
+| car-demo `Json_demo_setups` (setups saved with STAR devices) | Both files pass the setup schema. |
+
+Usage evidence comes from the sources in `config/usage_sources.json`: the openDAQ checkout, the local clones next to it as they are checked out (several are on working branches, for example raspberry-module at 2026-07-21 and iDDS-Module on a 2024 branch), and shallow clones in `../opendaq-org-cache` of the organization repositories without a local clone. Integration tests and documentation are shown on the review page but do not decide proposals.

@@ -47,10 +47,10 @@ def main():
     scanned = []
     for s in sources["sources"]:
         path = os.path.normpath(os.path.join(args.root, s["path"]))
-        if not os.path.isdir(path):
+        if not os.path.exists(path):
             print(f"skip (missing): {s['path']}", file=sys.stderr)
             continue
-        u.scan(path, s["name"], s["kind"])
+        u.scan(path, s["name"], s["kind"], tuple(s.get("exclude", [])))
         scanned.append(s)
     u.finish()
     out = u.to_json()

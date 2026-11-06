@@ -24,7 +24,7 @@ from .lexer import tokenize
 
 SKIP_DIRS = {".git", "build", "_deps", "external", ".venv", "venv", "node_modules", "__pycache__", "tests", "test",
              "bin", "out", ".vs", "cmake-build-debug", "install"}
-EXTS = (".h", ".hpp", ".cpp", ".c", ".py", ".adoc", ".cs")
+EXTS = (".h", ".hpp", ".cpp", ".c", ".py", ".adoc", ".cs", ".md", ".cc")
 
 
 def snake(name):
@@ -43,9 +43,13 @@ def py_names(method):
     return out
 
 
-def iter_files(root):
+def iter_files(root, exclude=()):
+    if os.path.isfile(root):
+        yield root
+        return
     for dirpath, dirs, names in os.walk(root):
-        dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith("build")]
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith("build")
+                   and os.path.relpath(os.path.join(dirpath, d), root).replace("\\", "/") not in exclude]
         for n in names:
             if n.endswith(EXTS):
                 yield os.path.join(dirpath, n)
@@ -96,10 +100,10 @@ class Usage:
             lst.append(where)
 
     # ------------------------------------------------------------------
-    def scan(self, root, repo, kind):
-        """kind: 'application' or 'module'."""
-        for f in iter_files(root):
-            rel = os.path.relpath(f, root).replace("\\", "/")
+    def scan(self, root, repo, kind, exclude=()):
+        """kind: application or module (evidence for proposals), test or docs (shown only)."""
+        for f in iter_files(root, exclude):
+            rel = os.path.relpath(f, root).replace("\\", "/") if os.path.isdir(root) else os.path.basename(f)
             where = f"{repo}/{rel}"
             try:
                 src = open(f, encoding="utf-8", errors="replace").read()
@@ -107,6 +111,12 @@ class Usage:
                 continue
             if f.endswith(".py"):
                 self._scan_py(src, repo, kind, where)
+            elif f.endswith(".md"):
+                if kind != "docs" and "/docs/" not in f.replace("\\", "/"):
+                    continue
+                for block in re.findall(r"```[a-zA-Z+#]*\n(.*?)\n```", src, re.S):
+                    self._scan_cpp_text(block, repo, kind, where)
+                    self._scan_py(block, repo, kind, where)
             elif f.endswith(".adoc"):
                 for block in re.findall(r"----\n(.*?)\n----", src, re.S):
                     self._scan_cpp_text(block, repo, kind, where)
@@ -115,7 +125,7 @@ class Usage:
                 self._scan_cpp_text(src, repo, kind, where)
             else:
                 self._scan_cpp_text(src, repo, kind, where)
-                if f.endswith((".h", ".hpp", ".cpp")):
+                if f.endswith((".h", ".hpp", ".cpp", ".cc")) and kind in ("module", "application"):
                     self._scan_derived(f, repo, where)
 
     def _scan_cpp_text(self, src, repo, kind, where):

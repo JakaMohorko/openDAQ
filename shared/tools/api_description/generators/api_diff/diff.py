@@ -195,6 +195,41 @@ class Diff:
         return self.items
 
 
+def fill(target, source):
+    """Copy audiences from another description onto entries that have none."""
+    si = {i["name"]: i for i in source["interfaces"]}
+    for i in target["interfaces"]:
+        src = si.get(i["name"])
+        if src and not i.get("audience"):
+            i["audience"] = src.get("audience")
+        sm = {m["name"]: m for m in (src or {}).get("methods", [])}
+        for m in i.get("methods", []):
+            if not m.get("effectiveAudience"):
+                m["effectiveAudience"] = (sm.get(m["name"]) or {}).get("effectiveAudience") or i.get("audience")
+    sf = {f.get("createFunction"): f for f in source["factories"]}
+    for f in target["factories"]:
+        if not f.get("audience") and f.get("createFunction") in sf:
+            f["audience"] = sf[f["createFunction"]].get("audience")
+    se = {e["name"]: e for e in source["enums"]}
+    for e in target["enums"]:
+        if not e.get("audience") and e["name"] in se:
+            e["audience"] = se[e["name"]].get("audience")
+    sc = {c["name"]: c for c in source["implementations"]}
+    for c in target["implementations"]:
+        src = sc.get(c["name"])
+        if not src:
+            continue
+        c.setdefault("audience", src.get("audience"))
+        sm = {m["name"]: m for m in src.get("members", [])}
+        for m in c.get("members", []):
+            if not m.get("audience") and m["name"] in sm:
+                m["audience"] = sm[m["name"]].get("audience")
+        sfn = {f["name"]: f for f in src.get("functions", [])}
+        for f in c.get("functions", []):
+            if not f.get("audience") and f["name"] in sfn:
+                f["audience"], f["labels"] = sfn[f["name"]].get("audience"), sfn[f["name"]].get("labels")
+
+
 def markdown(items, old, new):
     count = defaultdict(int)
     for x in items:
@@ -219,8 +254,11 @@ def main():
     ap.add_argument("new")
     ap.add_argument("--md")
     ap.add_argument("--json")
+    ap.add_argument("--audiences", help="description whose tags supply audiences the compared files lack (e.g. main)")
     a = ap.parse_args()
     old, new = load(a.old), load(a.new)
+    if a.audiences:
+        fill(new, load(a.audiences))
     items = Diff(old, new).run()
     if a.md:
         with open(a.md, "w", encoding="utf-8", newline="\n") as f:

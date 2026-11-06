@@ -55,7 +55,7 @@ INTERFACE_DECISIONS = {
     "ILastMessageLoggerSinkPrivate": ("core", "Test helper sink that remembers the last message."),
     # interfaces modules implement or call when they build components
     "IRemovable": ("module", "remove() is called by the core when a component is removed; modules forward it to children."),
-    "IErrorGuard": ("module", "Error-info scoping for code that produces error chains (modules and core)."),
+    "IErrorGuard": ("core", "Error-info scoping inside the core; no module in the openDAQ organization uses it, and spec 0013 does not give it to modules."),
     "IAllocator": ("module", "Custom packet memory for modules that own their buffers."),
     "IDeleter": ("module", "Custom packet memory release for modules that own their buffers."),
     "IPacketDestructCallback": ("module", "Notification when an externally-owned packet buffer is released."),
@@ -71,7 +71,7 @@ INTERFACE_DECISIONS = {
     "IMirroredDeviceConfig": ("module", "Client modules attach streaming sources to mirrored devices."),
     "IMirroredInputPortConfig": ("module", "Client modules configure mirrored input ports."),
     "IMirroredSignalPrivate": ("module", "Streaming modules deliver data to mirrored signals."),
-    "IMirroredInputPortPrivate": ("module", "Streaming modules send data from mirrored input ports."),
+    "IMirroredInputPortPrivate": ("core", "Used by the core's mirrored input ports only; no module in the openDAQ organization uses it."),
     "IStreamingPrivate": ("module", "Client modules register signals with their streaming objects."),
     "ISubscriptionEventArgs": ("module", "Streaming modules receive subscribe/unsubscribe acknowledgements."),
     "IPacketBuffer": ("module", "Pre-allocated packet memory for module producers."),
@@ -81,7 +81,7 @@ INTERFACE_DECISIONS = {
     "IModuleManagerUtils": ("module", "Modules create nested devices and function blocks through it."),
     "IPropertyObjectProtected": ("module", "Owners (device and function block modules) write read-only properties through it."),
     "ILockGuard": ("module", "Lock guards returned by the property-object locking helpers modules call."),
-    "IMutex": ("module", "Mutex objects shared between a component and its module."),
+    "IMutex": ("core", "Mutex objects of the property-object internals; no module in the openDAQ organization uses them."),
     "IComponentDeserializeContext": ("module", "Modules that deserialize their own components read it."),
     "IDeserializeComponent": ("module", "Modules implement custom deserialization of their components."),
     # builders and configuration interfaces for objects applications receive rather than create
@@ -212,6 +212,11 @@ def interface_audience(i, ev):
 
 # Methods on otherwise public interfaces that only the core or modules should call.
 METHOD_DECISIONS = {
+    # applications that do this today, through private interfaces (Python GUI, opendaq-mcp)
+    "IDevicePrivate.forceUnlock": ("application", "[CHECK] The Python GUI (gui_demo.py:1513) and opendaq-mcp force-unlock devices; the method belongs next to IDevice::lock/unlock."),
+    "ITagsPrivate.add": ("application", "[CHECK] opendaq-mcp edits component tags (opendaq_worker.py:590); tags are attributes users edit, the method belongs on a public tags interface."),
+    "ITagsPrivate.remove": ("application", "[CHECK] opendaq-mcp edits component tags (opendaq_worker.py:590); tags are attributes users edit, the method belongs on a public tags interface."),
+    "ITagsPrivate.replace": ("application", "[CHECK] Tags are attributes users edit; the method belongs on a public tags interface."),
     # judgment on top of the application-write rule (2026-11-06)
     "IPropertyObject.addProperty": ("module", "[CHECK] Applications do not add properties; the examples quick_start_full and streaming_configuration_example still build ad-hoc configs with it."),
     "IPermissionManager.setPermissions": ("application", "Applications restrict access to their own objects when they secure an instance (docs: howto_access_control_protected_object)."),
@@ -285,8 +290,8 @@ APP_FACTORY_INTERFACES = {
     "IPermissionsBuilder", "IPermissionMaskBuilder",
     # core types, including the runtime-typed values apps need to set struct and enumeration property values
     "IStruct", "IStructBuilder", "IEnumeration",
-    # the instance
-    "IInstance", "IInstanceBuilder",
+    # the instance, its logger and the work applications schedule on it
+    "IInstance", "IInstanceBuilder", "ILogger", "IWork", "IWorkRepetitive", "IAwaitable",
     # readers
     "IStreamReader", "IBlockReader", "ITailReader", "IMultiReader", "IPacketReader", "IReader",
     "IStreamReaderBuilder", "IBlockReaderBuilder", "ITailReaderBuilder", "IMultiReaderBuilder",
@@ -300,6 +305,9 @@ APP_FACTORY_CHECK = {
     "IUpdateParameters": "argument of IDevice::loadConfiguration",
     "IDeviceUpdateOptions": "part of IUpdateParameters",
     "ISearchFilter": "argument of the getItems/getSignals family of reads",
+    "IContext": "argument of IInstanceBuilder::setContext (examples/logger_with_sinks)",
+    "IScheduler": "argument of IInstanceBuilder::setScheduler",
+    "IModuleManager": "argument of IInstanceBuilder::setModuleManager",
 }
 
 
@@ -345,7 +353,8 @@ def member_audience(cls, item, kind, evidence, chain_libs):
         if hows & {"call", "read"}:
             return "module", [], f"Called by modules ({repos})."
         if item.get("virtual") and name in ("removed", "activeChanged", "visibleChanged", "updateObject", "serializeCustomObjectValues",
-                                             "onUpdatableUpdateEnd", "endApplyProperties", "getDiscoveryConfig",
+                                             "onUpdatableUpdateEnd", "endApplyProperties", "beginApplyProperties",
+                                             "beginApplyUpdate", "endApplyUpdate", "getDiscoveryConfig",
                                              "getDiscoveryConfigs", "allowAddDevicesFromModules",
                                              "allowAddFunctionBlocksFromModules", "clearComponentStatusInternal"):
             return "module", ["override"], "Virtual hook in the component lifecycle that modules may override."

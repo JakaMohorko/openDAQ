@@ -64,6 +64,15 @@ class Emitter:
                 continue
             rel, p, d = rec["decl"]
             explicit = m.class_interfaces(name)
+            # a template whose interface parameter has no default: take the arguments of an alias that instantiates it
+            # (PropertyObjectImpl = GenericPropertyObjectImpl<IPropertyObject>)
+            if rec.get("params") and any(not tp.get("default") and not tp.get("variadic") for tp in rec["params"]):
+                for a in m.aliases.values():
+                    an, aargs = split_template(a["value"])
+                    if an == name and aargs and not a.get("params"):
+                        for x in m.class_interfaces(name, aargs):
+                            if x not in explicit:
+                                explicit.insert(0, x)
             chain = m.class_chain(name)
             if not explicit and name not in bases_used:
                 continue

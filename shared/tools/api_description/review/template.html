@@ -129,7 +129,7 @@ code { font-family: var(--f-mono); font-size: 12px; }
       </ul></div>
       <div><h3>Factories</h3><ul>
         <li><code>INTERNAL_FACTORY</code> (not exported): <b>core</b>. Component constructors taking a context and a parent: <b>module</b>. Otherwise the audience of the returned interface.</li>
-        <li>Evidence tags: <span class="tag a">A</span> applications, <span class="tag m">M</span> modules, with the repositories scanned (examples, docs, Python GUI; module repositories next to openDAQ).</li>
+        <li>Evidence tags: <span class="tag a">A</span> applications, <span class="tag m">M</span> modules, <span class="tag">D</span> documentation, <span class="tag">T</span> integration tests. Only A and M decide proposals. Sources: the openDAQ examples and Python GUI, the openDAQ organization's modules and applications (local clones, plus shallow clones of the rest), the knowledge base and the reference docs.</li>
       </ul></div>
     </div>
   </details>
@@ -224,6 +224,8 @@ code { font-family: var(--f-mono); font-size: 12px; }
     const u = e.usedBy || {}; const parts = [];
     if (u.application) parts.push(...u.application.map(r => `<span class="tag a" title="Used by applications in ${esc(r)}">A ${esc(r)}</span>`));
     if (u.module) parts.push(...u.module.map(r => `<span class="tag m" title="Used by modules in ${esc(r)}">M ${esc(r)}</span>`));
+    if (u.docs) parts.push(...u.docs.map(r => `<span class="tag" title="Shown in documentation ${esc(r)} (supporting evidence only)">D ${esc(r)}</span>`));
+    if (u.test) parts.push(...u.test.map(r => `<span class="tag" title="Used by tests in ${esc(r)} (supporting evidence only)">T ${esc(r)}</span>`));
     if (e.evidence) { for (const r of e.evidence.repos || []) parts.push(`<span class="tag m" title="${esc((e.evidence.examples || []).join("\n"))}">M ${esc(r)} · ${esc((e.evidence.how || []).join("/"))}</span>`); }
     if (e.derivedBy) parts.push(`<span class="tag m" title="${esc(e.derivedBy.join("\n"))}">derived by ${e.derivedBy.length} module classes</span>`);
     if (!parts.length) parts.push(`<span class="tag none">no usage found</span>`);
