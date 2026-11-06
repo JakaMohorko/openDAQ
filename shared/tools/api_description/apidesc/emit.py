@@ -170,10 +170,39 @@ class Emitter:
         return bodies
 
     def method_errors(self, impls):
+        """Error codes each interface method can return, per implementing class.
+
+        Follows member functions of the same class chain that the body calls
+        (`helper(`, `this->helper(`, `Super::helper(`) or hands to a handler
+        (`&Self::onX`), two levels deep; codes from deeper calls are missing.
+        """
         bodies = self.method_bodies(impls)
         result = defaultdict(lambda: defaultdict(set))  # (intf, method) -> err -> {impl}
-        for iname, irec in self.m.interfaces.items():
-            pass
+        call_re = re.compile(r"(?:this->|Super::|Self::|&Self::|&\w+::|[^\w.>:]|^)(\w+)\s*[(,)]")
+        cache = {}
+
+        def errors_of(chain, body, depth, seen):
+            errs = set(self.body_errors(body)[0])
+            if depth == 0:
+                return errs
+            for name in set(call_re.findall(body)):
+                if name in seen:
+                    continue
+                for k in chain:
+                    key = (k, name)
+                    if key in bodies:
+                        seen.add(name)
+                        ck = (tuple(chain), key, depth)
+                        if ck not in cache:
+                            cache[ck] = set()
+                            acc = set()
+                            for hb in bodies[key]:
+                                acc |= errors_of(chain, hb, depth - 1, seen)
+                            cache[ck] = acc
+                        errs |= cache[ck]
+                        break
+            return errs
+
         for cname, crec in impls.items():
             chain = [cname] + crec["baseChain"]
             for iname in crec["interfaces"]:
@@ -182,13 +211,7 @@ class Emitter:
                     for k in chain:
                         if (k, meth["name"]) in bodies:
                             for b in bodies[(k, meth["name"])]:
-                                errs, _ = self.body_errors(b)
-                                # follow one level of same-class helpers named in the body
-                                for helper in set(re.findall(r"\b(\w+(?:Internal|Impl))\s*\(", b)):
-                                    for k2 in chain:
-                                        for hb in bodies.get((k2, helper), []):
-                                            errs |= self.body_errors(hb)[0]
-                                for e in errs:
+                                for e in errors_of(chain, b, 2, {meth["name"]}):
                                     result[(iname, meth["name"])][e].add(k)
                             break
         return result

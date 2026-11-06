@@ -66,6 +66,6 @@ Checked against openDAQ main `db12d91eb` (2026-11-05), the Release build of that
 ## Limits of this description
 
 - The parser is declaration-level, not a compiler: template partial specializations, `#if` branches (both are parsed) and macro-generated declarations other than the openDAQ factory and interface macros are not modelled. It parses all 909 core files without errors.
-- `errors` per method are the codes raised directly in the implementing method or a one-level `...Internal`/`...Impl` helper; codes from deeper calls are missing.
+- `errors` per method are the codes raised in the implementing method and in member functions of the same class chain it calls or hands to a handler, two levels deep; codes from calls into other objects are missing.
 - Usage evidence matches names, so a local variable named like a base member counts as a use. It decides proposals, not tags; the review page shows the evidence.
 - Nine factories have no linked implementation because they go through pooled helpers (`createBoolInternal`) or are declared without a definition the parser can see.
