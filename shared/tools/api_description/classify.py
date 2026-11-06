@@ -250,6 +250,18 @@ def interface_audience(i, ev):
 
 # Methods on otherwise public interfaces that only the core or modules should call.
 METHOD_DECISIONS = {
+    "IContext.getModuleOptions": ("module", "Modules read their own options; six module repositories use it, no application."),
+    "IConnection.dequeue": ("module", "Consuming packets from a connection is what function blocks and readers do; applications use readers."),
+    "IConnection.dequeueAll": ("module", "Consuming packets from a connection is what function blocks and readers do; applications use readers."),
+    "IReader.setExternalListener": ("module", "Readers embedded in modules forward notifications with it; applications use setOnDataAvailable."),
+    "IPropertyObject.getOnPropertyValueWrite": ("module", "Owner hook: handlers can change the value; only modules use it (12 module repositories, no application), and applications observe changes through core events (getOnCoreEvent, getOnComponentCoreEvent)."),
+    "IPropertyObject.getOnPropertyValueRead": ("module", "Owner hook: handlers can change the value; only modules use it (12 module repositories, no application), and applications observe changes through core events (getOnCoreEvent, getOnComponentCoreEvent)."),
+    "IPropertyObject.getOnAnyPropertyValueWrite": ("module", "Owner hook: handlers can change the value; only modules use it (12 module repositories, no application), and applications observe changes through core events (getOnCoreEvent, getOnComponentCoreEvent)."),
+    "IPropertyObject.getOnAnyPropertyValueRead": ("module", "Owner hook: handlers can change the value; only modules use it (12 module repositories, no application), and applications observe changes through core events (getOnCoreEvent, getOnComponentCoreEvent)."),
+    "IProperty.getOnPropertyValueWrite": ("module", "Owner hook: handlers can change the value; only modules use it (12 module repositories, no application), and applications observe changes through core events (getOnCoreEvent, getOnComponentCoreEvent)."),
+    "IProperty.getOnPropertyValueRead": ("module", "Owner hook: handlers can change the value; only modules use it (12 module repositories, no application), and applications observe changes through core events (getOnCoreEvent, getOnComponentCoreEvent)."),
+    "IProperty.getOnSuggestedValuesRead": ("module", "Owner hook: handlers can change the value; only modules use it (12 module repositories, no application), and applications observe changes through core events (getOnCoreEvent, getOnComponentCoreEvent)."),
+    "IProperty.getOnSelectionValuesRead": ("module", "Owner hook: handlers can change the value; only modules use it (12 module repositories, no application), and applications observe changes through core events (getOnCoreEvent, getOnComponentCoreEvent)."),
     # applications that do this today, through private interfaces (Python GUI, opendaq-mcp)
     "IDevicePrivate.forceUnlock": ("application", "[CHECK] The Python GUI (gui_demo.py:1513) and opendaq-mcp force-unlock devices; the method belongs next to IDevice::lock/unlock."),
     "ITagsPrivate.add": ("application", "[CHECK] opendaq-mcp edits component tags (opendaq_worker.py:590); tags are attributes users edit, the method belongs on a public tags interface."),
