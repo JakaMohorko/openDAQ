@@ -48,6 +48,8 @@ Checked against openDAQ main `db12d91eb` (2026-11-05), the Release build of that
 | 25 | Low | The Python GUI narrows an add-device config by removing properties (`add_config_dialog.py:465-476`, `remove_property` on the Device and Streaming sections). | The GUI changes the structure of a config object the module created; a module that validates its config shape breaks it. | Let the GUI skip protocols through values (a selection or enable flags) instead of removing properties. |
 | 26 | Low | Several applications host a device and build it in application code: the raspberry `rpi_app.cpp` (function properties, `ArgumentInfo`), `quick_start_simulator.cpp`, the Omnet plugin (its own signals, descriptors and input ports), perf `load_node`. | They use module API from an application binary. The tags treat this code as module development, not as evidence for the application audience. | Nothing to change in them; documentation of "device applications" should say they rely on the module API. |
 
+| 27 | Low | The Python binding binds two interfaces tagged `core`: `IOwnable` (`core_objects/generated/py_ownable.cpp`) and `ISignalEvents` (`opendaq/generated/signal/py_signal_events.cpp`). | Python applications can reach core plumbing that may change without notice. | Drop `core` interfaces from the generated bindings (spec 0010, step 3). |
+
 ## Hand-written natvis files (`generators/natvis/generate.py --check-existing`)
 
 | # | Severity | Finding | Consequence | Fix |

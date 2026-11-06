@@ -103,10 +103,12 @@ INTERFACE_DECISIONS = {
     "IMirroredDevice": ("application", "Applications list a client device's streaming sources."),
     "IVersionInfo": ("application", "Applications read module and SDK versions."),
     "ISyncInterface": ("application", "Applications configure synchronization interfaces (spec 0001)."),
-    "ISerializer": ("application", "Applications serialize objects (saveConfiguration, custom JSON)."),
-    "ISerializedObject": ("application", "Applications deserialize objects."),
-    "ISerializedList": ("application", "Applications deserialize objects."),
-    "IDeserializer": ("application", "Applications deserialize objects."),
+    "ISerializer": ("module", "Modules write their objects' serialized form; applications use saveConfiguration/loadConfiguration strings, no organization application uses it and the Python binding does not bind it."),
+    "ISerializable": ("module", "Implemented and called by serialization code in modules and the core; applications save and load setups as strings."),
+    "IPropertyMetadataReadArgs": ("module", "Received by read handlers of properties that modules define."),
+    "ISerializedObject": ("module", "Read by module and core deserialization code; no organization application uses it."),
+    "ISerializedList": ("module", "Read by module and core deserialization code; no organization application uses it."),
+    "IDeserializer": ("module", "Module and core deserialization; applications load setups as strings."),
     "IDeviceDomain": ("application", "Applications read the device domain (origin, tick resolution)."),
     "IDimension": ("application", "Part of data descriptors applications read."),
     "IRange": ("application", "Part of data descriptors applications read."),
@@ -171,6 +173,42 @@ APP_WRITES = {
 APP_WRITE_INTERFACES = {"IInstanceBuilder", "IStreamReaderBuilder", "IBlockReaderBuilder", "ITailReaderBuilder",
                         "IMultiReaderBuilder", "IMultiReader", "IReader", "ISampleReader", "IStructBuilder",
                         "IUpdateParameters", "IDeviceUpdateOptions", "IUnknown"}
+
+
+# Core plumbing on module interfaces: methods the core calls on its own objects. A method any scanned module calls
+# stays module whatever this table says.
+CORE_ON_MODULE = {
+    "IPropertyInternal": ("re", r"(NoLock|Unresolved)$|^cloneWithOwner$|^getClassOnPropertyValue|^overrideDefaultValue$|^getHasOn",
+                          "Lock-free and unresolved property access the core uses while it holds the object lock."),
+    "IPropertyObjectInternal": ("re", r"NoLock$|^getLockGuard$|^getRecursiveLockGuard$|^getLockingStrategy$|^getMutex|^checkForReferences|^hasUserReadAccess$|^isUpdating$",
+                                "Locking, reference and access internals of the property object."),
+    "IComponentPrivate": ("set", {"updateOperationMode", "setComponentConfig", "setParentActive"},
+                          "The core propagates these down the component tree."),
+    "IMirroredSignalPrivate": ("set", {"triggerEvent", "addStreamingSource", "removeStreamingSource", "subscribeCompleted",
+                                       "unsubscribeCompleted", "unsubscribeCompletedNoLock", "getMirroredDataDescriptor",
+                                       "getMirroredDomainSignal"},
+                               "Streaming-source bookkeeping that StreamingImpl and mirrored devices do; modules use the StreamingImpl hooks."),
+    "IStreamingPrivate": ("set", {"detachRemovedSignal", "setOwnerDevice", "registerStreamedClientSignals",
+                                  "unregisterStreamedClientSignals", "detachRemovedInputPort"},
+                          "Called by the core's mirrored devices on their streaming objects."),
+    "IConnectionInternal": ("set", {"enqueueLastDescriptor", "closeQueue"}, "Called between connections and ports in the core."),
+    "IInputPortConfig": ("set", {"notifyPacketEnqueued", "notifyPacketEnqueuedOnThisThread", "notifyPacketEnqueuedWithScheduler"},
+                         "Called by connections when they enqueue packets."),
+    "IModuleManagerUtils": ("set", {"createDevice", "createFunctionBlock", "createStreaming", "getAvailableStreamingTypes",
+                                    "createDefaultAddDeviceConfig", "createServer", "changeIpConfig", "requestIpConfig",
+                                    "completeDeviceCapabilities", "createDevices", "getDiscoveryInfo"},
+                            "The core's devices create their children through these; no module in the openDAQ organization calls them."),
+    "IDevicePrivate": ("set", {"isLockedInternal"}, "Called by GenericDevice."),
+    "IDiscoveryServer": ("set", {"registerService", "unregisterService"}, "Called by ServerImpl::enableDiscovery and disableDiscovery."),
+}
+
+
+def core_on_module_rule(iname, mname, iaud, module_used):
+    if iaud != "module" or module_used or iname not in CORE_ON_MODULE:
+        return None
+    kind, what, why = CORE_ON_MODULE[iname]
+    hit = re.search(what, mname) if kind == "re" else mname in what
+    return ("core", why + " No scanned module calls it.") if hit else None
 
 
 def method_write_rule(iname, mname, iaud, coretype):
@@ -408,7 +446,10 @@ def main():
         for m in i.get("methods", []):
             k = f"{i['name']}.{m['name']}"
             wr = method_write_rule(i["name"], m["name"], a, i.get("coretype"))
-            if k in METHOD_DECISIONS:
+            cm = core_on_module_rule(i["name"], m["name"], a, "module" in mev.get(m["name"], {}))
+            if cm and k not in METHOD_DECISIONS:
+                rule = (cm[0], [], cm[1])
+            elif k in METHOD_DECISIONS:
                 rule = (METHOD_DECISIONS[k][0], [], METHOD_DECISIONS[k][1])
             elif wr and wr[0] != a:
                 rule = (wr[0], [], wr[1])
