@@ -95,9 +95,15 @@ class OpenDaqError(Exception):
         super().__init__(f"{text} ({call})" if call else text)
 
 
+INFO_CODES = {}  # success codes that mean "nothing happened", filled by the generated module
+
+
 def check(code, call=None):
     code &= 0xFFFFFFFF
     if code & 0x80000000 == 0:
+        if code in INFO_CODES:
+            import warnings
+            warnings.warn(f"{INFO_CODES[code]} from {call}", stacklevel=3)
         return code
     msg = None
     try:

@@ -233,6 +233,8 @@ class Gen:
                f"_rt._lib_names.update({json.dumps(api['libraries'])})",
                f"_rt.CORETYPES.update({json.dumps(self.coretypes)})", "",
                "def _enum(cls, v):", "    try:", "        return cls(v)", "    except ValueError:", "        return v", ""]
+        info = {e["value"]: e["name"] for e in api["errors"] if e["name"] in ("OPENDAQ_IGNORED",) and e.get("value")}
+        out.append("_rt.INFO_CODES.update({" + ", ".join(f"{k}: {v!r}" for k, v in info.items()) + "})")
         # errors
         names = set()
         for e in api["errors"]:

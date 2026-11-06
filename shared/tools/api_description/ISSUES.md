@@ -1,0 +1,59 @@
+# Issues found while building the API description
+
+Checked against openDAQ main `db12d91eb` (2026-11-05), the Release build of that commit in `openDAQ-ipv6-main/build/win-full` (Windows, MSVC), and module repositories next to the openDAQ checkout as listed in `config/usage_sources.json`. Every row was reproduced on 2026-11-06 unless it says otherwise.
+
+## Tooling: RTGen
+
+| # | Severity | Finding | Consequence | Fix |
+| - | -------- | ------- | ----------- | --- |
+| 1 | High | RTGen's lexer treats `public`, `private` and `protected` as keywords (`RTGen3Lexer.g4:13-19`), so the tag `[api(public)]` from spec 0010 is a syntax error and RTGen exits with code 3 on every tagged header. | The audience names in spec 0010 cannot be used as written. The tags here use `application` instead, which is the other name 0010 lists as an option. | Close the 0010 open question in favour of `application`, or teach the RTGen grammar to accept keywords as attribute arguments. |
+| 2 | Medium | RTGen formats doc comments differently for LF and CRLF input: with LF headers a blank line moves after `@brief` and the ` * ` separator lines disappear in the generated `*_ptr.h` and C# files. Found while comparing RTGen output before and after tagging, when an editor step had turned the tagged headers into LF. | The generated smart pointers and bindings differ between a checkout with `core.autocrlf=true` (CRLF) and one without (LF), so regenerated files show spurious diffs. | Normalise line endings in RTGen's doc-comment handling. |
+| 3 | Low | RTGen prints "Ignoring unknown rtComment function: api" for every tag, about 1700 lines per full generation. | Noise in build logs. Output is unchanged: `checks/rtgen_check.py` shows all 1074 generated files byte-identical with and without the tags, with identical exit codes. | Register a no-op handler for `api` in `AttributeInfo` (a one-line RTGen change, left out because RTGen was out of scope). |
+
+## Headers and documentation
+
+| # | Severity | Finding | Consequence | Fix |
+| - | -------- | ------- | ----------- | --- |
+| 4 | Medium | Five setters document an input as `@param[out]`: `IDeviceInfoConfig::setDeviceType`, `setLocation`, `setUserName`, `IServerCapabilityConfig::addAddress`, `IStructBuilder::setFieldValues`. | Generators that trust the documented direction (as RTGen-style binding generators do) produce wrong signatures. The description keeps the real direction and records the documented one as `docDirection`. | Change the five `@param[out]` to `@param`. |
+| 5 | Low | 44 interfaces have no doc comment and 182 interface methods have no `@brief`. | Generated documentation and binding docstrings are empty for them. | Fill them in; the description lists them (`doc` missing). |
+| 6 | Low | `ISupportsWeakRef` repeats `DEFINE_INTFID("ISupportsWeakRef")` inside `DECLARE_OPENDAQ_INTERFACE`, which already defines the same id (`weakref.h:104-106`). | Harmless today; a rename of the interface would leave a stale id. | Remove the inner `DEFINE_INTFID`. |
+
+## API behaviour found through the bindings and the setup tool
+
+| # | Severity | Finding | Consequence | Fix |
+| - | -------- | ------- | ----------- | --- |
+| 7 | Medium | Function blocks lock the `Visible` attribute. `setVisible(false)` then returns `OPENDAQ_IGNORED` (0x6), which `OPENDAQ_SUCCEEDED` treats as success, and nothing changes. A setup that writes `"visible": false` on a function block is ignored the same way. | Callers through smart pointers and every binding that checks only for failure never learn the write was dropped. The ctypes binding now raises a Python warning for `OPENDAQ_IGNORED`; the setup builder refuses locked attributes using `lockedAttributes` from the catalog. | Return an error for writes to locked attributes, or document `OPENDAQ_IGNORED` on every setter that can return it. |
+| 8 | Medium | `getAllProperties()` on a device does not list `DaqDeviceInfo` (or `daqSynchronization`), yet `hasProperty("DaqDeviceInfo")` is true and `saveConfiguration` writes both. | Introspection cannot discover properties that a setup must contain (load rule "device-info"); the setup tool special-cases `DaqDeviceInfo`. | List them, or expose a way to enumerate the properties that serialization writes. |
+| 9 | Low | Many errors are raised with `DAQ_MAKE_ERROR_INFO(code)` and no message, for example `ListImpl::getItemAt` out of range and `IDevice::addFunctionBlock` for the video player FB. | `daqGetErrorInfoMessage` returns an empty string, so bindings can report only the code name. | Add messages at the raise sites; the description lists the codes each method raises (`errors`). |
+| 10 | Low | A second `createInstanceFromBuilder` on the same `IInstanceBuilder` fails with `OPENDAQ_ERR_INVALIDPARAMETER` and no message. | Unclear whether builders are single-use by design. | Document it, or allow reuse. |
+| 11 | Low | The reference video player FB (`RefFBModuleVideoPlayer`) cannot be created without its input file: `addFunctionBlock` returns `OPENDAQ_ERR_INVALIDSTATE` with no message. | Offline tools cannot list its signals or ports. | Create the FB in an idle state and report the missing file through its status. |
+
+## ABI and audience
+
+| # | Severity | Finding | Consequence | Fix |
+| - | -------- | ------- | ----------- | --- |
+| 12 | High | Between v3.40.3 and main, 30 interface changes move vtable slots: `IServerCapability`, `IServerCapabilityConfig` and `IStreaming` gained methods in the middle (`getProtocolGroupId`, `setProtocolGroupId`), and `IReferenceDomainInfo(Builder)` replaced `getUsesOffset`/`setUsesOffset` with `getReferenceDomainIds`/`setReferenceDomainIds`. Full list: `output/api_diff_v3.40.3_to_main.md` (`generators/api_diff/diff.py`). | Modules and applications built against 3.40 crash or call the wrong method against 3.50 binaries. | Append new methods at the end of interfaces, or state the ABI break in the 3.50 changelog. |
+| 13 | Medium | `IStreamingPrivate` (used by streaming client modules, audience `module`) passes `const StringPtr&` and `const DevicePtr&` through its vtable. The core-only `IDataRuleCalcPrivate`, `IScalingCalcPrivate`, `ITaskInternal`, `ILoggerSinkBasePrivate` and `ILoggerThreadPoolPrivate` also use C++ types or non-`ErrCode` returns. | These interfaces are not C-ABI-safe: a module built with another compiler or standard library can break, and no binding can call them. The description marks them `"abi": "cpp"`. | Replace the smart-pointer references in `IStreamingPrivate` with interface pointers. |
+| 14 | Medium | `ComponentImpl::active` changed from `bool` to `std::atomic<bool>` and `GenericDevice::deviceInfo` from `DeviceInfoPtr` to `DeviceInfoPtrWrapper` between v3.40.3 and main. Modules read both (`usage.json`). | Source and binary break for modules that touch them. | Expose accessors, which the `module` audience tags now make visible as the supported surface. |
+| 15 | Low | Spec 0010's example tags `ServerImpl::rootDeviceRef` as core, but the native streaming server reads it (`native_streaming_server_impl.cpp:287, 340`), as does `config` (native streaming and OPC UA servers). | The example would hide a member modules depend on. The tags here make both `module, readOnly`. | Update the 0010 example. |
+| 16 | Low | Modules call object-model plumbing directly: `thisPtr`, `borrowPtr`, `addRef`/`releaseRef` on `GenericObjInstance`/`ObjInstanceSupportsWeakRef` (native streaming, LT, MQTT, raspberry, universal adapter modules). | These are tagged `module`; changing them breaks most modules. | Accept them as module API, or offer free helpers. |
+
+## Hand-written natvis files (`generators/natvis/generate.py --check-existing`)
+
+| # | Severity | Finding | Consequence | Fix |
+| - | -------- | ------- | ----------- | --- |
+| 17 | Low | `device.natvis` casts `GenericDevice` to `SignalContainerImpl<$T1, IDeviceDomain, IDevicePrivate, ...>` and `GenericSignalContainerImpl` to `ComponentImpl<$T1, IDeviceDomain, IDevicePrivate, ...>`, but the real base is `SignalContainerImpl<TInterface, IDevicePrivate, IDeviceNetworkConfig, Interfaces...>`. | The device and signal container visualizers never match, so the debugger shows raw members. | Replace with the generated `opendaq.natvis`. |
+| 18 | Low | Visualizers refer to members that no longer exist: `ServerImpl` `serverConfig`, `rootDevice`, `moduleManager`; `GenericDevice::streamingOptions`; `Module` `name`, `version`; `ConnectionImpl::mutex`; `DataPacketImpl::sampleMemSize`; `frozen` on `DimensionImpl`, `DimensionRuleImpl`, `ScalingImpl`, `TagsImpl`; `VersionInfoImpl` `major`, `minor`, `patch`; and `streaming.natvis` describes `StreamingInfoConfigImpl`, which no longer exists. | Those items show as errors in the debugger. | Replace with the generated files. The checker still reports `functor` on `FunctionImpl`/`ProcedureImpl` wrongly: the member lives in a partial specialization the description does not model. |
+
+## Python bindings (survey of `bindings/python`)
+
+| # | Severity | Finding | Consequence | Fix |
+| - | -------- | ------- | ----------- | --- |
+| 19 | Low | `IBinaryData` is not converted to `bytes`; a Python `complex` is not converted on input; returned `IFunction`/`IProcedure` come back as plain `IBaseObject` because the converter cases are commented out (`py_converter.cpp:127`, `:151-152`). Not re-verified by running the official binding. | Coretype handling is incomplete for three of the 17 coretypes. | Finish the converter cases. |
+
+## Limits of this description
+
+- The parser is declaration-level, not a compiler: template partial specializations, `#if` branches (both are parsed) and macro-generated declarations other than the openDAQ factory and interface macros are not modelled. It parses all 909 core files without errors.
+- `errors` per method are the codes raised directly in the implementing method or a one-level `...Internal`/`...Impl` helper; codes from deeper calls are missing.
+- Usage evidence matches names, so a local variable named like a base member counts as a use. It decides proposals, not tags; the review page shows the evidence.
+- Nine factories have no linked implementation because they go through pooled helpers (`createBoolInternal`) or are declared without a definition the parser can see.

@@ -158,8 +158,8 @@ code { font-family: var(--f-mono); font-size: 12px; }
   const DATA = JSON.parse(document.getElementById("data").textContent);
   const E = DATA.entries;
   const BY = new Map(E.map(e => [e.key, e]));
-  const KINDS = ["interface", "method", "factory", "cppfactory", "enum", "class", "function", "member"];
-  const KIND_LABEL = { interface: "Interfaces", method: "Interface methods", factory: "C factories", cppfactory: "C++ factories", enum: "Enums", class: "Implementation classes", function: "Implementation functions", member: "Member variables" };
+  const KINDS = ["interface", "method", "factory", "cppfactory", "smartptr", "enum", "class", "function", "member"];
+  const KIND_LABEL = { interface: "Interfaces", method: "Interface methods", factory: "C factories", cppfactory: "C++ factories", smartptr: "Smart pointers", enum: "Enums", class: "Implementation classes", function: "Implementation functions", member: "Member variables" };
   const AUDS = ["application", "module", "core"];
   const LABELS = { interface: ["coretype"], function: ["override"], member: ["readOnly"] };
   const PAGE = 150;
@@ -182,7 +182,7 @@ code { font-family: var(--f-mono); font-size: 12px; }
     return (d.audience ?? null) !== (e.audience ?? null) || JSON.stringify([...(d.labels || [])].sort()) !== JSON.stringify([...(e.labels || [])].sort()) || !!d.note;
   }
   const evKinds = e => { const u = e.usedBy || {}; const ev = e.evidence; return { a: !!u.application, m: !!u.module || !!(ev && ev.repos && ev.repos.length) }; };
-  const needsLook = e => /\[CHECK\]|no module overrides it yet|Follows the returned interface/.test(e.reason || "") && e.kind !== "cppfactory";
+  const needsLook = e => /\[CHECK\]|no module overrides it yet|Tagged differently|Private\/internal name, used by modules/.test(e.reason || "");
 
   // ---------------------------------------------------------------- filters
   const fkind = document.getElementById("fkind"), faud = document.getElementById("faud"), q = document.getElementById("q");

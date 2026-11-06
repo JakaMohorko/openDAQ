@@ -1,0 +1,80 @@
+# openDAQ API description
+
+A machine-readable description of the openDAQ API and its implementation objects (spec 0012), generated from the headers, plus the audience tags it reads (spec 0010) and four consumers that prove the description is complete enough to generate from: natvis files, a Python binding, an offline setup builder and a release compatibility report. Everything here is Python 3.9+ with the standard library; `lxml` is used only to validate natvis against Visual Studio's schema.
+
+The parser is independent of RTGen. RTGen still generates the smart pointers and bindings, and the tags in the headers leave its output byte-identical (`checks/rtgen_check.py`).
+
+## Layout
+
+| Path | Content |
+| ---- | ------- |
+| `generate.py`, `apidesc/` | The C++ tokenizer, the declaration parser and the model that writes `output/opendaq_api.json`. |
+| `scan_usage.py`, `config/usage_sources.json` | Usage evidence: which interfaces, methods, factories and implementation members applications (examples, docs, Python GUI) and modules (repositories next to openDAQ) use. |
+| `classify.py`, `annotate.py` | Propose an audience for every declaration from rules and evidence, and write or update the `// [api(...)]` tags in the headers. |
+| `review/` | The review page: every proposal with its reason and evidence. Decisions made there come back through `annotate.py --apply`. |
+| `schemas/` | Hand-written JSON schema of a saved setup, keyed by serialize ID, and the rules the core follows when it loads one. |
+| `generators/natvis/` | Visual Studio natvis files from the implementation classes; also checks the hand-written natvis files against the code. |
+| `generators/python_ctypes/` | A Python binding that calls the openDAQ libraries through raw vtables, built only from the JSON. |
+| `setup/` | The setup builder: a catalog dump of the types a build provides, a Python library and a web page that write setups `loadConfiguration` accepts. |
+| `generators/api_diff/` | A compatibility report between two descriptions (ABI, API, setup format). |
+| `checks/` | Tests against a real build and the RTGen comparison. |
+| `ISSUES.md` | Bugs and inconsistencies found on the way. |
+
+## Commands
+
+```bash
+python generate.py                                   # output/opendaq_api.json
+python scan_usage.py                                 # output/usage.json
+python classify.py && python annotate.py --dry-run   # proposals; nothing to change once the headers are tagged
+python review/build_review.py                        # output/review/api-audience-review.html
+python generators/natvis/generate.py --xsd "<VS>/Xml/Schemas/1033/natvis.xsd"
+python generators/python_ctypes/generate.py          # output/bindings/python/opendaq_ct
+OPENDAQ_BIN=<build>/bin python setup/catalog.py      # output/setup/catalog.json
+python setup/page/build_page.py                      # output/setup/opendaq-setup-builder.html
+python generators/api_diff/diff.py old.json output/opendaq_api.json --md report.md
+OPENDAQ_BIN=<build>/bin python checks/test_python_ctypes.py
+OPENDAQ_BIN=<build>/bin python checks/test_setup.py
+python checks/rtgen_check.py <dir-before>            # then again after a header change, and --compare
+```
+
+`OPENDAQ_BIN` is the `bin` folder of a build whose source matches the description (the libraries and the module DLLs). The reference modules are needed for the catalog and the setup tests.
+
+## Audience tags
+
+A tag is one comment line directly above the declaration, in RTGen attribute syntax so RTGen's parser accepts it.
+
+| Where | Tag | Meaning |
+| ----- | --- | ------- |
+| Interface | `// [api(application)]`, `// [api(module)]`, `// [api(core)]` | The default audience of every method of the interface. `application` is the name used for what spec 0010 calls `public`, because RTGen's lexer treats `public` as a keyword. |
+| Interface | `// [api(application, coretype)]` | One of the 17 coretypes: openDAQ's wrappers of standard programming types, which bindings map to native values (IBaseObject, IBoolean, IInteger, IFloat, INumber, IString, IRatio, IComplexNumber, IBinaryData, IList, IDict, IIterable, IIterator, IFunction, IProcedure, IEvent, IEventHandler). The list follows what the Python, C# and C generators special-case. |
+| Interface method | `// [api(core)]` | Only where the method differs from its interface. |
+| Factory macro, C++ factory, smart pointer, enum | `// [api(...)]` | Who may create or use it. |
+| Implementation class | `// [api(module)]` | Modules derive from it (or from a class that derives from it). Other installed implementation classes are tagged `core`. |
+| Implementation function | `// [api(module)]`, `// [api(module, override)]`, `// [api(core)]` | Modules may call it, override it, or neither. Interface overrides are not tagged; they follow the interface. |
+| Member variable | `// [api(module)]`, `// [api(module, readOnly)]`, `// [api(core)]` | Modules may write it, only read it, or neither. |
+
+## The description (`opendaq_api.json`, format version 1)
+
+| Part | Content |
+| ---- | ------- |
+| `libraries` | Library names, binary names per platform and source folders. |
+| `scalars`, `structs`, `callbacks` | The C ABI types used in signatures: scalar typedefs with size, by-value structs with fields and packing (`ComplexFloat64`, `SourceLocation`), and function-pointer typedefs (`FuncCall`, `ProcCall`). |
+| `errors` | Every `OPENDAQ_ERR_*` with its numeric value and the C++ exception that carries it. |
+| `enums` | Enumerators with evaluated values, underlying type and audience. |
+| `interfaces` | Name, interface ID (UUIDv5 as `DEFINE_INTFID` computes it), base, library, header, audience, `coretype`, smart pointer, RTGen attributes, doc, `abi` (`c` or `cpp`), implementing classes and creating factories. Each method in vtable order with its audience, doc, `abi`, parameters (type, kind, pointer depth, direction, default, element/key/value types) and the error codes its implementations raise. |
+| `factories` | C factories: name, create function, returned interface, exported or internal, parameters, implementation class. `cppFactories` holds the inline C++ factories. |
+| `functions` | Exported free functions (`daqGetErrorInfoMessage`, `createJsonSerializer`, ...). |
+| `implementations` | Implementation classes: template parameters, bases, base chain, all interfaces they answer, factories, serialize ID, members and functions with access, virtual/override flags and audience. `smartPointers` and `typeAliases` hold the smart pointer classes and the aliases (`Device`, `SignalImpl`). |
+| `serialization`, `setup` | Per serialize ID: writer, reader, whether the deserializer is registered, the keys the code writes and reads, and the schema definition for setup objects. `setup` holds the setup schema and the load rules. |
+
+## Decisions
+
+| Topic | Decision |
+| ----- | -------- |
+| Tag name | `application`, not `public`; see `ISSUES.md` #1. |
+| Coretype | A modifier on the interface tag (`coretype`), exported as `"coretype": true` (spec 0012 open question). IStruct and IEnumeration are not coretypes: their fields come from runtime types. IErrorInfo maps to exceptions, not values. |
+| Parser | Our own declaration-level parser rather than clang: no build dependency, under two seconds for the whole core, and it reads comments where the tags live. |
+| Serialization schemas | Hand-written, as spec 0012 recommends, and checked by `checks/test_setup.py` against setups the core saves. The `keysWritten`/`keysRead` lists are extracted automatically as a cross-check. |
+| Method tags | Written only where a method differs from its interface (spec 0010), so the 1341 methods that follow their interface carry no tag. |
+| Untagged implementation members | Members that are private, or classes no module derives from, carry no member tags; they are core by default. |
+| Source of truth | The header tags. `classify.py` re-derives a proposal for every entry and flags where a tag disagrees with it; `--prefer-rules` lets new evidence win before a review. |
