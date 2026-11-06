@@ -46,6 +46,8 @@ def locate(api, root):
     for e in api["enums"]:
         if e.get("header") and not e.get("outer"):
             loc[f"enum:{e['name']}"].append((e["file"], e["line"]))
+    for sp in api.get("smartPointers", []):
+        loc[f"smartptr:{sp['name']}"].append((sp["file"], sp["line"]))
     for c in api["implementations"]:
         loc[f"class:{c['name']}"].append((c["file"], c["line"]))
         for mem in c.get("members", []):
@@ -112,6 +114,22 @@ def main():
             if "/src/" in rel and e["kind"] in ("class", "member", "function"):
                 continue
             want[rel][line] = tag
+    if not args.kinds:
+        # tags that no longer sit above a described declaration (the declaration was reclassified away)
+        orphans = 0
+        for d in ("core",):
+            for dp, _, names in os.walk(os.path.join(args.root, d)):
+                for n in names:
+                    if not n.endswith(".h"):
+                        continue
+                    rel = os.path.relpath(os.path.join(dp, n), args.root).replace("\\", "/")
+                    with open(os.path.join(dp, n), encoding="utf-8", errors="replace") as f:
+                        rows = f.read().splitlines()
+                    for i, row in enumerate(rows):
+                        if TAG_RE.match(row) and (i + 2) not in want.get(rel, {}):
+                            want[rel][i + 2] = None
+                            orphans += 1
+        print(f"{orphans} orphaned tags to remove")
     changed = 0
     for rel, lines in sorted(want.items()):
         path = os.path.join(args.root, rel)

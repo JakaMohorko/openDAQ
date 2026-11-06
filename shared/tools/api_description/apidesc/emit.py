@@ -68,7 +68,10 @@ class Emitter:
             if not explicit and name not in bases_used:
                 continue
             if name == "ObjectPtr" or "ObjectPtr" in chain:
+                tags = tags_from_comments(d.comments)
+                aud, mods = api_tag(tags)
                 self.smart_pointers.append({"name": name, "interface": explicit[0] if explicit else None,
+                                            "file": rel, "line": d.line, "audience": aud,
                                             "templateParams": [tp["name"] for tp in rec["params"]] if rec.get("params") else None,
                                             "bases": rec["bases"], "header": rel.split("/include/", 1)[1] if "/include/" in rel else None})
                 continue

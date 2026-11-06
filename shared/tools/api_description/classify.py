@@ -207,6 +207,8 @@ def factory_audience(f, intf_aud, ev):
         return "module", "Component constructor taking a context and a parent: modules build components with it."
     if base_aud != "application":
         return base_aud, f"Follows the returned interface {ret} ({base_aud})."
+    if ret is None:
+        return "application", "Returns a C++ helper type, not an interface; part of the C++ application API."
     if "application" in used:
         return "application", "Used by applications."
     return "application", f"Follows the returned interface {ret} (public)."
@@ -241,6 +243,20 @@ def member_audience(cls, item, kind, evidence, chain_libs):
     return "core", [], "Not used by any scanned module."
 
 
+PREFER_RULES = "--prefer-rules" in sys.argv
+
+
+def settle(tag_aud, tag_labels, rule):
+    """Header tag wins (unless --prefer-rules); the reason states the rule and whether the tag agrees."""
+    r_aud, r_labels, r_why = rule
+    if not tag_aud or PREFER_RULES:
+        return r_aud, r_labels, r_why
+    if tag_aud == r_aud and sorted(tag_labels or []) == sorted(r_labels or []):
+        return tag_aud, tag_labels or [], r_why
+    rule_txt = ", ".join([str(r_aud)] + list(r_labels or []))
+    return tag_aud, tag_labels or [], f"Tagged differently in the header; the rules propose {rule_txt}: {r_why}"
+
+
 def main():
     api = json.load(open(os.path.join(HERE, "output", "opendaq_api.json"), encoding="utf-8"))
     usage = json.load(open(os.path.join(HERE, "output", "usage.json"), encoding="utf-8"))
@@ -258,10 +274,7 @@ def main():
     mev = usage["methods"]
     intf_aud = {}
     for i in api["interfaces"]:
-        if i.get("audience"):
-            a, labels, why = i["audience"], i.get("labels", []), "Tagged in header."
-        else:
-            a, labels, why = interface_audience(i, iev)
+        a, labels, why = settle(i.get("audience"), i.get("labels", []), interface_audience(i, iev))
         intf_aud[i["name"]] = a
         evid = iev.get(i["name"], {})
         add(f"interface:{i['name']}", "interface", a, labels, why, f"{i['file']}:{i['line']}",
@@ -270,13 +283,8 @@ def main():
                    "methods": len(i.get("methods", [])), "brief": (i.get("doc") or {}).get("brief")})
         for m in i.get("methods", []):
             k = f"{i['name']}.{m['name']}"
-            if m.get("audience"):
-                ma, ml, mwhy = m["audience"], m.get("labels", []), "Tagged in header."
-            elif k in METHOD_DECISIONS:
-                ma, mwhy = METHOD_DECISIONS[k]
-                ml = []
-            else:
-                ma, ml, mwhy = None, [], "Follows the interface."
+            rule = (METHOD_DECISIONS[k][0], [], METHOD_DECISIONS[k][1]) if k in METHOD_DECISIONS else (None, [], "Follows the interface.")
+            ma, ml, mwhy = settle(m.get("audience"), m.get("labels", []), rule)
             e = mev.get(m["name"], {})
             add(f"method:{k}", "method", ma, ml, mwhy, f"{i['file']}:{m['line']}", tagged=bool(m.get("audience")),
                 extra={"interface": i["name"], "interfaceAudience": a, "usedBy": e,
@@ -285,35 +293,49 @@ def main():
     for f in api["factories"]:
         if not f.get("createFunction"):
             continue
-        if f.get("audience"):
-            a, why = f["audience"], "Tagged in header."
-        else:
-            a, why = factory_audience(f, intf_aud, fev)
+        ra, rwhy = factory_audience(f, intf_aud, fev)
+        a, _, why = settle(f.get("audience"), [], (ra, [], rwhy))
         add(f"factory:{f['createFunction']}", "factory", a, [], why, f"{f['file']}:{f['line']}", tagged=bool(f.get("audience")),
             extra={"name": f["name"], "returns": f.get("returns"), "exported": f.get("exported", False),
                    "usedBy": fev.get(f["name"], {}), "implementation": f.get("implementation")})
     for f in api.get("cppFactories", []):
         key = f"cppfactory:{f['header']}#{f['name']}/{len(f.get('params', []))}"
-        if f.get("audience"):
-            a, why = f["audience"], "Tagged in header."
-        else:
-            ret = re.sub(r"<.*", "", f["returns"]).split("::")[-1]
+        if True:
+            full = f["returns"].split("::")[-1]
+            ret = re.sub(r"<.*", "", full)
             intf = None
+            m_obj = re.match(r"^ObjectPtr<(I\w+)>$", full)
+            if m_obj:
+                intf = m_obj.group(1)
             for i in api["interfaces"]:
                 if ret in (i["smartPtr"], (i.get("templated") or {}).get("defaultAliasName"), i["name"][1:] + "Ptr"):
                     intf = i["name"]
+            for sp in api.get("smartPointers", []):
+                if ret == sp["name"] and sp.get("interface"):
+                    intf = intf or sp["interface"]
+            if intf is None and ret in ("ListPtr", "ListObjectPtr"):
+                intf = "IList"
+            if intf is None and ret in ("DictPtr", "DictObjectPtr"):
+                intf = "IDict"
             pseudo = {"name": f["name"], "returns": intf, "exported": True,
                       "params": [{"base": re.sub(r"Ptr$", "", p.get("base", "")).join(["I", ""]) if p.get("base", "").endswith("Ptr") else p.get("base")}
                                  for p in f.get("params", [])]}
-            a, why = factory_audience(pseudo, intf_aud, fev)
+            ra, rwhy = factory_audience(pseudo, intf_aud, fev)
+            a, _, why = settle(f.get("audience"), [], (ra, [], rwhy))
         add(key, "cppfactory", a, [], why, f"{f['file']}:{f['line']}", tagged=bool(f.get("audience")),
             extra={"name": f["name"], "returns": f["returns"], "usedBy": fev.get(f["name"], {})})
     for e in api["enums"]:
         if not e.get("header") or e.get("outer"):
             continue
-        a = e.get("audience") or "application"
-        add(f"enum:{e['name']}", "enum", a, [], "Tagged in header." if e.get("audience") else "Enums in installed headers are part of the public API.",
+        a, _, why = settle(e.get("audience"), [], ("application", [], "Enums in installed headers are part of the application API."))
+        add(f"enum:{e['name']}", "enum", a, [], why,
             f"{e['file']}:{e['line']}", tagged=bool(e.get("audience")))
+    # smart pointer classes: the C++ face of their interface
+    for sp in api.get("smartPointers", []):
+        ia = intf_aud.get(sp.get("interface"), "application") if sp.get("interface") else "application"
+        a, _, why = settle(sp.get("audience"), [], (ia, [], f"Smart pointer of {sp.get('interface') or 'any interface'}; follows its audience."))
+        add(f"smartptr:{sp['name']}", "smartptr", a, [], why, f"{sp['file']}:{sp['line']}", tagged=bool(sp.get("audience")),
+            extra={"interface": sp.get("interface")})
     # implementation classes
     derived = usage.get("derived", {})
     inheritable = set(derived) | set(INHERITABLE_EXTRA)
@@ -327,13 +349,11 @@ def main():
         if not rec.get("installed"):
             continue
         if name in inheritable:
-            a = rec.get("audience") or "module"
-            why = "Tagged in header." if rec.get("audience") else (
-                f"Modules derive from it ({', '.join(sorted({r for r, _ in derived[name]}))})." if name in derived
-                else "Base of classes modules derive from.")
+            rule = ("module", [], f"Modules derive from it ({', '.join(sorted({r for r, _ in derived[name]}))})." if name in derived
+                    else "Base of classes modules derive from.")
         else:
-            a = rec.get("audience") or "core"
-            why = "Tagged in header." if rec.get("audience") else "No module derives from it."
+            rule = ("core", [], "No module derives from it.")
+        a, _, why = settle(rec.get("audience"), rec.get("labels") or [], rule)
         add(f"class:{name}", "class", a, rec.get("labels") or [], why, f"{rec['file']}:{rec['line']}", tagged=bool(rec.get("audience")),
             extra={"library": rec.get("library"), "derivedBy": sorted({f"{r}:{c}" for r, c in derived.get(name, [])})})
         if name not in inheritable:
@@ -350,12 +370,10 @@ def main():
                 if key in seen:
                     continue
                 seen.add(key)
-                if it.get("audience"):
-                    ma, ml, mwhy = it["audience"], it.get("labels") or [], "Tagged in header."
-                else:
-                    ma, ml, mwhy = member_audience(name, it, kind, evidence, None)
-                    if plumbing and ma == "core":
-                        mwhy = "Object-model plumbing."
+                rule = member_audience(name, it, kind, evidence, None)
+                if plumbing and rule[0] == "core":
+                    rule = (rule[0], rule[1], "Object-model plumbing.")
+                ma, ml, mwhy = settle(it.get("audience"), it.get("labels") or [], rule)
                 evi = evidence.get(name, {}).get(it["name"])
                 add(key, kind, ma, ml, mwhy, f"{rec['file']}:{it['line']}", tagged=bool(it.get("audience")),
                     extra={"class": name, "access": it["access"], "virtual": it.get("virtual", False),

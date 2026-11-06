@@ -465,7 +465,9 @@ class Model:
         body = d.info["body"]
         calls = sorted(set(re.findall(r"\b(\w+)_Create\b", body)) | set(re.findall(r"\b(create[A-Z]\w*)\s*\(", body)))
         impl = re.findall(r"createWithImplementation\s*<\s*(\w+)\s*,\s*([\w:<>]+)", body)
-        if not (calls or impl or ret.endswith("Ptr") or "Ptr<" in ret):
+        name = d.info["name"]
+        smart_ret = re.match(r"^(\w+::)?\w+Ptr(<.*>)?$", ret or "") is not None
+        if "operator" in name or not name[:1].isupper() or not (smart_ret or (rel.endswith("_factory.h") and (calls or impl))):
             return
         tags = tags_from_comments(d.comments)
         aud, mods = api_tag(tags)
