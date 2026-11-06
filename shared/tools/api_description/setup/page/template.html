@@ -1,0 +1,442 @@
+<title>openDAQ Setup Builder</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Sans:wght@600&display=swap">
+<style>
+/* Layout: an instrument rack. Topology tree on the left, the selected component's panel on the right, the setup file below. */
+:root {
+  --bg: #f3f5f2; --panel: #ffffff; --ink: #18211c; --muted: #5b675f; --line: #d6ddd6; --hover: #ebf0ea;
+  --accent: #1d6b48; --accent-soft: #dcefe4; --warn: #9a5a00; --warn-soft: #fbedd8; --err: #a3243b; --err-soft: #f8e0e4;
+  --added: #2f5d9a;
+  --f-ui: "IBM Plex Sans Condensed", "Arial Narrow", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  --f-display: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #111613; --panel: #171e1a; --ink: #e3e9e4; --muted: #94a198; --line: #29332d; --hover: #1d2621;
+  --accent: #5fc195; --accent-soft: #173327; --warn: #e3a54d; --warn-soft: #33270f; --err: #f07a8f; --err-soft: #3a1820;
+  --added: #8ab4ef; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #111613; --panel: #171e1a; --ink: #e3e9e4; --muted: #94a198; --line: #29332d; --hover: #1d2621;
+  --accent: #5fc195; --accent-soft: #173327; --warn: #e3a54d; --warn-soft: #33270f; --err: #f07a8f; --err-soft: #3a1820;
+  --added: #8ab4ef; color-scheme: dark }
+body { background: var(--bg); color: var(--ink); font-family: var(--f-ui); font-size: 14px; line-height: 1.4; }
+.wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 18px 32px; max-width: 1440px; margin: 0 auto; display: grid; gap: 14px; }
+header { display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: end; justify-content: space-between; }
+h1 { font-family: var(--f-display); font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+.sub { color: var(--muted); margin: 4px 0 0; max-width: 78ch; }
+button, select, input, textarea { font: inherit; color: inherit; }
+.btn { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 5px 11px; cursor: pointer; }
+.btn:hover { background: var(--hover); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--panel); font-weight: 600; }
+.btn:disabled { opacity: .5; cursor: default; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.main { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.5fr); gap: 14px; align-items: start; }
+@media (max-width: 860px) { .main { grid-template-columns: minmax(0, 1fr); } }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
+.card > h2 { font-size: 11.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 500; margin: 0; padding: 10px 14px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.tree { padding: 6px 0; max-height: 70vh; overflow: auto; }
+.tn { display: flex; align-items: center; gap: 6px; padding: 3px 14px; cursor: pointer; white-space: nowrap; }
+.tn:hover { background: var(--hover); }
+.tn.sel { background: var(--accent-soft); }
+.tn .k { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; min-width: 4.5ch; text-align: center; }
+.tn .id { font-family: var(--f-mono); font-size: 12px; color: var(--muted); }
+.tn.added .k { color: var(--added); border-color: var(--added); }
+.tn.inactive .nm { text-decoration: line-through; color: var(--muted); }
+.tn .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; }
+.tn .dot.off { background: transparent; }
+.insp { padding: 14px; display: grid; gap: 14px; }
+.insp h3 { margin: 0; font-family: var(--f-display); font-size: 17px; }
+.gid { font-family: var(--f-mono); font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.grid { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 14px; align-items: center; }
+.grid label { color: var(--muted); }
+.grid input[type=text], .grid input[type=number], .grid select, .grid textarea { width: 100%; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+.grid textarea { font-family: var(--f-mono); font-size: 12px; min-height: 52px; }
+.props { display: grid; gap: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.prop { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--line); align-items: center; }
+.prop:last-child { border-bottom: 0; }
+.prop.changed { background: var(--accent-soft); }
+@media (max-width: 560px) { .prop { grid-template-columns: minmax(0, 1fr) auto; } .prop .pv { grid-column: 1 / -1; } }
+.pn { min-width: 0; }
+.pn b { font-weight: 500; overflow-wrap: anywhere; }
+.pn small { display: block; color: var(--muted); font-size: 11.5px; }
+.pv input, .pv select, .pv textarea { width: 100%; padding: 4px 7px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); }
+.pv textarea { font-family: var(--f-mono); font-size: 12px; }
+.reset { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 12px; }
+.reset:hover { color: var(--ink); }
+.muted { color: var(--muted); }
+.badge { display: inline-block; font-size: 11px; border-radius: 4px; padding: 0 6px; background: var(--hover); color: var(--muted); }
+.badge.added { color: var(--added); }
+.addrow { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.addrow select, .addrow input { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); min-width: 0; }
+.out { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 14px; }
+@media (max-width: 860px) { .out { grid-template-columns: minmax(0, 1fr); } }
+pre.json { margin: 0; padding: 12px 14px; font-family: var(--f-mono); font-size: 11.5px; max-height: 420px; overflow: auto; white-space: pre; }
+.msgs { padding: 10px 14px; display: grid; gap: 6px; font-size: 13px; }
+.msg { border-radius: 5px; padding: 5px 9px; }
+.msg.ok { background: var(--accent-soft); color: var(--accent); }
+.msg.err { background: var(--err-soft); color: var(--err); }
+.msg.warn { background: var(--warn-soft); color: var(--warn); }
+.rules { padding: 10px 14px; font-size: 12.5px; display: grid; gap: 6px; max-height: 300px; overflow: auto; }
+.rules p { margin: 0; }
+textarea#importbox { width: 100%; min-height: 90px; font-family: var(--f-mono); font-size: 11.5px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); padding: 6px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>openDAQ setup builder</h1>
+      <p class="sub">Build an instance setup without connecting to anything: add devices and function blocks, set names, activity, descriptions and property values, connect input ports, and take the file to <code>loadConfiguration</code>. <span id="srcinfo"></span></p>
+    </div>
+    <div class="actions">
+      <button class="btn" type="button" id="importbtn">Open a setup</button>
+      <button class="btn" type="button" id="resetbtn">Start over</button>
+      <button class="btn" type="button" id="copybtn">Copy setup</button>
+      <button class="btn primary" type="button" id="savebtn" hidden>Save setup file</button>
+    </div>
+  </header>
+  <div class="card" id="importcard" hidden>
+    <h2>Open a setup <button class="btn" type="button" id="importgo">Load into the builder</button></h2>
+    <div class="msgs"><textarea id="importbox" placeholder="Paste a setup saved with saveConfiguration or written by this builder"></textarea><div id="importmsg"></div></div>
+  </div>
+
+  <div class="main">
+    <div class="card">
+      <h2>Topology <span class="muted" id="counts"></span></h2>
+      <div class="tree" id="tree" role="tree"></div>
+    </div>
+    <div class="card"><div class="insp" id="insp"></div></div>
+  </div>
+
+  <div class="out">
+    <div class="card"><h2>Setup file <span class="muted" id="size"></span></h2><pre class="json" id="json"></pre></div>
+    <div class="card"><h2>Checks</h2><div class="msgs" id="msgs"></div><h2>How the core loads it</h2><div class="rules" id="rules"></div></div>
+  </div>
+</div>
+
+<script id="data" type="application/json">/*__DATA__*/null</script>
+<script>
+(() => {
+  const D = JSON.parse(document.getElementById("data").textContent);
+  const CAT = D.catalog, GUID = D.guids, SCHEMA = D.schema;
+  const CORE_TO_INTF = { ctBool: "IBoolean", ctInt: "IInteger", ctFloat: "IFloat", ctString: "IString", ctList: "IList", ctDict: "IDict", ctRatio: "IRatio", ctObject: "IBaseObject", ctStruct: "IStruct", ctEnumeration: "IEnumeration", ctComplexNumber: "IComplexNumber" };
+  const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  document.getElementById("srcinfo").textContent = `Types from ${Object.keys(CAT.functionBlockTypes).length} function block types and ${Object.keys(CAT.devices).length} simulated device in the catalog (openDAQ ${D.version} at ${D.commit}).`;
+  document.getElementById("rules").innerHTML = D.rules.map(r => `<p>${esc(r.rule)}</p>`).join("");
+
+  // ---------------------------------------------------------------- model (port of setupkit.py)
+  let uid = 0;
+  function node(t, parent, localId, added, cs) {
+    const n = { id: ++uid, t: t || { localId, serializeId: "Device", name: localId, properties: [], children: [] }, parent, localId: localId || t.localId, kind: (t || {}).serializeId || "Device", added: !!added, cs: cs || null, attrs: {}, props: {}, config: {}, signalId: null, children: [] };
+    for (const c of (n.t.children || [])) n.children.push(node(c, n));
+    return n;
+  }
+  const gid = n => n.parent ? gid(n.parent) + "/" + n.localId : "/" + n.localId;
+  const attr = (n, k, d) => k in n.attrs ? n.attrs[k] : (k in n.t ? n.t[k] : d);
+  const locked = (n, k) => (n.t.lockedAttributes || []).includes(k[0].toUpperCase() + k.slice(1));
+  const childByLocal = (n, id) => n.children.find(c => c.localId === id);
+  function walk(n, f) { f(n); n.children.forEach(c => walk(c, f)); }
+  function folder(n, id) {
+    let f = childByLocal(n, id);
+    if (!f) { f = node({ localId: id, serializeId: "Folder", name: id, children: [] }, n); n.children.push(f); }
+    return f;
+  }
+  function addFb(parent, typeId, localId, name) {
+    const cat = CAT.functionBlockTypes[typeId]; if (!cat || !cat.template) throw new Error(`Function block type ${typeId} is not in the catalog`);
+    const f = folder(parent, "FB");
+    if (!localId) { let i = 1; while (childByLocal(f, `${typeId}_${i}`)) i++; localId = `${typeId}_${i}`; }
+    if (childByLocal(f, localId)) throw new Error(`${gid(f)} already has ${localId}`);
+    const n = node(cat.template, f, localId, true); n.attrs.name = name || localId; f.children.push(n); return n;
+  }
+  function addDev(parent, cs, localId, name) {
+    let entry = CAT.devices[cs], t = entry && entry.template;
+    if (!t) { const pre = cs.split("://")[0]; for (const [k, d] of Object.entries(CAT.devices)) if (k.split("://")[0] === pre && d.template) { t = d.template; const m = cs.match(/(\d+)$/); if (!localId && m && /\d+$/.test(d.localId)) localId = d.localId.replace(/\d+$/, m[1]); } }
+    localId = localId || (entry && entry.localId);
+    if (!localId) throw new Error(`No catalog entry for ${cs}: enter the local ID its module assigns`);
+    const f = folder(parent, "Dev");
+    if (childByLocal(f, localId)) throw new Error(`${gid(f)} already has ${localId}`);
+    const n = node(t, f, localId, true, cs); n.attrs.name = name || (t ? t.name : localId); f.children.push(n); return n;
+  }
+
+  // ---------------------------------------------------------------- values
+  function checkValue(info, v, where) {
+    if (!info) return v;
+    const vt = info.valueType;
+    if (vt === "ctInt" && info.selectionValues != null) {
+      const sel = info.selectionValues; const opts = Array.isArray(sel) ? sel : (sel.values || []).map(x => x.value); const keys = Array.isArray(sel) ? opts.map((_, i) => i) : (sel.values || []).map(x => x.key);
+      if (typeof v === "string") { const i = opts.indexOf(v); if (i < 0) throw new Error(`${where}: ${v} is not one of ${opts.join(", ")}`); return keys[i]; }
+      if (!keys.includes(v)) throw new Error(`${where}: selection ${v} is out of range`); return v;
+    }
+    if (vt === "ctBool" && typeof v !== "boolean") throw new Error(`${where}: expected true or false`);
+    if (vt === "ctInt" && !Number.isInteger(v)) throw new Error(`${where}: expected an integer`);
+    if (vt === "ctFloat" && typeof v !== "number") throw new Error(`${where}: expected a number`);
+    if (vt === "ctString" && typeof v !== "string") throw new Error(`${where}: expected text`);
+    if (vt === "ctList" && !Array.isArray(v)) throw new Error(`${where}: expected a JSON list`);
+    if ((vt === "ctInt" || vt === "ctFloat") && ((typeof info.min === "number" && v < info.min) || (typeof info.max === "number" && v > info.max))) throw new Error(`${where}: ${v} is outside [${info.min}, ${info.max}]`);
+    return v;
+  }
+  const FLOAT = Symbol("float");
+  function encode(info, v) {
+    const vt = info && info.valueType;
+    if (v && typeof v === "object" && !Array.isArray(v) && v.__type && "properties" in v) return objectValue(v, {});
+    if (vt === "ctList" && Array.isArray(v)) { const o = { __type: "List", values: v.map(x => encode(null, x)) }; const intf = info && CORE_TO_INTF[info.itemType]; if (intf && GUID[intf]) o.itemIntfID = "{" + GUID[intf] + "}"; return o; }
+    if (vt === "ctFloat" && typeof v === "number") return { [FLOAT]: v };
+    return v;
+  }
+  function objectValue(desc, ov) { const o = { __type: desc.__type || "PropertyObject" }; const pv = propValues(desc.properties || [], ov); if (Object.keys(pv).length) o.propValues = pv; return o; }
+  function propValues(props, ov) {
+    const pv = {};
+    for (const p of props) {
+      const n = p.name; if (p.valueType === "ctFunc" || p.valueType === "ctProc" || p.referencedProperty) continue;
+      if (n in ov) pv[n] = encode(p, ov[n]);
+      else if (p.valueType === "ctObject") { const val = "value" in p ? p.value : p.default; if (val && typeof val === "object" && val.__type) pv[n] = objectValue(val, {}); }
+      else if ("value" in p) pv[n] = encode(p, p.value);
+    }
+    return pv;
+  }
+  function toJson(n) {
+    const k = n.kind;
+    if (k === "Folder" || k === "IoFolder") { const items = {}; for (const c of n.children) items[c.localId] = toJson(c); const o = { __type: k, name: attr(n, "name", n.localId) }; if (Object.keys(items).length) o.items = items; return o; }
+    const o = { __type: k, name: attr(n, "name", n.localId) };
+    if (attr(n, "description", "")) o.description = attr(n, "description", "");
+    if (!attr(n, "active", true)) o.active = false;
+    if (!attr(n, "visible", true)) o.visible = false;
+    if (k === "Signal" && !attr(n, "public", true)) o.public = false;
+    if ((k === "FunctionBlock" || k === "Channel") && n.t.typeId) o.typeId = n.t.typeId;
+    if (k === "Device" && n.cs) o.connectionString = n.cs;
+    if (k === "InputPort" && n.signalId) o.signalId = n.signalId;
+    let pv = propValues(n.t.properties || [], n.props);
+    if (k === "Device" && !("DaqDeviceInfo" in pv)) pv = { DaqDeviceInfo: { __type: "DeviceInfo", propValues: {} }, ...pv }; // rule "device-info"
+    if (Object.keys(pv).length) o.propValues = pv;
+    if (k === "FunctionBlock" && Object.keys(n.config).length) o.ComponentConfig = { __type: "PropertyObject", propValues: propValues((CAT.functionBlockTypes[n.t.typeId] || {}).defaultConfig || [], n.config) };
+    for (const c of n.children) {
+      if (c.localId === "Srv" || c.localId === "Synchronization") continue;
+      if (c.kind === "Folder" || c.kind === "IoFolder") { const j = toJson(c); if (j.items || (k === "Device" && (c.localId === "FB" || c.localId === "Dev"))) o[c.localId] = j; }
+      else o[c.localId] = toJson(c);
+    }
+    return o;
+  }
+  // JSON text with floats always carrying a decimal point (rule "values")
+  function stringify(v, ind = "") {
+    const pad = ind + " ";
+    if (v && typeof v === "object" && FLOAT in v) { const x = v[FLOAT]; return Number.isInteger(x) ? x.toFixed(1) : String(x); }
+    if (Array.isArray(v)) return v.length ? "[\n" + v.map(x => pad + stringify(x, pad)).join(",\n") + "\n" + ind + "]" : "[]";
+    if (v && typeof v === "object") { const ks = Object.keys(v); return ks.length ? "{\n" + ks.map(k => pad + JSON.stringify(k) + ": " + stringify(v[k], pad)).join(",\n") + "\n" + ind + "}" : "{}"; }
+    return JSON.stringify(v);
+  }
+  const plain = v => JSON.parse(stringify(v));
+
+  // ---------------------------------------------------------------- schema check (subset of JSON Schema, as schema_lite.py)
+  const TYPES = { object: v => v && typeof v === "object" && !Array.isArray(v), array: Array.isArray, string: v => typeof v === "string", boolean: v => typeof v === "boolean", integer: Number.isInteger, number: v => typeof v === "number", null: v => v === null };
+  function validate(v, s, path = "$") {
+    let e = [];
+    if (s.$ref) { let t = SCHEMA; for (const p of s.$ref.replace(/^#\//, "").split("/")) t = t[p]; e = e.concat(validate(v, t, path)); }
+    for (const a of s.allOf || []) e = e.concat(validate(v, a, path));
+    if (s.anyOf && !s.anyOf.some(a => !validate(v, a, path).length)) e.push(`${path}: matches none of the allowed forms`);
+    if (s.type) { const ts = [].concat(s.type); if (!ts.some(t => TYPES[t](v))) return e.concat(`${path}: expected ${ts.join(" or ")}`); }
+    if ("const" in s && v !== s.const) e.push(`${path}: expected ${JSON.stringify(s.const)}`);
+    if (typeof v === "string" && s.pattern && !new RegExp(s.pattern).test(v)) e.push(`${path}: does not match ${s.pattern}`);
+    if (TYPES.object(v)) {
+      for (const r of s.required || []) if (!(r in v)) e.push(`${path}: missing ${r}`);
+      for (const [k, x] of Object.entries(v)) { if (s.properties && k in s.properties) e = e.concat(validate(x, s.properties[k], `${path}.${k}`)); else if (s.additionalProperties && typeof s.additionalProperties === "object") e = e.concat(validate(x, s.additionalProperties, `${path}.${k}`)); }
+      if (s.minProperties && Object.keys(v).length < s.minProperties) e.push(`${path}: needs ${s.minProperties} key(s)`);
+      if (s.maxProperties && Object.keys(v).length > s.maxProperties) e.push(`${path}: allows ${s.maxProperties} key(s)`);
+    }
+    if (Array.isArray(v) && s.items && typeof s.items === "object") v.forEach((x, i) => { e = e.concat(validate(x, s.items, `${path}[${i}]`)); });
+    return e;
+  }
+
+  // ---------------------------------------------------------------- state
+  let root, sel;
+  function fresh() { uid = 0; root = node(CAT.root, null, CAT.rootLocalId); sel = root; }
+  fresh();
+  const allNodes = () => { const a = []; walk(root, n => a.push(n)); return a; };
+  const byId = id => allNodes().find(n => n.id === id);
+
+  // ---------------------------------------------------------------- tree view
+  const SHOW = new Set(["Device", "FunctionBlock", "Channel", "Signal", "InputPort"]);
+  const KIND = { Device: "dev", FunctionBlock: "fb", Channel: "ch", Signal: "sig", InputPort: "in" };
+  function renderTree() {
+    const rows = [];
+    (function rec(n, depth) {
+      if (SHOW.has(n.kind)) {
+        const off = !attr(n, "active", true);
+        rows.push(`<div class="tn${n === sel ? " sel" : ""}${n.added ? " added" : ""}${off ? " inactive" : ""}" role="treeitem" tabindex="0" data-id="${n.id}" style="padding-left:${14 + depth * 16}px">
+          <span class="k">${KIND[n.kind]}</span><span class="nm">${esc(attr(n, "name", n.localId))}</span><span class="id">${esc(n.localId)}</span>${n.kind === "InputPort" ? `<span class="dot${n.signalId ? "" : " off"}" title="${n.signalId ? "connected" : "not connected"}"></span>` : ""}</div>`);
+        depth++;
+      }
+      for (const c of n.children) if (c.localId !== "Srv" && c.localId !== "Synchronization") rec(c, depth);
+    })(root, 0);
+    document.getElementById("tree").innerHTML = rows.join("");
+    let nd = 0, nf = 0; walk(root, n => { if (n.added && n.kind === "Device") nd++; if (n.added && n.kind === "FunctionBlock") nf++; });
+    document.getElementById("counts").textContent = `${nd} device${nd === 1 ? "" : "s"}, ${nf} function block${nf === 1 ? "" : "s"} added`;
+  }
+
+  // ---------------------------------------------------------------- inspector
+  function fmtVal(v) { if (v && typeof v === "object") return JSON.stringify(v); return v; }
+  function propEditor(n, p, cfg) {
+    const store = cfg ? n.config : n.props;
+    const has = p.name in store;
+    const cur = has ? store[p.name] : ("value" in p ? p.value : p.default);
+    const id = `p-${n.id}-${cfg ? "c" : "p"}-${p.name}`;
+    let input;
+    const vt = p.valueType;
+    if (vt === "ctFunc" || vt === "ctProc") input = `<span class="muted">callable, not stored</span>`;
+    else if (vt === "ctObject") input = `<span class="muted">${esc((cur && cur.__type) || "object")}, kept as the type writes it</span>`;
+    else if (vt === "ctBool") input = `<input type="checkbox" id="${id}" data-p="${esc(p.name)}" data-cfg="${cfg ? 1 : ""}" ${cur ? "checked" : ""}>`;
+    else if (vt === "ctInt" && p.selectionValues != null) { const sel = p.selectionValues; const opts = Array.isArray(sel) ? sel.map((x, i) => [i, x]) : (sel.values || []).map(x => [x.key, x.value]); input = `<select id="${id}" data-p="${esc(p.name)}" data-cfg="${cfg ? 1 : ""}">${opts.map(([k, v]) => `<option value="${esc(k)}" ${k === cur ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>`; }
+    else if (vt === "ctInt" || vt === "ctFloat") input = `<input type="number" id="${id}" data-p="${esc(p.name)}" data-cfg="${cfg ? 1 : ""}" step="${vt === "ctInt" ? 1 : "any"}" ${typeof p.min === "number" ? `min="${p.min}"` : ""} ${typeof p.max === "number" ? `max="${p.max}"` : ""} value="${esc(cur)}">`;
+    else if (vt === "ctString") input = `<input type="text" id="${id}" data-p="${esc(p.name)}" data-cfg="${cfg ? 1 : ""}" value="${esc(cur)}">`;
+    else input = `<textarea id="${id}" data-p="${esc(p.name)}" data-cfg="${cfg ? 1 : ""}" data-json="1" rows="2">${esc(JSON.stringify(cur ?? null))}</textarea>`;
+    const meta = [vt.replace(/^ct/, "").toLowerCase(), p.unit, p.readOnly ? "read-only" : "", typeof p.min === "number" || typeof p.max === "number" ? `${p.min ?? "…"}–${p.max ?? "…"}` : ""].filter(Boolean).join(" · ");
+    return `<div class="prop${has ? " changed" : ""}"><label class="pn" for="${id}"><b>${esc(p.name)}</b><small>${esc(meta)}${p.description ? " — " + esc(p.description) : ""}</small></label><div class="pv">${input}</div>${has ? `<button class="reset" type="button" data-reset="${esc(p.name)}" data-cfg="${cfg ? 1 : ""}">Reset</button>` : "<span></span>"}</div>`;
+  }
+  function renderInsp() {
+    const n = sel; const el = document.getElementById("insp");
+    const lockNote = k => locked(n, k) ? `disabled title="Locked by the component's type"` : "";
+    let h = `<div><h3>${esc(attr(n, "name", n.localId))} <span class="badge${n.added ? " added" : ""}">${n.added ? "added" : n.parent ? "from its type" : "root"}</span></h3><div class="gid">${esc(gid(n))}${n.t.typeId ? " · " + esc(n.t.typeId) : ""}${n.cs ? " · " + esc(n.cs) : ""}</div></div>`;
+    h += `<div class="grid">
+      <label for="a-name">Name</label><input type="text" id="a-name" value="${esc(attr(n, "name", n.localId))}" ${lockNote("name")}>
+      <label for="a-desc">Description</label><input type="text" id="a-desc" value="${esc(attr(n, "description", ""))}" ${lockNote("description")}>
+      <label for="a-active">Active</label><span><input type="checkbox" id="a-active" ${attr(n, "active", true) ? "checked" : ""} ${lockNote("active")}></span>
+      <label for="a-visible">Visible</label><span><input type="checkbox" id="a-visible" ${attr(n, "visible", true) ? "checked" : ""} ${lockNote("visible")}>${locked(n, "visible") ? ' <span class="muted">locked by the type</span>' : ""}</span>
+      ${n.kind === "Signal" ? `<label for="a-public">Public</label><span><input type="checkbox" id="a-public" ${attr(n, "public", true) ? "checked" : ""}></span>` : ""}
+    </div>`;
+    if (n.kind === "InputPort") {
+      const sigs = allNodes().filter(x => x.kind === "Signal");
+      h += `<div class="grid"><label for="a-sig">Signal</label><select id="a-sig"><option value="">Not connected</option>${sigs.map(s => `<option value="${esc(gid(s))}" ${gid(s) === n.signalId ? "selected" : ""}>${esc(gid(s))}</option>`).join("")}</select></div>`;
+    }
+    if (n.kind === "Device" || n.kind === "FunctionBlock" || n.kind === "Channel") {
+      const types = n.kind === "Device" ? n.t.functionBlockTypes : n.t.nestedFunctionBlockTypes;
+      const avail = (types || Object.keys(CAT.functionBlockTypes)).filter(t => CAT.functionBlockTypes[t] && CAT.functionBlockTypes[t].template);
+      if (avail.length) h += `<div class="addrow"><select id="addfb-type" aria-label="Function block type">${avail.map(t => `<option value="${esc(t)}">${esc(CAT.functionBlockTypes[t].name || t)} (${esc(t)})</option>`).join("")}</select><button class="btn" type="button" id="addfb">Add function block</button></div>`;
+      else if (n.kind !== "Device") h += `<p class="muted">This type accepts no nested function blocks.</p>`;
+      if (n.kind === "Device") h += `<div class="addrow"><input type="text" id="adddev-cs" list="cslist" placeholder="Connection string, e.g. daqref://device1" size="30"><datalist id="cslist">${Object.keys(CAT.devices).map(c => `<option value="${esc(c)}">`).join("")}</datalist><input type="text" id="adddev-id" placeholder="Local ID (if not in catalog)" size="18"><button class="btn" type="button" id="adddev">Add device</button></div>`;
+    }
+    if (n.added) h += `<div><button class="btn" type="button" id="remove">Remove ${esc(attr(n, "name", n.localId))}</button></div>`;
+    const props = (n.t.properties || []).filter(p => p.visible !== false || p.name in n.props);
+    if (props.length) h += `<div><div class="muted" style="margin-bottom:6px">Properties</div><div class="props">${props.map(p => propEditor(n, p, false)).join("")}</div></div>`;
+    const cfg = n.kind === "FunctionBlock" && n.added ? ((CAT.functionBlockTypes[n.t.typeId] || {}).defaultConfig || []).filter(p => p.name !== "LocalId") : [];
+    if (cfg.length) h += `<div><div class="muted" style="margin-bottom:6px">Creation config (ComponentConfig)</div><div class="props">${cfg.map(p => propEditor(n, p, true)).join("")}</div></div>`;
+    el.innerHTML = h;
+  }
+
+  // ---------------------------------------------------------------- output
+  let lastText = "";
+  function renderOut() {
+    const doc = { __type: "Instance", rootDevice: { [root.localId]: toJson(root) } };
+    lastText = stringify(doc);
+    document.getElementById("json").textContent = lastText;
+    document.getElementById("size").textContent = `${(lastText.length / 1024).toFixed(1)} KiB`;
+    const p = plain(doc);
+    const errs = validate(p, SCHEMA);
+    const sigs = new Set(allNodes().filter(x => x.kind === "Signal").map(gid));
+    const warn = [];
+    walk(root, n => { if (n.kind === "InputPort" && n.signalId && !sigs.has(n.signalId)) errs.push(`${gid(n)}: ${n.signalId} is not a signal in this setup`); });
+    walk(root, n => { if (n.kind === "FunctionBlock" && n.added && (n.children.find(c => c.localId === "IP") || { children: [] }).children.some(ip => !ip.signalId)) warn.push(`${gid(n)} has an input port that is not connected`); });
+    document.getElementById("msgs").innerHTML = (errs.length ? errs.map(e => `<div class="msg err">${esc(e)}</div>`).join("") : `<div class="msg ok">The setup matches the schema and every connection points at a signal in it.</div>`) + warn.map(w => `<div class="msg warn">${esc(w)}</div>`).join("");
+    try { localStorage.setItem("opendaq-setup-builder", lastText); } catch (_) {}
+  }
+  function renderAll() { renderTree(); renderInsp(); renderOut(); }
+
+  function flash(msg) { document.getElementById("msgs").insertAdjacentHTML("afterbegin", `<div class="msg err">${esc(msg)}</div>`); }
+
+  // ---------------------------------------------------------------- events
+  document.getElementById("tree").addEventListener("click", e => { const r = e.target.closest(".tn"); if (r) { sel = byId(+r.dataset.id); renderTree(); renderInsp(); } });
+  document.getElementById("tree").addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.target.click(); } });
+  const insp = document.getElementById("insp");
+  insp.addEventListener("change", e => {
+    const n = sel; const t = e.target;
+    try {
+      if (t.id === "a-name") n.attrs.name = t.value;
+      else if (t.id === "a-desc") n.attrs.description = t.value;
+      else if (t.id === "a-active") n.attrs.active = t.checked;
+      else if (t.id === "a-visible") n.attrs.visible = t.checked;
+      else if (t.id === "a-public") n.attrs.public = t.checked;
+      else if (t.id === "a-sig") n.signalId = t.value || null;
+      else if (t.dataset.p) {
+        const cfg = !!t.dataset.cfg; const list = cfg ? (CAT.functionBlockTypes[n.t.typeId] || {}).defaultConfig || [] : n.t.properties || [];
+        const info = list.find(p => p.name === t.dataset.p);
+        let v = t.type === "checkbox" ? t.checked : t.dataset.json ? JSON.parse(t.value) : t.tagName === "SELECT" ? Number(t.value) : info.valueType === "ctInt" || info.valueType === "ctFloat" ? Number(t.value) : t.value;
+        v = checkValue(info, v, `${gid(n)}.${info.name}`);
+        (cfg ? n.config : n.props)[info.name] = v;
+      }
+    } catch (err) { renderAll(); flash(err.message); return; }
+    renderAll();
+  });
+  insp.addEventListener("click", e => {
+    const t = e.target; const n = sel;
+    try {
+      if (t.id === "addfb") { sel = addFb(n, document.getElementById("addfb-type").value); }
+      else if (t.id === "adddev") { const cs = document.getElementById("adddev-cs").value.trim(); if (!cs) return; sel = addDev(n, cs, document.getElementById("adddev-id").value.trim() || null); }
+      else if (t.id === "remove") { const p = n.parent; p.children = p.children.filter(c => c !== n); sel = p.parent || root; while (!SHOW.has(sel.kind)) sel = sel.parent; }
+      else if (t.dataset.reset) { delete (t.dataset.cfg ? n.config : n.props)[t.dataset.reset]; }
+      else return;
+    } catch (err) { flash(err.message); return; }
+    renderAll();
+  });
+  document.getElementById("resetbtn").addEventListener("click", () => { fresh(); renderAll(); });
+  document.getElementById("copybtn").addEventListener("click", async () => {
+    const b = document.getElementById("copybtn");
+    try { await navigator.clipboard.writeText(lastText); b.textContent = "Copied"; } catch (_) { const r = document.createRange(); r.selectNodeContents(document.getElementById("json")); getSelection().removeAllRanges(); getSelection().addRange(r); b.textContent = "Selected, press Ctrl+C"; }
+    setTimeout(() => b.textContent = "Copy setup", 1800);
+  });
+  document.getElementById("importbtn").addEventListener("click", () => { const c = document.getElementById("importcard"); c.hidden = !c.hidden; });
+
+  // ---------------------------------------------------------------- import (setups saved by the core or this page)
+  function applyJson(n, j) {
+    if (!j || typeof j !== "object") return;
+    for (const k of ["name", "description"]) if (k in j && !locked(n, k)) n.attrs[k] = j[k];
+    for (const k of ["active", "visible", "public"]) if (k in j && !locked(n, k)) n.attrs[k] = j[k];
+    if (j.signalId) n.signalId = j.signalId;
+    for (const [pn, pv] of Object.entries(j.propValues || {})) {
+      const info = (n.t.properties || []).find(p => p.name === pn);
+      if (!info || info.valueType === "ctObject" || (pv && typeof pv === "object" && pv.__type && pv.__type !== "List")) continue;
+      const v = pv && pv.__type === "List" ? pv.values : pv;
+      if (JSON.stringify(v) !== JSON.stringify("value" in info ? info.value : info.default)) n.props[pn] = v;
+    }
+    for (const [ck, cv] of Object.entries(j)) {
+      if (!cv || typeof cv !== "object" || !cv.items) continue;
+      for (const [id, item] of Object.entries(cv.items)) {
+        let child = (childByLocal(n, ck) || { children: [] }).children.find(c => c.localId === id);
+        if (!child && ck === "FB" && item.typeId && CAT.functionBlockTypes[item.typeId]) child = addFb(n, item.typeId, id, item.name);
+        if (!child && ck === "Dev" && item.connectionString) child = addDev(n, item.connectionString, id, item.name);
+        if (cv.__type === "IoFolder" && child && child.kind === "IoFolder") { applyFolder(child, item); continue; }
+        if (child) applyJson(child, item);
+      }
+    }
+  }
+  function applyFolder(f, j) { for (const [id, item] of Object.entries(j.items || {})) { const c = childByLocal(f, id); if (!c) continue; if (c.kind === "IoFolder") applyFolder(c, item); else applyJson(c, item); } }
+  document.getElementById("importgo").addEventListener("click", () => {
+    const m = document.getElementById("importmsg");
+    try { const doc = JSON.parse(document.getElementById("importbox").value); const r = doc.rootDevice ? Object.values(doc.rootDevice)[0] : doc; fresh(); applyJson(root, r); renderAll(); m.innerHTML = `<div class="msg ok">Loaded. Components the catalog does not know were left out.</div>`; }
+    catch (err) { m.innerHTML = `<div class="msg err">${esc(err.message)}</div>`; }
+  });
+
+  // ---------------------------------------------------------------- start: an example bench, or what this browser built last time
+  let restored = false;
+  try { const saved = localStorage.getItem("opendaq-setup-builder"); if (saved) { const doc = JSON.parse(saved); fresh(); applyJson(root, Object.values(doc.rootDevice)[0]); restored = true; } } catch (_) { fresh(); }
+  if (!restored) {
+    try {
+      root.attrs.name = "Example bench";
+      const dev = addDev(root, Object.keys(CAT.devices)[0]);
+      const fb = addFb(root, Object.keys(CAT.functionBlockTypes).find(t => CAT.functionBlockTypes[t].template && (CAT.functionBlockTypes[t].template.children || []).some(c => c.localId === "IP" && c.children.length)));
+      const sig = allNodes().find(x => x.kind === "Signal" && gid(x).includes("/IO/"));
+      const ip = fb.children.find(c => c.localId === "IP").children[0];
+      if (sig) ip.signalId = gid(sig);
+      sel = fb;
+    } catch (_) { fresh(); }
+  }
+  renderAll();
+
+  // saving a file needs the downloads capability when published
+  (async () => {
+    let dl = null; try { dl = window.claude && window.claude.use ? await window.claude.use("downloads") : null; } catch (_) {}
+    if (!dl) return;
+    const b = document.getElementById("savebtn"); b.hidden = false;
+    b.addEventListener("click", async () => { try { await dl.save({ filename: "opendaq-setup.json", data: lastText }); } catch (_) {} });
+  })();
+})();
+</script>

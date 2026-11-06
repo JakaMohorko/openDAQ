@@ -115,6 +115,9 @@ def component(c):
     rec = {"localId": c.getLocalId(), "serializeId": safe(lambda: c.cast(daq.ISerializable).getSerializeId()),
            "name": c.getName(), "description": safe(c.getDescription, ""), "active": c.getActive(),
            "visible": c.getVisible()}
+    locked = safe(c.getLockedAttributes, [])
+    if locked:
+        rec["lockedAttributes"] = locked
     sig = c.query(daq.ISignal)
     if sig is not None:
         rec["public"] = sig.getPublic()
