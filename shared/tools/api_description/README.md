@@ -40,6 +40,7 @@ OPENDAQ_BIN=<build>/bin python checks/test_setup.py
 python generators/c_header/generate.py && OPENDAQ_BIN=<build>/bin python checks/test_c_header.py
 python describe_module.py ../raspberry-module/rpi_device_module   # output/modules/rpi_device_module.json
 python checks/check_tags.py                          # fails on any declaration without an audience tag
+OPENDAQ_BIN=<build>/bin python checks/null_probe.py  # every getter of every live object with NULL outputs
 python checks/rtgen_check.py <dir-before>            # then again after a header change, and --compare
 ```
 
@@ -95,6 +96,7 @@ A tag is one comment line directly above the declaration, in RTGen attribute syn
 | `multi-reader-2-v3.1` at 610aab89c (`../openDAQ-cmp-v3`, read only), against its fork point 891d4ae61 | Purely additive: interfaces `IMultiReader2`, `IMultiReader2Params`, `IMultiReader2Status`, `IMultiReader2InputStatus`, `IMultiReader2PortListener` and factories `MultiReader2`, `MultiReader2Params`; no ABI, API or setup-format change. Proposed audiences: `application` for the reader, its params, statuses and factories; `core` for `IMultiReader2PortListener`, an internal marker that `MultiReader2Impl` uses to recognise its own ports and that is declared in the implementation header `multi_reader2_impl.h`. Diffing that branch against main instead mixes in what main gained since 891d4ae61. |
 | car-demo `Json_demo_setups` (setups saved with STAR devices) | Both files pass the setup schema. |
 | Module descriptions (ref device and FB, native streaming client and server, OPC UA, LT client, raspberry, MQTT, universal adapter, ASAM-CMP) | No module uses `core` API. Interface overrides: ASAM-CMP replaces `IPropertyObject::beginUpdate`/`endUpdate` (`ISSUES.md` #22); the native streaming client implements `IComponentPrivate::setComponentConfig` and `IStreamingPrivate::setOwnerDevice`, so those stay `module`. |
+| NULL-output probe | 870 getter calls on 42 distinct live object types through the generated binding; 810 return `OPENDAQ_ERR_ARGUMENT_NULL`, which confirms their vtable slots. The rest are getters without a NULL check and two error-list gaps (`ISSUES.md` #28, #29). |
 | Generated C header | Compiles with MSVC `/W4 /WX`; `checks/test_c_header.c` creates strings and lists, queries interfaces by the generated ids, builds an instance and adds the reference device through the generated vtables. |
 
 Usage evidence comes from the sources in `config/usage_sources.json`: the openDAQ checkout, the local clones next to it as they are checked out (several are on working branches, for example raspberry-module at 2026-07-21 and iDDS-Module on a 2024 branch), and shallow clones in `../opendaq-org-cache` of the organization repositories without a local clone. Integration tests and documentation are shown on the review page but do not decide proposals.

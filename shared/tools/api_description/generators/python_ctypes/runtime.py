@@ -111,7 +111,7 @@ def check(code, call=None):
         f = lib("coretypes").daqGetErrorInfoMessage
         f.restype = ctypes.c_uint32
         if f(ctypes.byref(s)) & 0x80000000 == 0 and s.value:
-            msg = Object(s.value, _registry["IString"], owned=True).cast(_registry["IString"]).getCharPtr()
+            msg = Object(s.value, _registry["IString"], owned=True).cast_to(_registry["IString"]).getCharPtr()
         lib("coretypes").daqClearErrorInfo()
     except Exception:
         pass
@@ -145,8 +145,11 @@ class Object:
     def ptr(self):
         return self._ptr
 
-    def query(self, cls):
-        """queryInterface: the object as `cls`, or None if it does not implement it."""
+    def query_interface(self, cls):
+        """queryInterface: the object as `cls`, or None if it does not implement it.
+
+        The helpers use snake_case names so generated interface methods (camelCase) never shadow them.
+        """
         if isinstance(cls, str):
             cls = _registry[cls]
         out = ctypes.c_void_p()
@@ -156,28 +159,28 @@ class Object:
             return None
         return cls(out.value, owned=True)
 
-    def cast(self, cls):
-        r = self.query(cls)
+    def cast_to(self, cls):
+        r = self.query_interface(cls)
         if r is None:
             raise TypeError(f"object does not implement {cls if isinstance(cls, str) else cls._name}")
         return r
 
-    def supports(self, cls):
-        return self.query(cls) is not None
+    def supports_interface(self, cls):
+        return self.query_interface(cls) is not None
 
     def __eq__(self, other):
         if not isinstance(other, Object):
             return NotImplemented
-        a, b = self.query("IBaseObject"), other.query("IBaseObject")
+        a, b = self.query_interface("IBaseObject"), other.query_interface("IBaseObject")
         return a is not None and b is not None and a._ptr == b._ptr
 
     def __hash__(self):
-        b = self.query("IBaseObject")
+        b = self.query_interface("IBaseObject")
         return hash(b._ptr if b else self._ptr)
 
     def __repr__(self):
         try:
-            s = self.query("IBaseObject").toString()
+            s = self.query_interface("IBaseObject").toString()
         except Exception:
             s = hex(self._ptr or 0)
         return f"<{self._name} {s}>"
@@ -220,17 +223,17 @@ def to_python(obj, iface="IBaseObject", element=None, key=None, value=None):
     if iface == "IComplexNumber":
         return complex(obj.getReal(), obj.getImaginary())
     if iface in ("IBaseObject", "INumber"):
-        ct = obj.query("ICoreType")
+        ct = obj.query_interface("ICoreType")
         if ct is None:
             return obj
         t = ct.getCoreType()
         target = {0: "IBoolean", 1: "IInteger", 2: "IFloat", 3: "IString", 4: "IList", 5: "IDict", 6: "IRatio",
                   11: "IComplexNumber"}.get(int(t))
         if target:
-            return to_python(obj.cast(target), target, element, key, value)
+            return to_python(obj.cast_to(target), target, element, key, value)
         other = {7: "IProcedure", 9: "IBinaryData", 10: "IFunction", 12: "IStruct", 13: "IEnumeration"}.get(int(t))
         if other and other in _registry:
-            return obj.cast(other)
+            return obj.cast_to(other)
         return obj
     if element is not None and iface not in _registry:
         return obj
@@ -245,7 +248,7 @@ def _item(raw, element):
     if raw is None:
         return None
     if element and element != "IBaseObject" and element in _registry:
-        typed = raw.query(element)
+        typed = raw.query_interface(element)
         if typed is None:
             return to_python(raw, "IBaseObject")
         return to_python(typed, element) if element in CORETYPES else typed
@@ -264,7 +267,7 @@ def from_python(v, iface="IBaseObject"):
         return None
     if isinstance(v, Object):
         if iface not in ("IBaseObject",) and iface in _registry and not isinstance(v, _registry[iface]):
-            q = v.query(iface)
+            q = v.query_interface(iface)
             if q is not None:
                 return q
         return v
@@ -302,7 +305,7 @@ def arg_ptr(v, iface="IBaseObject", keep=None):
     if keep is not None:
         keep.append(o)
     if iface in _registry and iface not in ("IBaseObject",) and not isinstance(o, _registry[iface]):
-        o = o.cast(iface)
+        o = o.cast_to(iface)
         if keep is not None:
             keep.append(o)
     return o._ptr

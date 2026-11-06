@@ -29,8 +29,8 @@ class CoreTypes(unittest.TestCase):
         s = daq.String("héllo")
         self.assertEqual(s.getCharPtr(), "héllo")
         self.assertEqual(s.getLength(), 6)  # bytes, not characters
-        self.assertTrue(s.supports(daq.IConvertible))
-        self.assertIsNone(s.query(daq.IList))
+        self.assertTrue(s.supports_interface(daq.IConvertible))
+        self.assertIsNone(s.query_interface(daq.IList))
 
     def test_values_round_trip(self):
         for v in [True, 42, -7, 2.5, "x", [1, "a", 2.5], {"a": 1, "b": [True, False]}, Fraction(1, 3), 1 + 2j]:
@@ -55,7 +55,7 @@ class CoreTypes(unittest.TestCase):
         self.assertEqual(f.call(21), 42)
 
     def test_enum(self):
-        self.assertEqual(daq.String("a").cast(daq.ICoreType).getCoreType(), daq.CoreType.ctString)
+        self.assertEqual(daq.String("a").cast_to(daq.ICoreType).getCoreType(), daq.CoreType.ctString)
 
 
 @unittest.skipUnless(BIN, "OPENDAQ_BIN not set")

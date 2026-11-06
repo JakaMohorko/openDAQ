@@ -213,7 +213,7 @@ class Gen:
         for g in getters:
             stem = g[3:] if g.startswith("get") else g
             prop = snake(stem)
-            if prop in ("ptr", "query", "cast", "supports") or keyword.iskeyword(prop) or prop.startswith("_"):
+            if prop in ("ptr", "query_interface", "cast_to", "supports_interface") or keyword.iskeyword(prop) or prop.startswith("_"):
                 continue
             if g.startswith("is"):
                 prop = snake(g)

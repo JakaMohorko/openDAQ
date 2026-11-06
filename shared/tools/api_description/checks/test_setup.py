@@ -92,7 +92,7 @@ class LoadIntoInstance(unittest.TestCase):
 
     def find(self, gid, intf=None):
         c = self.inst.findComponent(gid.split("/", 2)[2])
-        return c.cast(intf) if intf else c
+        return c.cast_to(intf) if intf else c
 
     def test_root(self):
         self.assertEqual(self.inst.getRootDevice().name, "Test bench")

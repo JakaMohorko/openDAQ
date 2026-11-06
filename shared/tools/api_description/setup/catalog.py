@@ -39,20 +39,20 @@ def value_desc(v):
     if isinstance(v, dict):
         return {"__type": "Dict", "values": [{"key": value_desc(k), "value": value_desc(x)} for k, x in v.items()]}
     if isinstance(v, daq._rt.Object):
-        e = v.query(daq.IEnumeration)
+        e = v.query_interface(daq.IEnumeration)
         if e is not None:
             return {"__type": "Enumeration", "typeName": e.getEnumerationType().getName(), "value": e.getValue()}
-        s = v.query(daq.IStruct)
+        s = v.query_interface(daq.IStruct)
         if s is not None:
             names = s.getFieldNames()
             vals = s.getFieldValues()
             return {"__type": "Struct", "typeName": s.getStructType().getName(),
                     "fields": {n: value_desc(x) for n, x in zip(names, vals)}}
-        po = v.query(daq.IPropertyObject)
+        po = v.query_interface(daq.IPropertyObject)
         if po is not None:
-            sid = safe(lambda: v.cast(daq.ISerializable).getSerializeId(), "PropertyObject")
+            sid = safe(lambda: v.cast_to(daq.ISerializable).getSerializeId(), "PropertyObject")
             return {"__type": sid, "className": safe(po.getClassName) or None, "properties": properties(po)}
-        u = v.query(daq.IUnit)
+        u = v.query_interface(daq.IUnit)
         if u is not None:
             return {"__type": "Unit", "symbol": u.getSymbol(), "name": u.getName(), "quantity": u.getQuantity(), "id": u.getId()}
         return {"__object": v._name}
@@ -112,13 +112,13 @@ def properties(po):
 
 
 def component(c):
-    rec = {"localId": c.getLocalId(), "serializeId": safe(lambda: c.cast(daq.ISerializable).getSerializeId()),
+    rec = {"localId": c.getLocalId(), "serializeId": safe(lambda: c.cast_to(daq.ISerializable).getSerializeId()),
            "name": c.getName(), "description": safe(c.getDescription, ""), "active": c.getActive(),
            "visible": c.getVisible()}
     locked = safe(c.getLockedAttributes, [])
     if locked:
         rec["lockedAttributes"] = locked
-    sig = c.query(daq.ISignal)
+    sig = c.query_interface(daq.ISignal)
     if sig is not None:
         rec["public"] = sig.getPublic()
         dd = safe(sig.getDescriptor)
@@ -126,11 +126,11 @@ def component(c):
             rec["sampleType"] = safe(lambda: daq.SampleType(int(dd.getSampleType())).name)
             rec["unit"] = safe(lambda: dd.getUnit().getSymbol())
         rec["globalIdSuffix"] = None
-    fb = c.query(daq.IFunctionBlock)
+    fb = c.query_interface(daq.IFunctionBlock)
     if fb is not None:
         rec["typeId"] = safe(lambda: fb.getFunctionBlockType().getId())
         rec["nestedFunctionBlockTypes"] = sorted(safe(lambda: list(fb.getAvailableFunctionBlockTypes().keys()), []))
-    dev = c.query(daq.IDevice)
+    dev = c.query_interface(daq.IDevice)
     if dev is not None:
         rec["functionBlockTypes"] = sorted(safe(lambda: list(dev.getAvailableFunctionBlockTypes().keys()), []))
         info = safe(dev.getInfo)
@@ -139,10 +139,10 @@ def component(c):
                                                                   ("serialNumber", "getSerialNumber"),
                                                                   ("model", "getModel"),
                                                                   ("connectionString", "getConnectionString"))}
-    po = c.query(daq.IPropertyObject)
+    po = c.query_interface(daq.IPropertyObject)
     if po is not None:
         rec["properties"] = properties(po)
-    folder = c.query(daq.IFolder)
+    folder = c.query_interface(daq.IFolder)
     if folder is not None:
         rec["children"] = [component(x) for x in folder.getItems(daq.AnySearchFilter())]
     return rec

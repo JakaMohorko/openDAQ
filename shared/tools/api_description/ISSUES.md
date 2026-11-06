@@ -50,6 +50,9 @@ Checked against openDAQ main `db12d91eb` (2026-11-05), the Release build of that
 
 | 27 | Low | The Python binding binds two interfaces tagged `core`: `IOwnable` (`core_objects/generated/py_ownable.cpp`) and `ISignalEvents` (`opendaq/generated/signal/py_signal_events.cpp`). | Python applications can reach core plumbing that may change without notice. | Drop `core` interfaces from the generated bindings (spec 0010, step 3). |
 
+| 28 | Low | 25 getters write through a NULL output pointer instead of returning `OPENDAQ_ERR_ARGUMENT_NULL` (`checks/null_probe.py`, 870 getter calls on 42 live object types, 810 return the code correctly): `IString::getCharPtr`/`getLength` (`stringobject_impl.cpp:113-123`), `IList::getCount` (`listobject_impl.cpp:166`), `IBaseObject::getHashCode`, `ICoreType::getCoreType`, `IConvertible::toBool`, `IFreezable::isFrozen`, `ICloneable::clone`, `ISerializable::getSerializeId` (one implementation), `IEvent::getSubscriberCount`, `ISupportsWeakRef::getWeakRef`, `IWeakRef::getRef`, `IDeviceInfo::getConfigurationConnectionInfo`/`getCustomInfoPropertyNames` and eleven `IServerCapability` getters. | A caller passing NULL gets an access violation instead of an error code. The contract differs from the rest of the API. | Add `OPENDAQ_PARAM_NOT_NULL` to them, or document that these hot-path getters do not check. |
+| 29 | Low | With NULL outputs, `IModule::getAvailableServerTypes` returns `OPENDAQ_ERR_NOTIMPLEMENTED` and `IPropertyObject::getOnEndUpdate` returns `OPENDAQ_ERR_INVALIDSTATE`, codes the description's `errors` lists miss (the code is raised in calls into other objects, which the extraction does not follow). | Generated documentation under-reports what these methods return. | Extend the extraction across object boundaries, or document the codes with `@retval`. |
+
 ## Hand-written natvis files (`generators/natvis/generate.py --check-existing`)
 
 | # | Severity | Finding | Consequence | Fix |
