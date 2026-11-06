@@ -1,0 +1,91 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://opendaq.com/schemas/api_description.schema.json",
+ "title": "openDAQ API description, format version 1",
+ "type": "object",
+ "required": ["formatVersion", "libraries", "scalars", "errors", "enums", "interfaces", "factories", "implementations"],
+ "properties": {
+  "formatVersion": {"const": 1},
+  "openDaqVersion": {"type": "string"},
+  "source": {"type": "object", "properties": {"commit": {"type": "string"}}},
+  "audiences": {"type": "object"},
+  "libraries": {"type": "object", "additionalProperties": {"type": "object", "required": ["binary", "windows", "linux", "macos"]}},
+  "scalars": {"type": "object", "additionalProperties": {"type": "object", "required": ["abi", "size"]}},
+  "structs": {"type": "array", "items": {"type": "object", "required": ["name", "fields"],
+   "properties": {"fields": {"type": "array", "items": {"type": "object", "required": ["name", "type"]}}, "pack": {"type": "integer"}}}},
+  "callbacks": {"type": "array", "items": {"type": "object", "required": ["name", "returns", "params"]}},
+  "errors": {"type": "array", "items": {"type": "object", "required": ["name"],
+   "properties": {"name": {"type": "string", "pattern": "^OPENDAQ_"}, "value": {"type": "integer"}, "exceptions": {"type": "array", "items": {"type": "string"}}}}},
+  "enums": {"type": "array", "items": {"type": "object", "required": ["name", "members"],
+   "properties": {"audience": {"$ref": "#/$defs/audience"}, "members": {"type": "array", "items": {"type": "object", "required": ["name"]}}}}},
+  "interfaces": {"type": "array", "items": {"$ref": "#/$defs/interface"}},
+  "factories": {"type": "array", "items": {"$ref": "#/$defs/factory"}},
+  "cppFactories": {"type": "array", "items": {"type": "object", "required": ["name", "returns"], "properties": {"audience": {"$ref": "#/$defs/audience"}}}},
+  "functions": {"type": "array", "items": {"type": "object", "required": ["name", "returns", "params"]}},
+  "implementations": {"type": "array", "items": {"$ref": "#/$defs/implementation"}},
+  "smartPointers": {"type": "array", "items": {"type": "object", "required": ["name"]}},
+  "typeAliases": {"type": "array", "items": {"type": "object", "required": ["name", "value"]}},
+  "serialization": {"type": "array", "items": {"type": "object", "required": ["serializeId", "writtenBy"]}},
+  "setup": {"type": "object", "required": ["schema", "rules"]}
+ },
+ "$defs": {
+  "audience": {"enum": ["application", "module", "core"]},
+  "labels": {"type": "array", "items": {"enum": ["coretype", "override", "readOnly"]}},
+  "param": {
+   "type": "object",
+   "required": ["cppType", "base"],
+   "properties": {
+    "name": {"type": "string"},
+    "kind": {"enum": ["interface", "enum", "scalar", "struct", "callback", "cpp"]},
+    "pointer": {"type": "integer", "minimum": 0},
+    "direction": {"enum": ["in", "out", "inout"]},
+    "elementType": {"type": "string"}, "keyType": {"type": "string"}, "valueType": {"type": "string"}
+   }
+  },
+  "interface": {
+   "type": "object",
+   "required": ["name", "library", "header", "audience", "smartPtr"],
+   "properties": {
+    "name": {"type": "string", "pattern": "^I[A-Z]"},
+    "guid": {"type": "string", "pattern": "^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$"},
+    "audience": {"$ref": "#/$defs/audience"},
+    "labels": {"$ref": "#/$defs/labels"},
+    "abi": {"enum": ["c", "cpp"]},
+    "methods": {"type": "array", "items": {
+     "type": "object",
+     "required": ["name", "index", "returns"],
+     "properties": {
+      "index": {"type": "integer", "minimum": 0},
+      "audience": {"$ref": "#/$defs/audience"},
+      "effectiveAudience": {"$ref": "#/$defs/audience"},
+      "abi": {"enum": ["c", "cpp"]},
+      "params": {"type": "array", "items": {"$ref": "#/$defs/param"}},
+      "errors": {"type": "array", "items": {"type": "object", "required": ["code"]}}
+     }
+    }}
+   }
+  },
+  "factory": {
+   "type": "object",
+   "required": ["name", "library"],
+   "properties": {
+    "createFunction": {"type": ["string", "null"]},
+    "audience": {"$ref": "#/$defs/audience"},
+    "params": {"type": "array", "items": {"$ref": "#/$defs/param"}},
+    "abi": {"enum": ["c", "cpp"]}
+   }
+  },
+  "implementation": {
+   "type": "object",
+   "required": ["name", "file", "line"],
+   "properties": {
+    "audience": {"$ref": "#/$defs/audience"},
+    "interfaces": {"type": "array", "items": {"type": "string"}},
+    "members": {"type": "array", "items": {"type": "object", "required": ["name", "type", "access"],
+     "properties": {"access": {"enum": ["public", "protected", "private"]}, "audience": {"$ref": "#/$defs/audience"}}}},
+    "functions": {"type": "array", "items": {"type": "object", "required": ["name", "access"],
+     "properties": {"access": {"enum": ["public", "protected", "private"]}, "audience": {"$ref": "#/$defs/audience"}}}}
+   }
+  }
+ }
+}

@@ -31,6 +31,15 @@ def main():
     with open(args.out, "w", encoding="utf-8", newline="\n") as f:
         json.dump(doc, f, indent=1, ensure_ascii=False)
         f.write("\n")
+    schema_path = os.path.join(HERE, "schemas", "api_description.schema.json")
+    if os.path.exists(schema_path):
+        from apidesc.schema_lite import validate
+        with open(schema_path, encoding="utf-8") as f:
+            errs = validate(doc, json.load(f))
+        for e in errs[:20]:
+            print("format:", e, file=sys.stderr)
+        if errs:
+            print(f"{len(errs)} format errors against schemas/api_description.schema.json", file=sys.stderr)
     for p in model.problems:
         print("parse:", p, file=sys.stderr)
     print(f"{args.out}: {len(doc['interfaces'])} interfaces, {len(doc['factories'])} factories, "

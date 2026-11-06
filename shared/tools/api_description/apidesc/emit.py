@@ -469,9 +469,13 @@ class Emitter:
         return strip_empty(doc)
 
 
+KEEP_EMPTY = {"params", "methods"}  # always present, so consumers need no defaults
+
+
 def strip_empty(o):
     if isinstance(o, dict):
-        return {k: strip_empty(v) for k, v in o.items() if v is not None and v != [] and v != {} and v is not False}
+        return {k: strip_empty(v) for k, v in o.items()
+                if k in KEEP_EMPTY and v is not None or (v is not None and v != [] and v != {} and v is not False)}
     if isinstance(o, list):
         return [strip_empty(x) for x in o]
     return o
