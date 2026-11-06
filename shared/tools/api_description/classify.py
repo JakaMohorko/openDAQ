@@ -84,6 +84,19 @@ INTERFACE_DECISIONS = {
     "IMutex": ("module", "Mutex objects shared between a component and its module."),
     "IComponentDeserializeContext": ("module", "Modules that deserialize their own components read it."),
     "IDeserializeComponent": ("module", "Modules implement custom deserialization of their components."),
+    # builders and configuration interfaces for objects applications receive rather than create
+    "IPropertyBuilder": ("module", "Builds properties; applications set property values but do not add properties."),
+    "IPropertyObjectClassBuilder": ("module", "Builds property object classes; applications do not add properties."),
+    "IComponentTypeBuilder": ("module", "Builds component types that modules register."),
+    "IDataDescriptorBuilder": ("module", "Builds signal descriptors; applications read descriptors."),
+    "IDataRuleBuilder": ("module", "Builds data rules for signal descriptors."),
+    "IDimensionBuilder": ("module", "Builds dimensions for signal descriptors."),
+    "IDimensionRuleBuilder": ("module", "Builds dimension rules for signal descriptors."),
+    "IScalingBuilder": ("module", "Builds scaling for signal descriptors."),
+    "IUnitBuilder": ("module", "Builds units for properties and descriptors."),
+    "IReferenceDomainInfoBuilder": ("module", "Builds reference domain info for signal descriptors."),
+    "IDeviceInfoConfig": ("module", "Device modules fill in device info; applications read IDeviceInfo and set userName/location as property values."),
+    "ISignalConfig": ("module", "Configures signals a module or the core owns: descriptors, domain signals, packets."),
     # interfaces applications use even though our application samples do not show them
     "IComponentStatusContainer": ("application", "Applications read component statuses (the Python GUI shows them)."),
     "IDeviceNetworkConfig": ("application", "Applications change device IP configuration (examples/ip_modification)."),
@@ -106,6 +119,71 @@ INTERFACE_DECISIONS = {
 }
 
 PRIVATE_NAME = re.compile(r"(Private|Internal)$")
+
+# What applications write (Jaka, 2026-11-06): connect signals, set property values, add or remove function blocks,
+# devices, servers and streaming, change unlocked attributes (operation modes, name, description, active), and set up
+# the instance. Beyond that they read. Writing methods on application interfaces outside this list are module.
+WRITE_VERB = re.compile(r"^(set|add|remove|clear|insert|push|pop|enqueue|send|trigger|register|unregister|lock|unlock|"
+                        r"update|move|begin|end|create|stop|start|enable|disable|load|save|connect|disconnect|mute|"
+                        r"unmute|schedule|apply|reset|submit|execute|cancel|free|release|steal|subscribe|unsubscribe|"
+                        r"attach|detach|notify|request|change|delete|build|bind|deactivate|activate|complete|license|"
+                        r"authenticate|dispose|freeze|put|write|populate)([A-Z]|$)")
+APP_WRITES = {
+    "connect": "connects a signal", "disconnect": "connects a signal",
+    "setPropertyValue": "sets a property value", "setPropertySelectionValue": "sets a property value",
+    "clearPropertyValue": "sets a property value", "clearPropertyValues": "sets a property value",
+    "beginUpdate": "batches property value changes", "endUpdate": "batches property value changes",
+    "IProperty.setValue": "sets a property value",
+    "addDevice": "adds a device", "addDevices": "adds devices", "removeDevice": "removes a device",
+    "createDefaultAddDeviceConfig": "prepares adding a device",
+    "addFunctionBlock": "adds a function block", "removeFunctionBlock": "removes a function block",
+    "addServer": "adds a server", "removeServer": "removes a server", "addStandardServers": "adds servers",
+    "enableDiscovery": "configures a server it added", "disableDiscovery": "configures a server it added",
+    "addStreaming": "adds streaming", "setStreamed": "selects streaming",
+    "setActiveStreamingSource": "selects streaming", "deactivateStreaming": "selects streaming",
+    "IStreaming.setActive": "configures streaming", "addSignals": "configures streaming", "removeSignals": "configures streaming",
+    "removeAllSignals": "configures streaming", "addInputPorts": "configures streaming",
+    "removeInputPorts": "configures streaming", "removeAllInputPorts": "configures streaming",
+    "IComponent.setName": "changes an unlocked attribute", "IComponent.setDescription": "changes an unlocked attribute",
+    "IComponent.setActive": "changes an unlocked attribute", "IComponent.setVisible": "changes an unlocked attribute",
+    "ISignal.setPublic": "changes an unlocked attribute", "IInputPort.setPublic": "changes an unlocked attribute",
+    "setOperationMode": "changes the operation mode", "setOperationModeRecursive": "changes the operation mode",
+    "saveConfiguration": "sets up the instance", "loadConfiguration": "sets up the instance",
+    "IInstance.setRootDevice": "sets up the instance",
+    "IModuleManager.addModule": "sets up the instance", "IModuleManager.loadModule": "sets up the instance",
+    "IModuleManager.setAuthenticatedOnly": "sets up the instance", "IModuleManager.setModuleAuthenticator": "sets up the instance",
+    "ILogger.setLevel": "sets up the instance", "ILoggerComponent.setLevel": "sets up the instance",
+    "ILoggerSink.setLevel": "sets up the instance", "ILoggerComponent.setPattern": "sets up the instance",
+    "ILoggerSink.setPattern": "sets up the instance",
+    "IComponentType.createDefaultConfig": "reads the default config to set values before adding",
+    "ISyncComponent.setSelectedSource": "[CHECK] selects a synchronization source, a configuration value",
+    "ISynchronization.setSource": "[CHECK] selects a synchronization source, a configuration value",
+    "ISyncInterface.setMode": "[CHECK] selects a synchronization mode, a configuration value",
+    "IDevice.lock": "[CHECK] locks the device against other clients", "IDevice.unlock": "[CHECK] locks the device against other clients",
+    "IDeviceNetworkConfig.submitNetworkConfiguration": "[CHECK] changes the device's IP configuration (examples/ip_modification)",
+    "INetworkInterface.submitConfiguration": "[CHECK] changes the device's IP configuration",
+    "INetworkInterface.requestCurrentConfiguration": "[CHECK] reads the device's IP configuration",
+    "INetworkInterface.createDefaultConfiguration": "[CHECK] prepares an IP configuration",
+    "IRecorder.startRecording": "[CHECK] starts a recorder function block it added",
+    "IRecorder.stopRecording": "[CHECK] stops a recorder function block it added",
+    "IModule.loadLicense": "[CHECK] loads a module license (examples/licensing_example)",
+}
+APP_WRITE_INTERFACES = {"IInstanceBuilder", "IStreamReaderBuilder", "IBlockReaderBuilder", "ITailReaderBuilder",
+                        "IMultiReaderBuilder", "IMultiReader", "IReader", "ISampleReader", "IStructBuilder",
+                        "IUpdateParameters", "IDeviceUpdateOptions", "IUnknown"}
+
+
+def method_write_rule(iname, mname, iaud, coretype):
+    """(audience, reason) for a writing method on an application interface, or None."""
+    if iaud != "application" or coretype or not WRITE_VERB.match(mname) or iname in APP_WRITE_INTERFACES:
+        return None
+    why = APP_WRITES.get(f"{iname}.{mname}") or APP_WRITES.get(mname)
+    if why:
+        return ("application", f"Applications call it: it {why}.") if not why.startswith("[CHECK]") else \
+            ("application", f"[CHECK] Applications call it: it {why[8:]}.")
+    return ("module", "Writes outside what applications do (connect signals, set property values, add or remove "
+                      "function blocks, devices, servers and streaming, change unlocked attributes, set up the instance); "
+                      "modules and the core call it.")
 
 
 def interface_audience(i, ev):
@@ -134,6 +212,22 @@ def interface_audience(i, ev):
 
 # Methods on otherwise public interfaces that only the core or modules should call.
 METHOD_DECISIONS = {
+    # judgment on top of the application-write rule (2026-11-06)
+    "IPropertyObject.addProperty": ("module", "[CHECK] Applications do not add properties; the examples quick_start_full and streaming_configuration_example still build ad-hoc configs with it."),
+    "IPermissionManager.setPermissions": ("application", "Applications restrict access to their own objects when they secure an instance (docs: howto_access_control_protected_object)."),
+    "IScheduler.scheduleWork": ("application", "Applications schedule their own work on the instance scheduler."),
+    "IScheduler.scheduleFunction": ("application", "Applications schedule their own work on the instance scheduler."),
+    "IScheduler.scheduleWorkOnMainLoop": ("application", "Applications that run the scheduler main loop (IInstanceBuilder::setUsingSchedulerMainLoop) post work to it."),
+    "IScheduler.stopMainLoop": ("application", "Applications that run the main loop stop it (examples/quick_start)."),
+    "IScheduler.stop": ("core", "The instance stops its scheduler when it closes."),
+    "IScheduler.scheduleGraph": ("module", "Task graphs are built by modules and the core."),
+    "IAwaitable.cancel": ("application", "Applications cancel work they scheduled."),
+    "IConfigProvider.populateOptions": ("core", "Called by the instance builder; applications pass providers in."),
+    "IModuleAuthenticator.authenticateModuleBinary": ("core", "Called by the module manager while it loads modules."),
+    "IModuleAuthenticator.setLogger": ("core", "Set by the module manager."),
+    "IWork.execute": ("core", "Called by the scheduler."),
+    "IWorkRepetitive.executeRepetitively": ("core", "Called by the scheduler."),
+    "IModule.licenseLoaded": ("application", "A query applications use after loading a license (examples/licensing_example)."),
     "IComponent.getLockedAttributes": ("application", "Applications check which attributes are locked."),
     "IPropertyObject.getPermissionManager": ("application", "Applications inspect permissions."),
     "IPropertyObject.beginUpdate": ("application", "Batch updates."),
@@ -141,8 +235,6 @@ METHOD_DECISIONS = {
     "IFolderConfig.removeItem": ("module", "Only the owning module removes items from a folder it built."),
     "IFolderConfig.removeItemWithLocalId": ("module", "Only the owning module removes items from a folder it built."),
     "IFolderConfig.clear": ("module", "Only the owning module clears a folder it built."),
-    "ISignalConfig.sendPacket": ("application", "Applications send packets on client-to-device signals."),
-    "ISignalConfig.setDomainSignal": ("application", "Applications link domain signals they create."),
     "IDevice.getSyncComponent": ("application", "Applications read synchronization state."),
     "IContext.getOnCoreEvent": ("application", "Applications subscribe to core events."),
     "IContext.moveModuleManager": ("core", "Hand-over of the module manager inside the instance."),
@@ -187,31 +279,54 @@ INHERITABLE_EXTRA = ["ImplementationOf", "ImplementationOfWeak", "FolderImpl", "
 PLUMBING_LIBS = ("coretypes",)  # members of coretypes plumbing (ImplementationOf, ObjInstance) stay core
 
 
+# Applications get objects from the API; factories are for modules and the core except these (Jaka, 2026-11-06).
+APP_FACTORY_INTERFACES = {
+    # securing the instance (docs: howto_access_control_protected_object)
+    "IPermissionsBuilder", "IPermissionMaskBuilder",
+    # core types, including the runtime-typed values apps need to set struct and enumeration property values
+    "IStruct", "IStructBuilder", "IEnumeration",
+    # the instance
+    "IInstance", "IInstanceBuilder",
+    # readers
+    "IStreamReader", "IBlockReader", "ITailReader", "IMultiReader", "IPacketReader", "IReader",
+    "IStreamReaderBuilder", "IBlockReaderBuilder", "ITailReaderBuilder", "IMultiReaderBuilder",
+}
+# Arguments of instance-setup and read calls; kept for applications, marked for review.
+APP_FACTORY_CHECK = {
+    "IConfigProvider": "argument of IInstanceBuilder::addConfigProvider",
+    "ILoggerSink": "argument of IInstanceBuilder::addLoggerSink",
+    "IAuthenticationProvider": "argument of IInstanceBuilder::setAuthenticationProvider",
+    "IUser": "user list of an authentication provider",
+    "IUpdateParameters": "argument of IDevice::loadConfiguration",
+    "IDeviceUpdateOptions": "part of IUpdateParameters",
+    "ISearchFilter": "argument of the getItems/getSignals family of reads",
+}
+
+
 def factory_audience(f, intf_aud, ev):
     name = f["name"]
     ret = f.get("returns")
-    used = ev.get(name, {})
-    ptypes = [p.get("base") for p in f.get("params", [])]
     if not f.get("exported", True) and f.get("createFunction"):
         return "core", "Declared INTERNAL_FACTORY: not exported from the library, so only the core can call it."
     if name.startswith("Mock") or "Mock" in (ret or ""):
         return "core", "Test mock."
     if name.startswith("CoreEventArgs") or name.startswith("CoreEvent"):
-        if "module" in used:
-            return "module", "Core event arguments; modules raise their own core events."
         return "core", "Core event arguments are created by the core when it raises core events."
-    base_aud = intf_aud.get(ret, "application")
-    if "IContext" in ptypes and ("IComponent" in ptypes or "IFolderConfig" in ptypes or "IDevice" in ptypes):
-        if "application" in used:
-            return "application", "Component constructor (context + parent), used by applications too."
-        return "module", "Component constructor taking a context and a parent: modules build components with it."
-    if base_aud != "application":
-        return base_aud, f"Follows the returned interface {ret} ({base_aud})."
+    if ret == "IPropertyObject":
+        return "module", ("[CHECK] Builds property objects; applications do not add properties. The examples quick_start_full, "
+                          "streaming_configuration_example and quick_start_simulator build ad-hoc addFunctionBlock/addDevice "
+                          "configs this way instead of using createDefaultAddDeviceConfig or the type's createDefaultConfig.")
+    if name.startswith("Owning"):
+        return "module", "Owning containers hold property-object children; modules and the core build them."
+    if ret in CORETYPES or ret in APP_FACTORY_INTERFACES:
+        return "application", f"Creates {ret}: applications create only core types, instances and readers."
+    if ret in APP_FACTORY_CHECK:
+        return "application", f"[CHECK] Creates {ret}, the {APP_FACTORY_CHECK[ret]}; applications create only core types, instances and readers."
     if ret is None:
-        return "application", "Returns a C++ helper type, not an interface; part of the C++ application API."
-    if "application" in used:
-        return "application", "Used by applications."
-    return "application", f"Follows the returned interface {ret} (public)."
+        return "module", "C++ helper that is not an interface factory; applications get objects from the API."
+    if intf_aud.get(ret) == "core":
+        return "core", f"Creates {ret}, a core interface."
+    return "module", f"Creates {ret}: applications get these objects from the API, so the factory is for modules and the core."
 
 
 def member_audience(cls, item, kind, evidence, chain_libs):
@@ -283,7 +398,15 @@ def main():
                    "methods": len(i.get("methods", [])), "brief": (i.get("doc") or {}).get("brief")})
         for m in i.get("methods", []):
             k = f"{i['name']}.{m['name']}"
-            rule = (METHOD_DECISIONS[k][0], [], METHOD_DECISIONS[k][1]) if k in METHOD_DECISIONS else (None, [], "Follows the interface.")
+            wr = method_write_rule(i["name"], m["name"], a, i.get("coretype"))
+            if k in METHOD_DECISIONS:
+                rule = (METHOD_DECISIONS[k][0], [], METHOD_DECISIONS[k][1])
+            elif wr and wr[0] != a:
+                rule = (wr[0], [], wr[1])
+            elif wr:
+                rule = (None, [], wr[1] + " Follows the interface.")
+            else:
+                rule = (None, [], "Follows the interface.")
             ma, ml, mwhy = settle(m.get("audience"), m.get("labels", []), rule)
             e = mev.get(m["name"], {})
             add(f"method:{k}", "method", ma, ml, mwhy, f"{i['file']}:{m['line']}", tagged=bool(m.get("audience")),

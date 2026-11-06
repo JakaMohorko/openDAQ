@@ -141,7 +141,8 @@ class Parser:
                         decls.append(d)
                         last_decl_line = toks[k].line
                         pending = []
-                        i = after if after < end and toks[after].text != ";" else after + 1
+                        # resume right after the macro so comments before the next declaration are kept
+                        i = after + 1 if after < end and toks[after].text == ";" else k + 1
                         continue
                 else:
                     # bare macro (BEGIN_NAMESPACE_OPENDAQ) unless it starts a declaration

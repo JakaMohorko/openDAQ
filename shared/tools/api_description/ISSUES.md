@@ -38,6 +38,9 @@ Checked against openDAQ main `db12d91eb` (2026-11-05), the Release build of that
 | 15 | Low | Spec 0010's example tags `ServerImpl::rootDeviceRef` as core, but the native streaming server reads it (`native_streaming_server_impl.cpp:287, 340`), as does `config` (native streaming and OPC UA servers). | The example would hide a member modules depend on. The tags here make both `module, readOnly`. | Update the 0010 example. |
 | 16 | Low | Modules call object-model plumbing directly: `thisPtr`, `borrowPtr`, `addRef`/`releaseRef` on `GenericObjInstance`/`ObjInstanceSupportsWeakRef` (native streaming, LT, MQTT, raspberry, universal adapter modules). | These are tagged `module`; changing them breaks most modules. | Accept them as module API, or offer free helpers. |
 
+| 20 | Low | The examples `quick_start_full.cpp:104`, `streaming_configuration_example.cpp:47` and `quick_start_simulator.cpp:21` build `addFunctionBlock`/`addDevice`/root-device configs with `PropertyObject()` and `addProperty`. | Applications are taught to add properties, which the audience tags reserve for modules and the core. | Take the config from `createDefaultAddDeviceConfig()` or the type's `createDefaultConfig()` and set values. |
+| 21 | Low | The reader examples (`multi_reader_example`, `reader_basics_example`, `reader_with_time_stamps`, `multi_reader_howto_example`) create signals, descriptors and packets (`Signal`, `DataDescriptorBuilder`, `DataPacket`, `sendPacket`) to fake a data source. | They use module API in application code; fine as test scaffolding, but they are the only application users of those factories. | Feed the examples from the reference device instead, or say in the example that the source stands in for a device. |
+
 ## Hand-written natvis files (`generators/natvis/generate.py --check-existing`)
 
 | # | Severity | Finding | Consequence | Fix |
