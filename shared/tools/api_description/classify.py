@@ -17,10 +17,14 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-CORETYPES = {
-    "IBaseObject", "IBoolean", "IInteger", "IFloat", "INumber", "IString", "IRatio", "IComplexNumber", "IBinaryData",
-    "IList", "IDict", "IIterable", "IIterator", "IFunction", "IProcedure", "IEvent", "IEventHandler",
+# A coretype is an interface a CoreType value (coretype.h) names; main() fails when the enum and this table differ.
+CORETYPE_INTERFACES = {
+    "ctBool": "IBoolean", "ctInt": "IInteger", "ctFloat": "IFloat", "ctString": "IString", "ctList": "IList",
+    "ctDict": "IDict", "ctRatio": "IRatio", "ctProc": "IProcedure", "ctObject": "IBaseObject",
+    "ctBinaryData": "IBinaryData", "ctFunc": "IFunction", "ctComplexNumber": "IComplexNumber", "ctStruct": "IStruct",
+    "ctEnumeration": "IEnumeration",
 }
+CORETYPES = {i: ct for ct, i in CORETYPE_INTERFACES.items()}
 
 # Interfaces decided by judgment; everything else follows the rules in interface_audience().
 INTERFACE_DECISIONS = {
@@ -172,7 +176,7 @@ APP_WRITES = {
 }
 APP_WRITE_INTERFACES = {"IInstanceBuilder", "IStreamReaderBuilder", "IBlockReaderBuilder", "ITailReaderBuilder",
                         "IMultiReaderBuilder", "IMultiReader", "IReader", "ISampleReader", "IStructBuilder",
-                        "IUpdateParameters", "IDeviceUpdateOptions", "IUnknown"}
+                        "IUpdateParameters", "IDeviceUpdateOptions", "IUnknown", "IEvent", "IIterable", "IIterator"}
 
 
 # Core plumbing on module interfaces: methods the core calls on its own objects. A method any scanned module calls
@@ -229,7 +233,7 @@ def interface_audience(i, ev):
     used_m = "module" in ev.get(name, {})
     used_a = "application" in ev.get(name, {})
     if name in CORETYPES:
-        return "application", ["coretype"], "Coretype: openDAQ wrapper of a standard programming type; bindings map it to a native type."
+        return "application", ["coretype"], f"Coretype: the kind of value CoreType::{CORETYPES[name]} names."
     if name in INTERFACE_DECISIONS:
         a, why = INTERFACE_DECISIONS[name]
         return a, [], why
@@ -434,6 +438,9 @@ def settle(tag_aud, tag_labels, rule):
 def main():
     api = json.load(open(os.path.join(HERE, "output", "opendaq_api.json"), encoding="utf-8"))
     usage = json.load(open(os.path.join(HERE, "output", "usage.json"), encoding="utf-8"))
+    enum = {m["name"] for e in api["enums"] if e["name"] == "CoreType" for m in e["members"]} - {"ctUndefined"}
+    if enum != set(CORETYPE_INTERFACES):
+        sys.exit(f"CoreType values and CORETYPE_INTERFACES differ: {sorted(enum ^ set(CORETYPE_INTERFACES))}")
     entries = []
 
     def add(key, kind, audience, labels, reason, where, tagged=None, extra=None):

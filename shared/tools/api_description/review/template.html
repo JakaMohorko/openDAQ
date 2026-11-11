@@ -119,7 +119,7 @@ code { font-family: var(--f-mono); font-size: 12px; }
         <li><b>inherit</b> (methods only): the method follows its interface. Only methods that differ carry a tag.</li>
       </ul></div>
       <div><h3>Interfaces</h3><ul>
-        <li>Coretypes are the wrappers of standard programming types that bindings map to native types, taken from what the Python, C# and C generators special-case: <span id="coretypes"></span>.</li>
+        <li>Coretypes are the kinds of value the <code>CoreType</code> enum names, which property values, arguments, container elements and struct fields hold: <span id="coretypes"></span>. A predefined struct such as <code>IArgumentInfo</code> reports <code>ctStruct</code> and is not a coretype itself.</li>
         <li>A name or header ending in Private/Internal is <b>module</b> when a scanned module uses it, otherwise <b>core</b>.</li>
         <li>Everything else is <b>application</b> unless a reason on the row says otherwise.</li>
       </ul></div>

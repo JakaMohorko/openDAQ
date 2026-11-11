@@ -240,9 +240,6 @@ def to_python(obj, iface="IBaseObject", element=None, key=None, value=None):
     return obj
 
 
-CORETYPES = set()  # filled by the generated module
-
-
 def _item(raw, element):
     """A container element, typed by the RTGen elementType when there is one."""
     if raw is None:
@@ -251,7 +248,7 @@ def _item(raw, element):
         typed = raw.query_interface(element)
         if typed is None:
             return to_python(raw, "IBaseObject")
-        return to_python(typed, element) if element in CORETYPES else typed
+        return to_python(typed, element)
     return to_python(raw, "IBaseObject")
 
 

@@ -24,9 +24,8 @@ KEEP = ("key", "kind", "audience", "labels", "reason", "where", "usedBy", "evide
 def rules_text():
     """The rules classify.py applies, for the page's rules panel."""
     src = open(os.path.join(TOOL, "classify.py"), encoding="utf-8").read()
-    m = re.search(r"CORETYPES = \{(.*?)\}", src, re.S)
-    coretypes = sorted(x.strip().strip('"') for x in m.group(1).replace("\n", " ").split(",") if x.strip())
-    return {"coretypes": coretypes}
+    m = re.search(r"CORETYPE_INTERFACES = \{(.*?)\}", src, re.S)
+    return {"coretypes": re.findall(r'"ct\w+":\s*"(\w+)"', m.group(1))}
 
 
 def main():

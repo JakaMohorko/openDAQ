@@ -53,7 +53,7 @@ A tag is one comment line directly above the declaration, in RTGen attribute syn
 | Where | Tag | Meaning |
 | ----- | --- | ------- |
 | Interface | `// [api(application)]`, `// [api(module)]`, `// [api(core)]` | The default audience of every method of the interface. `application` is the name used for what spec 0010 calls `public`, because RTGen's lexer treats `public` as a keyword. |
-| Interface | `// [api(application, coretype)]` | One of the 17 coretypes: openDAQ's wrappers of standard programming types, which bindings map to native values (IBaseObject, IBoolean, IInteger, IFloat, INumber, IString, IRatio, IComplexNumber, IBinaryData, IList, IDict, IIterable, IIterator, IFunction, IProcedure, IEvent, IEventHandler). The list follows what the Python, C# and C generators special-case. |
+| Interface | `// [api(application, coretype)]` | One of the 14 coretypes: the kinds of value a `CoreType` value (`coretype.h`) names, which `ICoreType::getCoreType` reports and which property values, arguments, container elements and struct fields hold (IBoolean, IInteger, IFloat, IString, IList, IDict, IRatio, IProcedure, IBaseObject, IBinaryData, IFunction, IComplexNumber, IStruct, IEnumeration). A predefined struct such as IArgumentInfo or IUnit reports `ctStruct` and is not a coretype itself. |
 | Interface method | `// [api(core)]` | Only where the method differs from its interface. |
 | Factory macro, C++ factory, smart pointer, enum | `// [api(...)]` | Who may create or use it. |
 | Implementation class | `// [api(module)]` | Modules derive from it (or from a class that derives from it). Other installed implementation classes are tagged `core`. |
@@ -79,7 +79,7 @@ A tag is one comment line directly above the declaration, in RTGen attribute syn
 | Topic | Decision |
 | ----- | -------- |
 | Tag name | `application`, not `public`; see `ISSUES.md` #1. |
-| Coretype | A modifier on the interface tag (`coretype`), exported as `"coretype": true` (spec 0012 open question). IStruct and IEnumeration are not coretypes: their fields come from runtime types. IErrorInfo maps to exceptions, not values. |
+| Coretype | A modifier on the interface tag (`coretype`), exported as `"coretype": true` (spec 0012 open question). The `CoreType` enum defines the set: `classify.py` maps each value to its interface and stops when the enum gains or loses a value. INumber, IIterable, IIterator, IEvent and IEventHandler are application API without the flag: no `CoreType` value names them. IErrorInfo maps to exceptions, not values. |
 | Parser | Our own declaration-level parser rather than clang: no build dependency, under two seconds for the whole core, and it reads comments where the tags live. |
 | Serialization schemas | Hand-written, as spec 0012 recommends, and checked by `checks/test_setup.py` against setups the core saves. The `keysWritten`/`keysRead` lists are extracted automatically as a cross-check. |
 | What applications write | Applications connect signals, set property values, add or remove function blocks, devices, servers and streaming, change unlocked attributes (name, description, active, visible, public, operation mode) and set up the instance; otherwise they read. Writing methods on application interfaces outside that list are tagged `module`, with judgment on top: access control (`setPermissions` and the permission builders) and the scheduler calls an application makes are `application`; calls only the core makes are `core`. |

@@ -64,7 +64,7 @@ Checked against openDAQ main `db12d91eb` (2026-11-05), the Release build of that
 
 | # | Severity | Finding | Consequence | Fix |
 | - | -------- | ------- | ----------- | --- |
-| 19 | Low | `IBinaryData` is not converted to `bytes`; a Python `complex` is not converted on input; returned `IFunction`/`IProcedure` come back as plain `IBaseObject` because the converter cases are commented out (`py_converter.cpp:127`, `:151-152`). Not re-verified by running the official binding. | Coretype handling is incomplete for three of the 17 coretypes. | Finish the converter cases. |
+| 19 | Low | `IBinaryData` is not converted to `bytes`; a Python `complex` is not converted on input; returned `IFunction`/`IProcedure` come back as plain `IBaseObject` because the converter cases are commented out (`py_converter.cpp:127`, `:151-152`). Not re-verified by running the official binding. | Coretype handling is incomplete for three of the 14 coretypes. | Finish the converter cases. |
 
 ## Limits of this description
 

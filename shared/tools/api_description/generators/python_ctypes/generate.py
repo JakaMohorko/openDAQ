@@ -51,7 +51,6 @@ class Gen:
         self.S = api["scalars"]
         self.ST = {s["name"]: s for s in api.get("structs", [])}
         self.CB = {c["name"]: c for c in api.get("callbacks", [])}
-        self.coretypes = sorted(i["name"] for i in api["interfaces"] if i.get("coretype"))
         self.skipped = []
         self.bound_methods = 0
 
@@ -230,8 +229,7 @@ class Gen:
         out = ["# Generated from the openDAQ API description. Do not edit.",
                f"# openDAQ {api.get('openDaqVersion')} at {api.get('source', {}).get('commit')}",
                "import ctypes", "import enum", "_prop = property", "from . import _runtime as _rt", "from ._runtime import OpenDaqError, set_binary_dir", "",
-               f"_rt._lib_names.update({json.dumps(api['libraries'])})",
-               f"_rt.CORETYPES.update({json.dumps(self.coretypes)})", "",
+               f"_rt._lib_names.update({json.dumps(api['libraries'])})", "",
                "def _enum(cls, v):", "    try:", "        return cls(v)", "    except ValueError:", "        return v", ""]
         info = {e["value"]: e["name"] for e in api["errors"] if e["name"] in ("OPENDAQ_IGNORED",) and e.get("value")}
         out.append("_rt.INFO_CODES.update({" + ", ".join(f"{k}: {v!r}" for k, v in info.items()) + "})")
