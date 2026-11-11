@@ -28,6 +28,7 @@ using EventArgsImpl = EventArgsImplTemplate<IEventArgs>;
 template <typename... TInterfaces>
 using EventArgsBase = EventArgsImplTemplate<TInterfaces...>;
 
+// [api(core)]
 template <typename... TInterfaces>
 class EventArgsImplTemplate : public ImplementationOf<TInterfaces...>
 {

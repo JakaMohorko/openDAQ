@@ -36,6 +36,7 @@ class ServerImpl;
 
 using Server = ServerImpl<>;
 
+// [api(module)]
 template <typename TInterface, typename... Interfaces>
 class ServerImpl : public SignalContainerImpl<TInterface, Interfaces...>
 {
@@ -177,31 +178,37 @@ public:
 
 protected:
 
+    // [api(module, override)]
     virtual PropertyObjectPtr getDiscoveryConfig()
     {
         return PropertyObject();
     }
 
+    // [api(module, override)]
     virtual ListPtr<IPropertyObject> getDiscoveryConfigs()
     {
         return List<IPropertyObject>(getDiscoveryConfig());
     }
 
+    // [api(module, override)]
     virtual void onStopServer()
     {
     }
 
+    // [api(module, override)]
     virtual StreamingPtr onGetStreaming()
     {
         return nullptr;
     }
 
+    // [api(module, override)]
     void removed() override
     {
         checkErrorInfo(stop());
         Super::removed();
     }
 
+    // [api(module, override)]
     void serializeCustomObjectValues(const SerializerPtr& serializer, bool forUpdate) override
     {
         serializer.key("id");
@@ -210,6 +217,7 @@ protected:
         Super::serializeCustomObjectValues(serializer, forUpdate);
     }
 
+    // [api(core)]
     void disableDiscoveryInternal()
     {
         if (context.assigned())
@@ -219,9 +227,13 @@ protected:
         }
     }
 
+    // [api(core)]
     StringPtr id;
+    // [api(module, readOnly)]
     PropertyObjectPtr config;
+    // [api(module, readOnly)]
     WeakRefPtr<IDevice> rootDeviceRef;
+    // [api(module, readOnly)]
     ContextPtr context;
 };
 

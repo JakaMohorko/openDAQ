@@ -36,6 +36,7 @@ BEGIN_NAMESPACE_OPENDAQ
  *  - name
  *  - id.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IModuleInfo, IBaseObject)
 {
     /*!
@@ -60,6 +61,7 @@ DECLARE_OPENDAQ_INTERFACE(IModuleInfo, IBaseObject)
  * @}
  */
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, ModuleInfo, IVersionInfo*, versionInfo, IString*, name, IString*, id);
 
 END_NAMESPACE_OPENDAQ

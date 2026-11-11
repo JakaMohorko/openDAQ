@@ -34,6 +34,7 @@ namespace properties
  * @brief Creates a search filter that accepts only visible properties. "Visit children" returns `true`
  * only if the property being evaluated is visible.
  */
+// [api(application)]
 inline SearchFilterPtr Visible()
 {
     SearchFilterPtr obj(VisiblePropertyFilter_Create());
@@ -43,6 +44,7 @@ inline SearchFilterPtr Visible()
 /*!
  * @brief Creates a search filter that accepts only read-only properties.
  */
+// [api(application)]
 inline SearchFilterPtr ReadOnly()
 {
     SearchFilterPtr obj(ReadOnlyPropertyFilter_Create());
@@ -53,6 +55,7 @@ inline SearchFilterPtr ReadOnly()
  * @brief Creates a search filter that accepts properties whose names match the specified pattern.
  * @param regex A regular expression pattern used to match property names.
  */
+// [api(application)]
 inline SearchFilterPtr Name(const StringPtr& regex)
 {
     SearchFilterPtr obj(NamePropertyFilter_Create(regex));

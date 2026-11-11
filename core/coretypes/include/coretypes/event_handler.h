@@ -27,6 +27,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @{
  */
 
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IEventHandler, IBaseObject)
 {
     virtual ErrCode INTERFACE_FUNC handleEvent(IBaseObject* sender, IEventArgs* eventArgs) = 0;

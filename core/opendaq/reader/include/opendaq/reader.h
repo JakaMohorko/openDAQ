@@ -29,6 +29,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Controls how Reader read call time-outs are handled.
  */
+// [api(application)]
 enum class ReadTimeoutType
 {
     Any, /*!< When some segments are available return them immediately.
@@ -45,6 +46,7 @@ enum class ReadTimeoutType
 /*!
  * @brief A basic signal reader that simplifies accessing the signals's data stream.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IReader, IBaseObject)
 {
     /*!
@@ -68,6 +70,7 @@ DECLARE_OPENDAQ_INTERFACE(IReader, IBaseObject)
      * When an external listener is set, after the reader is done processing the input port notification methods,
      * it also calls the methods of the external listener.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC setExternalListener(IInputPortNotifications* listener) = 0;
 
     /*!

@@ -34,6 +34,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Builder component of Data descriptor objects. Contains setter methods that allow for Data descriptor
  * parameter configuration, and a `build` method that builds the Data descriptor.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IDataDescriptorBuilder, IBaseObject)
 {
     /*!
@@ -239,6 +240,7 @@ DECLARE_OPENDAQ_INTERFACE(IDataDescriptorBuilder, IBaseObject)
 /*!
  * @brief Data descriptor builder factory that creates a builder object with no parameters configured.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, DataDescriptorBuilder, IDataDescriptorBuilder
 )
@@ -248,6 +250,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  * different Data descriptor, copying its parameters.
  * @param descriptorToCopy The Data descriptor of which configuration should be copied.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, DataDescriptorBuilderFromExisting, IDataDescriptorBuilder,
     IDataDescriptor*, descriptorToCopy

@@ -32,6 +32,7 @@ BEGIN_NAMESPACE_OPENDAQ
  *
  * The Type Manager is usually obtained from the openDAQ Context object.
  */
+// [api(module)]
 inline PropertyObjectPtr PropertyObject()
 {
     return {PropertyObject_Create()};
@@ -42,6 +43,7 @@ inline PropertyObjectPtr PropertyObject()
  * @param manager The Type manager.
  * @param className The name of the class from which the Property object inherits its properties.
  */
+// [api(module)]
 inline PropertyObjectPtr PropertyObject(const TypeManagerPtr& manager,
                                         const StringPtr& className)
 {

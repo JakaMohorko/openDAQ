@@ -33,24 +33,28 @@ BEGIN_NAMESPACE_OPENDAQ
  * @param name The name of the device. Optional parameter.
  * @param customSdkVersion Used when the device uses a custom SDK version. Optional parameter.
  */
+// [api(module)]
 inline DeviceInfoConfigPtr DeviceInfo(const StringPtr& connectionString, const StringPtr& name = "", const StringPtr& customSdkVersion = nullptr)
 {
     DeviceInfoConfigPtr obj(DeviceInfoConfigWithCustomSdkVersion_Create(name, connectionString, customSdkVersion));
     return obj;
 }
 
+// [api(module)]
 inline DeviceInfoConfigPtr DeviceInfoWithChanegableFields(const ListPtr<IString>& changeableDefaultPropertyNames)
 {
     DeviceInfoConfigPtr obj(DeviceInfoConfigWithChanegableFields_Create(changeableDefaultPropertyNames));
     return obj;
 }
 
+// [api(module)]
 inline ServerCapabilityConfigPtr ServerCapability(const StringPtr& protocolId, const StringPtr& protocolName, ProtocolType protocolType)
 {
     ServerCapabilityConfigPtr obj(ServerCapability_Create(protocolId, protocolName, protocolType));
     return obj;
 }
 
+// [api(module)]
 inline ConnectedClientInfoPtr ConnectedClientInfo(const StringPtr& address,
                                                   ProtocolType protocolType,
                                                   const StringPtr& protocolName,
@@ -61,6 +65,7 @@ inline ConnectedClientInfoPtr ConnectedClientInfo(const StringPtr& address,
     return obj;
 }
 
+// [api(module)]
 inline ConnectedClientInfoPtr ConnectedClientInfo()
 {
     ConnectedClientInfoPtr obj(ConnectedClientInfo_Create());

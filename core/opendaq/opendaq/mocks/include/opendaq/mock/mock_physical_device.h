@@ -25,6 +25,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class MockPhysicalDeviceImpl : public Device
 {
 public:
@@ -77,6 +78,7 @@ protected:
     FunctionPtr onRetrieveConfig;
 };
 
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     INTERNAL_FACTORY,
     MockPhysicalDevice, daq::IDevice,

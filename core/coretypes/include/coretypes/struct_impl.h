@@ -32,6 +32,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 template <class StructInterface, class... Interfaces>
 class GenericStructImpl : public ImplementationOf<StructInterface, ICoreType, ISerializable, Interfaces...>
 {

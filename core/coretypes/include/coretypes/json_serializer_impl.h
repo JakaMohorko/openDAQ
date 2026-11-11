@@ -24,6 +24,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 template <typename TWriter = rapidjson::Writer<rapidjson::StringBuffer>>
 class JsonSerializerImpl : public ImplementationOf<ISerializer>
 {

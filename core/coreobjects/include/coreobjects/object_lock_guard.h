@@ -30,6 +30,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Interface for lock guard objects.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(ILockGuard, IBaseObject)
 {
 };

@@ -29,6 +29,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Creates a Coercer with the given evaluation expression.
  * @param eval The evaluation expression used for coercion.
  */
+// [api(module)]
 inline CoercerPtr Coercer(const StringPtr& eval)
 {
     CoercerPtr coercer(Coercer_Create(eval));

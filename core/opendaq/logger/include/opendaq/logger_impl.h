@@ -32,6 +32,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class LoggerImpl final : public ImplementationOf<ILogger>
 {
 public:

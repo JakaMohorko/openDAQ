@@ -20,6 +20,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 template <class Callback>
 class DeleterImpl : public ImplementationOf<IDeleter>
 {

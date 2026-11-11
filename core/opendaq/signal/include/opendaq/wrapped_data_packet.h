@@ -36,6 +36,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * Wrapped data packets share the same raw data with source packet but have their own data descriptor.
  * This typically means that their raw sample type and sample count should be the same.
  */
+// [api(core)]
 DECLARE_OPENDAQ_INTERFACE(IWrappedDataPacket, IBaseObject)
 {
     // [templateType(packet, IDataPacket)]
@@ -53,6 +54,7 @@ DECLARE_OPENDAQ_INTERFACE(IWrappedDataPacket, IBaseObject)
  * @param sourcePacket The source packet being wrapped.
  * @param descriptor The descriptor of the packet.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(LIBRARY_FACTORY,
                                                             WrappedDataPacket,
                                                             IDataPacket,

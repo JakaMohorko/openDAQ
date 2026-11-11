@@ -30,6 +30,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * [interfaceSmartPtr(ITypeManager, TypeManagerPtr, "<coretypes/type_manager_ptr.h>")]
  */
 
+// [api(core)]
 DECLARE_OPENDAQ_INTERFACE(IPropertyObjectClassInternal, IBaseObject)
 {
     /*!

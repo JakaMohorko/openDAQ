@@ -47,11 +47,13 @@ BEGIN_NAMESPACE_OPENDAQ
  * The configuration object is created with the corresponding ServerType object (IServerType::createDefaultConfig method).
  * For example, with a configuration object, we can define connection timeout.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IServer, IFolder)
 {
     /*!
     * @brief Stops the server. This is called when we remove the server from the Instance or Instance is closing.
     */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC stop() = 0;
 
     /*!

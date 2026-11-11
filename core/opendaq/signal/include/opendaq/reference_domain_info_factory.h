@@ -29,6 +29,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Reference Domain Info builder factory that creates a builder object with no parameters configured.
  */
+// [api(module)]
 inline ReferenceDomainInfoBuilderPtr ReferenceDomainInfoBuilder()
 {
     ReferenceDomainInfoBuilderPtr obj(ReferenceDomainInfoBuilder_Create());
@@ -40,6 +41,7 @@ inline ReferenceDomainInfoBuilderPtr ReferenceDomainInfoBuilder()
  * different Reference Domain Info, copying its parameters.
  * @param referenceDomainInfo The Reference Domain Info of which configuration should be copied.
  */
+// [api(module)]
 inline ReferenceDomainInfoBuilderPtr ReferenceDomainInfoBuilderCopy(const ReferenceDomainInfoPtr& referenceDomainInfo)
 {
     ReferenceDomainInfoBuilderPtr obj(ReferenceDomainInfoBuilderFromExisting_Create(referenceDomainInfo));
@@ -50,6 +52,7 @@ inline ReferenceDomainInfoBuilderPtr ReferenceDomainInfoBuilderCopy(const Refere
  * @brief Creates a Reference Domain Info using Builder
  * @param builder Reference Domain Info Builder
  */
+// [api(module)]
 inline ReferenceDomainInfoPtr ReferenceDomainInfoFromBuilder(const ReferenceDomainInfoBuilderPtr& builder)
 {
     ReferenceDomainInfoPtr obj(ReferenceDomainInfoFromBuilder_Create(builder));
@@ -59,6 +62,7 @@ inline ReferenceDomainInfoPtr ReferenceDomainInfoFromBuilder(const ReferenceDoma
 /*!
  * @brief Creates the Struct type object that defines the Reference Domain Info struct.
  */
+// [api(module)]
 inline StructTypePtr ReferenceDomainInfoStructType()
 {
     return StructType("ReferenceDomainInfo",

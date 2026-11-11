@@ -30,6 +30,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Internal functions used by openDAQ core. This interface should never be used in
  * client SDK or module code.
  */
+// [api(core)]
 DECLARE_OPENDAQ_INTERFACE(IDataRuleCalcPrivate, IBaseObject)
 {
     /*!

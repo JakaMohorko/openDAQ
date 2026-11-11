@@ -20,19 +20,24 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(module)]
 class ModuleAuthenticator : public ImplementationOf<IModuleAuthenticator>
 {
 protected:
+    // [api(core)]
     LoggerPtr logger;
+    // [api(core)]
     LoggerComponentPtr loggerComponent;
 
 public:
     ErrCode INTERFACE_FUNC authenticateModuleBinary(Bool* binaryValid, IString** vendorKey, IString* binaryPath) override;
+    // [api(module, override)]
     virtual Bool onAuthenticateModuleBinary(StringPtr& vendorKey, const StringPtr& binaryPath);
     ErrCode INTERFACE_FUNC setLogger(ILogger* logger) override;
 };
 
 
+// [api(core)]
 class FunctionModuleAuthenticatorImpl : public ModuleAuthenticator
 {
 public:

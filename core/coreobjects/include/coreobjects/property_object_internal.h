@@ -27,6 +27,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @{
  */
 
+// [api(application)]
 enum class LockingStrategy : EnumType
 {
     OwnLock = 0,        // Object locks its own mutex. The default for components.
@@ -38,24 +39,37 @@ enum class LockingStrategy : EnumType
  * [interfaceSmartPtr(ILockGuard, LockGuardPtr, "<coreobjects/object_lock_guard_ptr.h>")]
  */
 
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IPropertyObjectInternal, IBaseObject)
 {
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC checkForReferences(IProperty* property, Bool* isReferenced) = 0;
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC checkForReferencesNoLock(IProperty* property, Bool* isReferenced) = 0;
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC enableCoreEventTrigger() = 0;
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC disableCoreEventTrigger() = 0;
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC getCoreEventTrigger(IProcedure** trigger) = 0;
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC setCoreEventTrigger(IProcedure* trigger) = 0;
     virtual ErrCode INTERFACE_FUNC clone(IPropertyObject** cloned) = 0;
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC setPath(IString* path) = 0;
     virtual ErrCode INTERFACE_FUNC getPath(IString** path) = 0;
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC isUpdating(Bool* updating) = 0;
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC hasUserReadAccess(IBaseObject* userContext, Bool * hasAccessOut) = 0;
 
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC getPropertyValueNoLock(IString* name, IBaseObject** value) = 0;
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC getPropertySelectionValueNoLock(IString* name, IBaseObject** value) = 0;
     virtual ErrCode INTERFACE_FUNC setPropertyValueNoLock(IString* name, IBaseObject* value) = 0;
     virtual ErrCode INTERFACE_FUNC setProtectedPropertyValueNoLock(IString* name, IBaseObject* value) = 0;
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC clearPropertyValueNoLock(IString* name) = 0;
 
     /*!
@@ -65,6 +79,7 @@ DECLARE_OPENDAQ_INTERFACE(IPropertyObjectInternal, IBaseObject)
      *  getters and setters, `getProperty`, `hasProperty`, `getAllProperties` and `getVisibleProperties` all do,
      *  so only their `NoLock` variants may be used. `clone` has no `NoLock` variant.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC getLockGuard(ILockGuard** lockGuard) = 0;
 
     /*!
@@ -72,6 +87,7 @@ DECLARE_OPENDAQ_INTERFACE(IPropertyObjectInternal, IBaseObject)
      *  allowing for multiple locks to be instantiated on the same thread. Fails if a non-recursive lock
      *  was already created on this thread.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC getRecursiveLockGuard(ILockGuard** lockGuard) = 0;
 
     /*!
@@ -81,20 +97,24 @@ DECLARE_OPENDAQ_INTERFACE(IPropertyObjectInternal, IBaseObject)
      * Property objects default to `InheritLock`, so an object stored in an object-type property shares the
      * lock of the object that holds it. Components default to `OwnLock`. A clone keeps the strategy of its source.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC setLockingStrategy(LockingStrategy strategy) = 0;
     /*!
      * @brief Gets the locking strategy of the object.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC getLockingStrategy(LockingStrategy* strategy) = 0;
     /*!
      * @brief Gets the object's mutex. Returns the mutex of the closest `OwnLock` strategy ancestor
      * if using the `InheritLock` strategy.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC getMutex(IMutex** mutex) = 0;
     /*
      * @brief Gets a reference to the owner of the mutex locked by the object. If the object's locking
      * strategy is not `OwnLock`, returns the closest ancestor with the `OwnLock` strategy.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC getMutexOwner(IPropertyObjectInternal** owner) = 0;
 
     /*!
@@ -104,6 +124,7 @@ DECLARE_OPENDAQ_INTERFACE(IPropertyObjectInternal, IBaseObject)
      *
      * Call it only while holding the object's lock.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC getPropertyNoLock(IString* propertyName, IProperty** property) = 0;
 
     // [elementType(properties, IProperty)]
@@ -113,6 +134,7 @@ DECLARE_OPENDAQ_INTERFACE(IPropertyObjectInternal, IBaseObject)
      *
      * Call it only while holding the object's lock.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC getAllPropertiesNoLock(IList** properties) = 0;
 
     /*!
@@ -122,6 +144,7 @@ DECLARE_OPENDAQ_INTERFACE(IPropertyObjectInternal, IBaseObject)
      *
      * Call it only while holding the object's lock.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC hasPropertyNoLock(IString* propertyName, Bool* hasProperty) = 0;
 
     // [elementType(properties, IProperty)]
@@ -131,6 +154,7 @@ DECLARE_OPENDAQ_INTERFACE(IPropertyObjectInternal, IBaseObject)
      *
      * Call it only while holding the object's lock.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC getVisiblePropertiesNoLock(IList** properties) = 0;
 };
 

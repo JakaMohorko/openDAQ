@@ -31,6 +31,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @{
  */
 
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IDeviceInfoInternal, IBaseObject)
 {
     /*!

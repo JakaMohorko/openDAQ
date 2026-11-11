@@ -46,6 +46,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * To obtain implicitly calculated, or scaled values, `getData` should be used. The data descriptor and sample
  * count provide information about the type and amount of data available at the obtained address.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IDataPacket, IPacket)
 {
     /*!
@@ -191,6 +192,7 @@ DECLARE_OPENDAQ_INTERFACE(IDataPacket, IPacket)
  * @param offset Optional packet offset parameter, used to calculate the data of the packet
  * if the Data rule of the Signal descriptor is not explicit.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, DataPacket, IDataPacket,
     IDataDescriptor*, descriptor,
@@ -215,6 +217,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  * is called when the packet is destroyed. The callback should free the memory provided. If bufferSize parameter
  * is equal to SizeT max, the buffer size will be calculated from the descriptor.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, DataPacketWithExternalMemory, IDataPacket,
     IDataPacket*, domainPacket,
@@ -236,6 +239,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  * if the Data rule of the Signal descriptor is not explicit.
  *
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, DataPacketWithDomain, IDataPacket,
     IDataPacket*, domainPacket,
@@ -259,6 +263,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  * can be used. Other values are passed as an array of struct with uint32_t sample position field and value field.
  * Value field (as well as initial value) are of type defined as sample type in the descriptor.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, ConstantDataPacketWithDomain, IDataPacket,
     IDataPacket*, domainPacket,

@@ -61,6 +61,7 @@ ProcedurePtr Procedure(TFunctor* value);
  * procObj(2);
  * @endcode
  */
+// [api(application)]
 class ProcedurePtr : public ObjectPtr<IProcedure>
 {
 public:

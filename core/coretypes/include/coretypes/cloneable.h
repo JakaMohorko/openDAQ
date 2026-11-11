@@ -28,6 +28,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Objects that can be cloned implement this interface.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(ICloneable, IBaseObject)
 {
     /*!

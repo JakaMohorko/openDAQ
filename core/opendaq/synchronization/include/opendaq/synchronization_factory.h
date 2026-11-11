@@ -30,6 +30,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @param manager The type manager.
  * @param deviceId The device-local ID; the ClockSyncInterface reference domain ID is "local:<deviceId>".
  */
+// [api(module)]
 inline SynchronizationPtr Synchronization(const TypeManagerPtr& manager, const StringPtr& deviceId)
 {
     return { Synchronization_Create(manager, deviceId) };

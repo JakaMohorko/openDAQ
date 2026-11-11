@@ -20,6 +20,7 @@
 #include <opendaq/context_ptr.h>
 #include <opendaq/function_block_type_ptr.h>
 
+// [api(core)]
 class MockFunctionBlockModuleImpl : public daq::ImplementationOf<daq::IModule>
 {
 public:
@@ -51,4 +52,5 @@ private:
     daq::ContextPtr ctx;
 };
 
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(INTERNAL_FACTORY, MockFunctionBlockModule, daq::IModule, daq::IContext*, ctx)

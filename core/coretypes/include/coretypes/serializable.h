@@ -25,6 +25,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @{
  */
 
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(ISerializable, IBaseObject)
 {
     virtual ErrCode INTERFACE_FUNC serialize(ISerializer* serializer) = 0;

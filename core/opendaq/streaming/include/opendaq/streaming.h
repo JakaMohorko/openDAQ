@@ -65,6 +65,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * mirrored input ports is not allowed, therefore disabling any client-to-device streaming operations.
  */
 
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IStreaming, IBaseObject)
 {
     /*!

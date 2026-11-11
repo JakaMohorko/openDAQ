@@ -78,6 +78,7 @@ namespace core_event_args_impl
 }
 
 
+// [api(core)]
 class CoreEventArgsImpl : public EventArgsBase<ICoreEventArgs, ISerializable>
 {
 public:

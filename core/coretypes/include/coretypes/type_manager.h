@@ -39,6 +39,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * Thus, a parent of a given class must be added to the manager before any of its children. Likewise, a class
  * cannot be removed before its children are removed.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(ITypeManager, IBaseObject)
 {
     /*!
@@ -50,6 +51,7 @@ DECLARE_OPENDAQ_INTERFACE(ITypeManager, IBaseObject)
      * The type name must be unique and. If a Property object class specifies a parent class,
      * then the parent class must be added before it.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC addType(IType* type) = 0;
     
     /*!
@@ -60,6 +62,7 @@ DECLARE_OPENDAQ_INTERFACE(ITypeManager, IBaseObject)
      * The removed class must not be a parent of another added class. If it is, those classes must be removed
      * before it.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC removeType(IString* typeName) = 0;
 
     /*!
@@ -87,6 +90,7 @@ DECLARE_OPENDAQ_INTERFACE(ITypeManager, IBaseObject)
 
 /*!@}*/
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, TypeManager)
 
 

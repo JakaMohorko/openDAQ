@@ -38,6 +38,7 @@ struct ITailReaderBuilder;
 /*!
  * @brief A reader that only ever reads the last N samples, subsequent calls may result in overlapping data.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(ITailReader, ISampleReader)
 {
     // [arrayArg(values, count), arrayArg(count, 1)]
@@ -82,6 +83,7 @@ DECLARE_OPENDAQ_INTERFACE(ITailReader, ISampleReader)
 };
 /*!@}*/
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY(
     LIBRARY_FACTORY, TailReader,
     ISignal*, signal,
@@ -91,6 +93,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY(
     ReadMode, mode
 )
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, TailReaderFromPort, ITailReader,
     IInputPortConfig*, port,
@@ -100,6 +103,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     ReadMode, mode
 )
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, TailReaderFromExisting, ITailReader,
     ITailReader*, invalidatedReader,
@@ -109,6 +113,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
 )
 
 //[factory(Hide)]
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, TailReaderFromBuilder, ITailReader,
     ITailReaderBuilder*, builder

@@ -24,6 +24,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class StructTypeImpl : public GenericTypeImpl<IStructType>
 {
 public:

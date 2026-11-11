@@ -23,6 +23,7 @@
 #include <coreobjects/object_keys.h>
 
 BEGIN_NAMESPACE_OPENDAQ
+// [api(core)]
 class PermissionsImpl : public ImplementationOf<IPermissions, IPermissionsInternal>
 {
 public:

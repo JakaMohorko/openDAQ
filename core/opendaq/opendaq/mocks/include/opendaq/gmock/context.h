@@ -22,6 +22,7 @@
 #include <coretypes/gmock/mock_ptr.h>
 #include <opendaq/gmock/scheduler.h>
 
+// [api(core)]
 struct MockContext : daq::ImplementationOf<daq::IContext, daq::IContextInternal>
 {
     typedef MockPtr<

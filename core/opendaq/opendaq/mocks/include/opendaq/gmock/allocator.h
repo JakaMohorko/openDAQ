@@ -23,6 +23,7 @@
 
 #include <cstdlib>
 
+// [api(core)]
 struct MockAllocator : daq::ImplementationOf<daq::IAllocator>
 {
     typedef MockPtr<

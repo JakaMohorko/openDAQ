@@ -22,6 +22,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(application)]
 enum class TimeProtocol : EnumType
 {
     Unknown,
@@ -46,6 +47,7 @@ struct IReferenceDomainInfoBuilder;
 /*!
  * @brief If set, gives additional information about the reference domain.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IReferenceDomainInfo, IBaseObject)
 {
     /*!
@@ -117,6 +119,7 @@ DECLARE_OPENDAQ_INTERFACE(IReferenceDomainInfo, IBaseObject)
  * @brief Creates a Reference Domain Info using Builder
  * @param builder Reference Domain Info Builder
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, ReferenceDomainInfoFromBuilder, IReferenceDomainInfo, IReferenceDomainInfoBuilder*, builder)
 

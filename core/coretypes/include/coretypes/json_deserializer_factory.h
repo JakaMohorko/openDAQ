@@ -21,6 +21,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(module)]
 inline DeserializerPtr JsonDeserializer()
 {
     return DeserializerPtr(JsonDeserializer_Create());

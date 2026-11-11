@@ -20,6 +20,7 @@
 #include <gmock/gmock.h>
 #include <coretypes/gmock/mock_ptr.h>
 
+// [api(core)]
 struct MockTaskGraph : daq::ImplementationOf<daq::ITaskGraph>
 {
     typedef MockPtr<

@@ -32,6 +32,7 @@
 BEGIN_NAMESPACE_OPENDAQ
 
 
+// [api(core)]
 class StreamReaderImpl final : public ImplementationOfWeak<IStreamReader, IReaderConfig, IInputPortNotifications>
 {
 public:

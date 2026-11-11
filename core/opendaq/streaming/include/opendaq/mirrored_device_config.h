@@ -36,6 +36,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Represents configuration interface for mirrored device.
  * Allows attaching and removing streaming data sources associated with the device.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IMirroredDeviceConfig, IMirroredDevice)
 {
     /*!

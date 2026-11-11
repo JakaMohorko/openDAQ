@@ -48,6 +48,7 @@ struct InterfaceToSmartPtr<IString>
  * @endcode
  */
 
+// [api(application)]
 class StringPtr : public ObjectPtr<IString>
 {
 public:

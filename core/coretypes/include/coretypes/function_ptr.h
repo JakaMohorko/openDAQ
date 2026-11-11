@@ -64,6 +64,7 @@ FunctionPtr Function(TFunctor* value);
  * Int result = funcObj(2);
  * @endcode
  */
+// [api(application)]
 class FunctionPtr : public ObjectPtr<IFunction>
 {
 public:
@@ -122,12 +123,14 @@ public:
 
 /*!@}*/
 
+// [api(application)]
 inline FunctionPtr Function(std::nullptr_t value)
 {
     FunctionPtr obj(FunctionWrapper_Create<std::nullptr_t>(value));
     return obj;
 }
 
+// [api(application)]
 template <typename TFunctor, typename std::enable_if<!std::is_bind_expression_v<TFunctor>>::type*>
 FunctionPtr Function(TFunctor value)
 {
@@ -137,6 +140,7 @@ FunctionPtr Function(TFunctor value)
     return obj;
 }
 
+// [api(application)]
 template <typename TFunctor, typename std::enable_if<std::is_bind_expression_v<TFunctor>>::type*>
 FunctionPtr Function(TFunctor value)
 {
@@ -144,6 +148,7 @@ FunctionPtr Function(TFunctor value)
     return obj;
 }
 
+// [api(application)]
 template <typename TFunctor>
 FunctionPtr Function(TFunctor* value)
 {

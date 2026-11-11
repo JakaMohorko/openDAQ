@@ -68,6 +68,7 @@ namespace details
     }
 }
 
+// [api(core)]
 class PropertyImpl : public ImplementationOf<IProperty, ISerializable, IPropertyInternal, IOwnable>
 {
 protected:

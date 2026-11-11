@@ -32,6 +32,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Builder component of Stream reader objects. Contains setter methods to configure the Stream reader parameters
  * and a `build` method that builds the Unit object.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IStreamReaderBuilder, IBaseObject)
 {
     /*!
@@ -149,6 +150,7 @@ DECLARE_OPENDAQ_INTERFACE(IStreamReaderBuilder, IBaseObject)
     virtual ErrCode INTERFACE_FUNC getInputPortNotificationMethod(PacketReadyNotification* notificationMethod) = 0;
 };
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, StreamReaderBuilder, IStreamReaderBuilder)
 
 /*!@}*/

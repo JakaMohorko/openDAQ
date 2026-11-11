@@ -56,6 +56,7 @@ struct InterfaceToSmartPtr<IEnumeration>
  * of the original Enumeration object.
  */
 
+// [api(application)]
 class EnumerationPtr : public ObjectPtr<IEnumeration>
 {
 public:

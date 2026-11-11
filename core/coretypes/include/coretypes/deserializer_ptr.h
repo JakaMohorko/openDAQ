@@ -29,6 +29,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @{
  */
 
+// [api(module)]
 class DeserializerPtr : public ObjectPtr<IDeserializer>
 {
 public:

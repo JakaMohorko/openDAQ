@@ -22,6 +22,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Private interface to component type. Allows for setting the module information.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IComponentTypePrivate, IBaseObject)
 {
     // [returnSelf]

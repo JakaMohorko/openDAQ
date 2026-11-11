@@ -35,6 +35,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * The sender of the event is always the parent component.
  * The ID of the event is 40, and the event name is "ComponentAdded".
  */
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, CoreEventArgsComponentAdded, ICoreEventArgs,
     IComponent*, component
@@ -48,6 +49,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  *
  * The ID of the event is 50, and the event name is "ComponentRemoved".
  */
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, CoreEventArgsComponentRemoved, ICoreEventArgs,
     IString*, componentId
@@ -61,6 +63,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  *
  * The ID of the event is 60, and the event name is "SignalConnected".
  */
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, CoreEventArgsSignalConnected, ICoreEventArgs,
     ISignal*, signal
@@ -74,6 +77,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  *
  * The ID of the event is 70, and the event name is "SignalDisconnected".
  */
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, CoreEventArgsSignalDisconnected, ICoreEventArgs
 )
@@ -86,6 +90,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  *
  * The ID of the event is 80, and the event name is "DataDescriptorChanged".
  */
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, CoreEventArgsDataDescriptorChanged, ICoreEventArgs,
     IDataDescriptor*, descriptor
@@ -97,6 +102,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  * A component finished updating at the end of the `update` call.
  * The ID of the event is 90, and the event name is "ComponentUpdateEnd".
  */
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, CoreEventArgsComponentUpdateEnd, ICoreEventArgs
 )
@@ -111,6 +117,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  *
  * The ID of the event is 100, and the event name is "AttributeChanged".
  */
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, CoreEventArgsAttributeChanged, ICoreEventArgs,
     IString*, attributeName, IBaseObject*, attributeValue
@@ -122,6 +129,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  *
  * The ID of the event is 110, and the event name is "TagsChanged".
  */
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, CoreEventArgsTagsChanged, ICoreEventArgs,
     IList*, tags
@@ -133,6 +141,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  *
  * The ID of the event is 150, and the event name is "DeviceDomainChanged".
  */
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, CoreEventArgsDeviceDomainChanged, ICoreEventArgs,
     IDeviceDomain*, deviceDomain
@@ -144,6 +153,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  *
  * The ID of the event is 160, and the event name is "DeviceLockStateChanged".
  */
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, CoreEventArgsDeviceLockStateChanged, ICoreEventArgs,
     Bool, isLocked
@@ -155,6 +165,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  *
  * The ID of the event is 180, and the event name is "DeviceOperationModeChanged".
  */
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, CoreEventArgsDeviceOperationModeChanged, ICoreEventArgs,
     Int, operationMode

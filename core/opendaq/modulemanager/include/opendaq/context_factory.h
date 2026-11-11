@@ -36,6 +36,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @param moduleManager The module manager.
  * @param typeManager The type manager.
  */
+// [api(application)]
 inline ContextPtr Context(const SchedulerPtr& scheduler,
                           const LoggerPtr& logger,
                           const TypeManagerPtr& typeManager,
@@ -53,6 +54,7 @@ inline ContextPtr Context(const SchedulerPtr& scheduler,
  * @param logger The logger the context has access to.
  * @param typeManager The type manager.
  */
+// [api(application)]
 inline ContextPtr NullContext(const LoggerPtr& logger = Logger(), 
                               const TypeManagerPtr& typeManager = TypeManager(),
                               const DictPtr<IString, IBaseObject> options = Dict<IString, IBaseObject>())

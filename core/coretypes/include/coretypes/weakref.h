@@ -61,6 +61,7 @@ BEGIN_NAMESPACE_OPENDAQ
  *
  * @endcode
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IWeakRef, IBaseObject)
 {
     /*!
@@ -99,6 +100,7 @@ DECLARE_OPENDAQ_INTERFACE(IWeakRef, IBaseObject)
  *    \\ ...
  * @endcode
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(ISupportsWeakRef, IBaseObject)
 {
     DEFINE_INTFID("ISupportsWeakRef")

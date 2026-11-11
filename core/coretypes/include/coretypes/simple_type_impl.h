@@ -25,6 +25,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class SimpleTypeImpl : public GenericTypeImpl<ISimpleType>
 {
 public:

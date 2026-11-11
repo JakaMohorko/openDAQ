@@ -34,6 +34,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * they are standard function blocks with an additional option to provide a list of
  * tags.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IChannel, IFunctionBlock)
 {
 };

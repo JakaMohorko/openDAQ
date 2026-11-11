@@ -30,6 +30,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Creates a new PropertyMetadataReadArgs object with a given property that owns the metadata field.
  * @param prop The property that owns the metadata field.
  */
+// [api(module)]
 inline PropertyMetadataReadArgsPtr PropertyMetadataReadArgs(const PropertyPtr& prop)
 {
     return {PropertyMetadataReadArgs_Create(prop)};

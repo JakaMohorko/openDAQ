@@ -47,6 +47,7 @@ struct IEvalValue;
  *
  * The Property can be built by calling the `build` method.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IPropertyBuilder, IBaseObject)
 {    
     /*!
@@ -366,6 +367,7 @@ DECLARE_OPENDAQ_INTERFACE(IPropertyBuilder, IBaseObject)
  *
  * The default Value type is `ctUndefined`.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, PropertyBuilder, IPropertyBuilder,
     IString*, name
@@ -378,6 +380,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  *
  * The Property Value type is `ctBool`. Note that the defaultValue parameter can be EvalValue.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, BoolPropertyBuilder, IPropertyBuilder,
     IString*, name,
@@ -391,6 +394,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  *
  * The Property Value type is `ctInt`. Note that the defaultValue parameter can be EvalValue.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, IntPropertyBuilder, IPropertyBuilder,
     IString*, name,
@@ -404,6 +408,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  *
  * The Property Value type is `ctFloat`. Note that the defaultValue parameter can be EvalValue.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, FloatPropertyBuilder, IPropertyBuilder,
     IString*, name,
@@ -417,6 +422,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  *
  * The Property Value type is `ctString`. Note that the defaultValue parameter can be EvalValue.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, StringPropertyBuilder, IPropertyBuilder,
     IString*, name,
@@ -433,6 +439,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  *
  * The Property's Item type field will be set according to defaultValue list type.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, ListPropertyBuilder, IPropertyBuilder,
     IString*, name,
@@ -452,6 +459,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  *
  * TODO: defaultValue can be an EvalValue once dictionaries are supported.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, DictPropertyBuilder, IPropertyBuilder,
     IString*, name,
@@ -467,6 +475,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  *
  * TODO: defaultValue can be an EvalValue once ratios are supported.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, RatioPropertyBuilder, IPropertyBuilder,
     IString*, name,
@@ -484,6 +493,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  *
  * If the defaultValue is not specified, it will automatically be configured to an empty Property Object.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, ObjectPropertyBuilder, IPropertyBuilder,
     IString*, name,
@@ -496,6 +506,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  * @param name The name of the Property.
  * @param referencedPropertyEval The evaluation expression that evaluates to another property.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, ReferencePropertyBuilder, IPropertyBuilder,
     IString*, name,
@@ -511,6 +522,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  * The Property Value type is `ctFunction` or `ctProc`, depending on if `callableInfo` contains information
  * on the return type or not.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, FunctionPropertyBuilder, IPropertyBuilder,
     IString*, name,
@@ -526,6 +538,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  *
  * The Property Value type is `ctInt`.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, SelectionPropertyBuilder, IPropertyBuilder,
     IString*, name,
@@ -542,6 +555,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  *
  * The Property Value type is `ctInt`. The key type of the Selection values dictionary must be `ctInt`.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, SparseSelectionPropertyBuilder, IPropertyBuilder,
     IString*, name,
@@ -556,6 +570,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  *
  * The Property Value type is `ctStruct`.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, StructPropertyBuilder, IPropertyBuilder,
     IString*, name,
@@ -569,6 +584,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  *
  * The Property Value type is `ctEnumeration`.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, EnumerationPropertyBuilder, IPropertyBuilder,
     IString*, name,

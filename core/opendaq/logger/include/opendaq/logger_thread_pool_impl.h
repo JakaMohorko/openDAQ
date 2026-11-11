@@ -23,6 +23,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class LoggerThreadPoolImpl final : public ImplementationOf<ILoggerThreadPool, ILoggerThreadPoolPrivate>
 {
 public:

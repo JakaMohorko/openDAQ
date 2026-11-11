@@ -29,6 +29,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Defines how a given device should be updated.
  */
+// [api(application)]
 enum class DeviceUpdateMode : EnumType
 {
     Load = 0,    ///< The device is updated and added if missing.
@@ -66,6 +67,7 @@ enum class DeviceUpdateMode : EnumType
  *
  * Signal->Input port connections will be preserved when remapping, assuming the new device has the same signal and input port structure and IDs.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IDeviceUpdateOptions, IBaseObject)
 {
     /*!
@@ -147,6 +149,7 @@ DECLARE_OPENDAQ_INTERFACE(IDeviceUpdateOptions, IBaseObject)
 
 /*!@}*/
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, DeviceUpdateOptions, IString*, setupString);
 
 END_NAMESPACE_OPENDAQ

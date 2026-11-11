@@ -55,6 +55,7 @@ struct IDimensionBuilder;
  * 
  * Dimension objects implement the Struct methods internally and are Core type `ctStruct`.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IDimension, IBaseObject)
 {
     /*!
@@ -113,6 +114,7 @@ DECLARE_OPENDAQ_INTERFACE(IDimension, IBaseObject)
  * @param unit The unit of the dimension's labels.
  * @param name The name the dimension.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, Dimension, IDimension,
     IDimensionRule*, rule,
@@ -124,6 +126,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  * @brief Creates a Dimension using Builder
  * @param builder Dimension Builder
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, DimensionFromBuilder,
     IDimension,

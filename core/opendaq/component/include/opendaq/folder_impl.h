@@ -24,6 +24,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(module)]
 template <class Intf = IFolderConfig, class... Intfs>
 class FolderImpl : public ComponentImpl<Intf, Intfs...>
 {
@@ -67,27 +68,38 @@ public:
     static ErrCode Deserialize(ISerializedObject* serialized, IBaseObject* context, IFunction* factoryCallback, IBaseObject** obj);
 
 protected:
+    // [api(core)]
     tsl::ordered_map<std::string, ComponentPtr> items;
 
+    // [api(module, override)]
     void removed() override;
 
+    // [api(core)]
     virtual bool addItemInternal(const ComponentPtr& component);
+    // [api(module, override)]
     void serializeCustomObjectValues(const SerializerPtr& serializer, bool forUpdate) override;
 
+    // [api(core)]
     void deserializeCustomObjectValues(const SerializedObjectPtr& serializedObject,
                                        const BaseObjectPtr& context,
                                        const FunctionPtr& factoryCallback) override;
 
+    // [api(core)]
     template <class Interface, class Implementation>
     static BaseObjectPtr DeserializeFolder(const SerializedObjectPtr& serialized,
                                            const BaseObjectPtr& context,
                                            const FunctionPtr& factoryCallback);
 
+    // [api(core)]
     void callBeginUpdateOnChildren() override;
+    // [api(core)]
     void callEndUpdateOnChildren() override;
+    // [api(module, override)]
     void onUpdatableUpdateEnd(const BaseObjectPtr& context) override;
 
+    // [api(core)]
     virtual void syncComponentOperationMode(const ComponentPtr& component);
+    // [api(core)]
     void notifyActiveChanged(bool onUpdate) override;
 
 private:

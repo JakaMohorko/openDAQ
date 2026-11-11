@@ -30,6 +30,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Creates a Dimension Config object with no configuration parameters.
  */
+// [api(module)]
 inline DimensionBuilderPtr DimensionBuilder()
 {
     DimensionBuilderPtr obj(DimensionBuilder_Create());
@@ -42,6 +43,7 @@ inline DimensionBuilderPtr DimensionBuilder()
  * @param unit The unit of the dimension's labels.
  * @param name The name the dimension.
  */
+// [api(module)]
 inline DimensionPtr Dimension(const DimensionRulePtr& rule,
                               const UnitPtr& unit = nullptr,
                               const StringPtr& name = "")
@@ -54,6 +56,7 @@ inline DimensionPtr Dimension(const DimensionRulePtr& rule,
  * @brief Creates a Dimension using Builder
  * @param builder Dimension Builder
  */
+// [api(module)]
 inline DimensionPtr DimensionFromBuilder(const DimensionBuilderPtr& builder)
 {
     DimensionPtr obj(DimensionFromBuilder_Create(builder));
@@ -64,6 +67,7 @@ inline DimensionPtr DimensionFromBuilder(const DimensionBuilderPtr& builder)
  * @brief Creates a builder copy of the dimension object passed as parameter.
  * @param dimension The dimension object to be copied.
  */
+// [api(module)]
 inline DimensionBuilderPtr DimensionBuilderCopy(const DimensionPtr& dimension)
 {
     DimensionBuilderPtr obj(DimensionBuilderFromExisting_Create(dimension));
@@ -73,6 +77,7 @@ inline DimensionBuilderPtr DimensionBuilderCopy(const DimensionPtr& dimension)
 /*!
  * @brief Creates the Struct type object that defines the Dimension struct.
  */
+// [api(module)]
 inline StructTypePtr DimensionStructType()
 {
     return StructType("Dimension",

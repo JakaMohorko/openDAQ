@@ -500,6 +500,7 @@ struct supports_conv_from_coretype<INumber>
 
 // ------ BinOperation -------
 
+// [api(application)]
 enum class BinOperationType
 {
     add = 0,
@@ -757,6 +758,7 @@ struct BinOperationToStdOp<BinOperationType::lessOrEqual>
 
 // ------ UnaryOperation -------
 
+// [api(application)]
 enum class UnaryOperationType
 {
     Negate = 0,

@@ -33,6 +33,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Creates a InstanceBuilder with no parameters configured.
  */
+// [api(application)]
 inline InstanceBuilderPtr InstanceBuilder()
 {
     InstanceBuilderPtr obj(InstanceBuilder_Create());
@@ -43,6 +44,7 @@ inline InstanceBuilderPtr InstanceBuilder()
  * @brief Creates a Instance with Builder
  * @param builder Instance Builder
  */
+// [api(application)]
 inline InstancePtr InstanceFromBuilder(const InstanceBuilderPtr& builder)
 {
     InstancePtr obj(InstanceFromBuilder_Create(builder));
@@ -58,6 +60,7 @@ inline InstancePtr InstanceFromBuilder(const InstanceBuilderPtr& builder)
  * If localId is empty, the local id will be set to the OPENDAQ_INSTANCE_ID environment variable if available. Otherwise
  * a random UUID will be generated for the local id.
  */
+// [api(application)]
 inline InstancePtr Instance(const std::string& modulePath = "", const std::string& localId = "")
 {
     auto builder = InstanceBuilder().setModulePath(modulePath)
@@ -70,6 +73,7 @@ inline InstancePtr Instance(const std::string& modulePath = "", const std::strin
  * @param context The Context.
  * @param localId The instance local id.
  */
+// [api(application)]
 inline InstancePtr InstanceCustom(const ContextPtr& context,
                                   const StringPtr& localId)
 {
@@ -89,6 +93,7 @@ inline InstancePtr InstanceCustom(const ContextPtr& context,
  * The Client supports adding function blocks and connecting to devices. The array of function blocks
  * and supported devices depends on the modules loaded by the Module manager.
  */
+// [api(module)]
 inline DevicePtr Client(const ContextPtr& context, const StringPtr& localId, const DeviceInfoPtr& defaultDeviceInfo = nullptr, const ComponentPtr& parent = nullptr)
 {
     DevicePtr obj(Client_Create(context, localId, defaultDeviceInfo, parent));

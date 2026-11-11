@@ -29,6 +29,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Briefly
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IPacketBufferBuilder, IBaseObject)
 {
     /*!
@@ -69,6 +70,7 @@ DECLARE_OPENDAQ_INTERFACE(IPacketBufferBuilder, IBaseObject)
 /*!
  * @brief Create an empty default PacketBufferBuilder (default sizeInBytes in set to 0)
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, PacketBufferBuilder)
 
 END_NAMESPACE_OPENDAQ

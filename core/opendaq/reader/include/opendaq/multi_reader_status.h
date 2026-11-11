@@ -32,6 +32,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief IMultiReaderStatus inherits from IReaderStatus to expand information returned read function
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IMultiReaderStatus, IReaderStatus)
 {
     // [elementType(eventPackets, IString, IEventPacket)]
@@ -50,6 +51,7 @@ DECLARE_OPENDAQ_INTERFACE(IMultiReaderStatus, IReaderStatus)
 };
 /*!@}*/
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY (
     LIBRARY_FACTORY, MultiReaderStatus,
     IEventPacket*, mainDescriptor,

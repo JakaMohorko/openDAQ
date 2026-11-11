@@ -35,6 +35,7 @@ struct InterfaceToSmartPtr<IEventArgs>
     typedef EventArgsPtr<IEventArgs> SmartPtr;
 };
 
+// [api(application)]
 template <typename Interface>
 class EventArgsPtr : public ObjectPtr<Interface>
 {

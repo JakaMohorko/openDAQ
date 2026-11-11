@@ -29,6 +29,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Provides introspection into the object providing openDAQ interface implementations.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IInspectable, IBaseObject)
 {
     /*!

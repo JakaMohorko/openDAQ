@@ -36,6 +36,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @param threadPool The Thread pool object.
  * @param level The minimal severity level of message to log by the component.
  */
+// [api(module)]
 inline LoggerComponentPtr LoggerComponent(const StringPtr& name, ListPtr<ILoggerSink> sinks = DefaultSinks(),
                                           const LoggerThreadPoolPtr& threadPool = LoggerThreadPool(),
                                           LogLevel level = LogLevel(OPENDAQ_LOG_LEVEL))

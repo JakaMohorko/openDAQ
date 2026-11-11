@@ -65,6 +65,7 @@ protected:
    TFunctor* functor;
 };
 
+// [api(core)]
 template <typename TFunctor>
 class FunctionBase : public ImplementationOf<IFunction, ICoreType>
                    , public Functor<TFunctor>
@@ -112,6 +113,7 @@ protected:
     }
 };
 
+// [api(core)]
 template <typename TFunctor, std::size_t ArgCount = FunctionTraits<TFunctor>::Arity>
 class FunctionImpl : public FunctionBase<TFunctor>
 {
@@ -202,6 +204,7 @@ public:
     }
 };
 
+// [api(core)]
 class FunctionNull : public ImplementationOf<ICoreType, IFunction>
 {
 public:

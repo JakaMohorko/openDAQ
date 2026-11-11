@@ -28,6 +28,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @return The Version Info object.
  */
 
+// [api(module)]
 inline VersionInfoPtr VersionInfo(SizeT major, SizeT minor, SizeT patch)
 {
     return VersionInfoPtr{VersionInfo_Create(major, minor, patch)};
@@ -36,6 +37,7 @@ inline VersionInfoPtr VersionInfo(SizeT major, SizeT minor, SizeT patch)
 /*!
  * @brief Creates the Struct type object that defines the Version Info struct.
  */
+// [api(module)]
 inline StructTypePtr VersionInfoStructType()
 {
     return StructType("VersionInfo",
@@ -59,6 +61,7 @@ inline StructTypePtr VersionInfoStructType()
  * @return The Version Info object.
  */
 
+// [api(module)]
 inline DevelopmentVersionInfoPtr DevelopmentVersionInfo(SizeT major, SizeT minor, SizeT patch, SizeT tweak = 0, StringPtr branch = "", StringPtr hash = "")
 {
     return DevelopmentVersionInfo_Create(
@@ -74,6 +77,7 @@ inline DevelopmentVersionInfoPtr DevelopmentVersionInfo(SizeT major, SizeT minor
 /*!
  * @brief Creates the Struct type object that defines the Version Info struct.
  */
+// [api(module)]
 inline StructTypePtr DevelopmentVersionInfoStructType()
 {
     return StructType(

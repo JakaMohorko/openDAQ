@@ -22,6 +22,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 template <class Callback>
 class WorkImpl: public ImplementationOf<IWork>
 {
@@ -53,6 +54,7 @@ ErrCode INTERFACE_FUNC WorkImpl<Callback>::execute()
     return daqTry([this] { callback(); });
 }
 
+// [api(core)]
 template <class Callback>
 class WorkRepetitiveImpl: public ImplementationOf<IWork, IWorkRepetitive>
 {

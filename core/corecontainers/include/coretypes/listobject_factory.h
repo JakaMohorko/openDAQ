@@ -20,6 +20,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(application)]
 template <class TValueInterface, class TValuePtr = typename InterfaceOrTypeToSmartPtr<TValueInterface>::SmartPtr>
 ListObjectPtr<IList, TValueInterface, TValuePtr> List()
 {
@@ -43,6 +44,7 @@ static void addToList(ListPtr<T, S>& list, U&& first, V&&... rest)
     addToList(list, std::forward<V>(rest)...);
 }
 
+// [api(application)]
 template <class T, class S = typename InterfaceOrTypeToSmartPtr<T>::SmartPtr, typename... Elements>
 ListPtr<T, S> List(Elements&&... elements)
 {

@@ -31,6 +31,7 @@ struct IPacketBufferBuilder;
 /*!
  * @brief Represents an openDAQ packet buffer
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IPacketBuffer, IBaseObject)
 {
     /*!
@@ -74,6 +75,7 @@ DECLARE_OPENDAQ_INTERFACE(IPacketBuffer, IBaseObject)
  * @brief Creates a Packet Buffer with the given builder specifics
  * @param builder The builder that describes the specifics of the current implementation
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, PacketBuffer, IPacketBufferBuilder*, builder)
 
 /*!@}*/

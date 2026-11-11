@@ -21,6 +21,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 template <class V, class Intf>
 class NumberImpl : public OrdinalObjectImpl<V, Intf, INumber>
 {

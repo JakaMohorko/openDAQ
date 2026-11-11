@@ -24,6 +24,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class UserImpl final : public ImplementationOf<IUser, IUserInternal, ISerializable>
 {
 public:

@@ -32,6 +32,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @param name The graph name used in diagnostics.
  * @return An instance of a dependency graph used for scheduling.
  */
+// [api(module)]
 inline TaskPtr TaskGraph(ProcedurePtr work, StringPtr name)
 {
     TaskPtr obj(TaskGraph_Create(work, name));
@@ -42,6 +43,7 @@ inline TaskPtr TaskGraph(ProcedurePtr work, StringPtr name)
  * @param name The graph name used in diagnostics.
  * @return An instance of a dependency graph used for scheduling.
  */
+// [api(module)]
 inline TaskPtr TaskGraph(StringPtr name)
 {
     TaskPtr obj(TaskGraph_Create(nullptr, name));
@@ -55,6 +57,7 @@ inline TaskPtr TaskGraph(StringPtr name)
  * @param name The name used for diagnostics.
  * @return An instance of a task on a dependency graph.
  */
+// [api(module)]
 inline TaskPtr Task(ProcedurePtr work, StringPtr name = "")
 {
     TaskPtr obj(Task_Create(work, name));

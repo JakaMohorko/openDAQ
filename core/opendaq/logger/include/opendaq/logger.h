@@ -48,6 +48,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * Additionally, Logger provides the ability to manage flushing policies for the added components,
  * see `flushOnLevel` method.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(ILogger, IBaseObject)
 {
     /*!
@@ -76,6 +77,7 @@ DECLARE_OPENDAQ_INTERFACE(ILogger, IBaseObject)
      * @param[out] component Added component.
      * @retval OPENDAQ_ERR_INVALIDPARAMETER if @p name is empty string.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC addComponent(IString* name, ILoggerComponent** component) = 0;
 
     /*!
@@ -83,6 +85,7 @@ DECLARE_OPENDAQ_INTERFACE(ILogger, IBaseObject)
      * @param name The component's name.
      * @retval OPENDAQ_ERR_NOTFOUND if a component with the specified @p name was not added.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC removeComponent(IString* name) = 0;
 
     // [elementType(components, ILoggerComponent)]
@@ -117,6 +120,7 @@ DECLARE_OPENDAQ_INTERFACE(ILogger, IBaseObject)
 
 // [templateType(sinks, ILoggerSink)]
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, Logger, IList*, sinks, LogLevel, level)
 
 END_NAMESPACE_OPENDAQ

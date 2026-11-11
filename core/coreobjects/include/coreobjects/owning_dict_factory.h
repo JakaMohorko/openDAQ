@@ -20,8 +20,10 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, OwningDict, IDict, IPropertyObject*, owner, IString*, ref)
 
+// [api(module)]
 template <typename TKey, typename TValue>
 DictPtr<TKey, TValue> OwningDict(PropertyObjectPtr owner, StringPtr ref = "Dict")
 {

@@ -34,6 +34,7 @@ BEGIN_NAMESPACE_OPENDAQ
  *  - patch version representing only bug fixes.
  *  - tweak version representing only build/development fixes.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IDevelopmentVersionInfo, IBaseObject)
 {
     /*!
@@ -77,6 +78,7 @@ DECLARE_OPENDAQ_INTERFACE(IDevelopmentVersionInfo, IBaseObject)
  * @}
  */
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(
     LIBRARY_FACTORY, DevelopmentVersionInfo,
     SizeT, major,

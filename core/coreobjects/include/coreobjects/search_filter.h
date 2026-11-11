@@ -37,17 +37,20 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Creates a search filter that accepts only visible properties. "Visit children" returns `true`
  * only if the property being evaluated is visible.
  */
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, VisiblePropertyFilter, ISearchFilter)
 
 /*!
  * @brief Creates a search filter that accepts only read-only properties.
  */
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, ReadOnlyPropertyFilter, ISearchFilter)
 
 /*!
  * @brief Creates a search filter that accepts properties whose names match the specified pattern.
  * @param regex A regular expression pattern used to match property names.
  */
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, NamePropertyFilter, ISearchFilter, IString*, regex)
 
 /*!@}*/

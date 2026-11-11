@@ -23,6 +23,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @{
  */
 
+// [api(core)]
 DECLARE_OPENDAQ_INTERFACE(IErrorGuard, IBaseObject)
 {
     virtual ErrCode INTERFACE_FUNC getFormattedMessage(IString** message) const = 0;
@@ -32,6 +33,7 @@ DECLARE_OPENDAQ_INTERFACE(IErrorGuard, IBaseObject)
 
 /*!@}*/
 
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY(
     LIBRARY_FACTORY, ErrorGuard, 
     ConstCharPtr, fileName,

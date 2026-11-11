@@ -33,6 +33,7 @@ BEGIN_NAMESPACE_OPENDAQ
 
 namespace Detail
 {
+    // [api(application)]
     enum class Sha1Status
     {
         Ok,

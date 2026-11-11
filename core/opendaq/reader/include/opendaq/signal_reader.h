@@ -25,6 +25,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(application)]
 enum class SyncStatus
 {
     Unsynchronized,

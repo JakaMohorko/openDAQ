@@ -20,12 +20,14 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(application)]
 inline ObjectPtr<IInteger> Integer(const Int value)
 {
     ObjectPtr<IInteger> obj(Integer_Create(value));
     return obj;
 }
 
+// [api(application)]
 inline ObjectPtr<IInteger> IntegerFromPool(const Int value)
 {
     ObjectPtr<IInteger> obj(IntegerFromPool_Create(value));

@@ -41,6 +41,7 @@ struct InterfaceToSmartPtr<IIterable>
  * Use this object to get the start and end iterators. Use iterators to iterate through
  * available items. Containers such as lists and dictionaries usually implement this interface.
  */
+// [api(application)]
 template <class TValueInterface, class TValuePtr>
 class IterablePtr : public ObjectPtr<IIterable>
 {

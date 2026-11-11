@@ -29,6 +29,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Enumeration of available access permissions
  */
+// [api(application)]
 enum class Permission : EnumType
 {
     None = 0x0,    // The user has no permissions on the object.
@@ -42,6 +43,7 @@ enum class Permission : EnumType
  * values which are allowed or denied for a given group id. Permission mask is defined as a 64-bit integer,
  * where each bit corespond to a specific permission defined by Permission enum.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IPermissionMaskBuilder, IBaseObject)
 {
     // [returnSelf]
@@ -54,18 +56,21 @@ DECLARE_OPENDAQ_INTERFACE(IPermissionMaskBuilder, IBaseObject)
     /*!
      * @brief Add write permission to the bit mask.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC write() = 0;
 
     // [returnSelf]
     /*!
      * @brief Add execute permission to the bit mask.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC execute() = 0;
 
     // [returnSelf]
     /*!
      * @brief Removes all permissions from bit mask.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC clear() = 0;
 
     /*!
@@ -73,6 +78,7 @@ DECLARE_OPENDAQ_INTERFACE(IPermissionMaskBuilder, IBaseObject)
      * @param permissionMask[out] Permission mask defined as 64-bit integer where each bit corresponds
      * to a specific permissoin defined by Permission enum.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC build(Int* permissionMask) = 0;
 };
 
@@ -81,6 +87,7 @@ DECLARE_OPENDAQ_INTERFACE(IPermissionMaskBuilder, IBaseObject)
 /*!
  * @brief Creates a permision mask builder object.
  */
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(LIBRARY_FACTORY,
                                                             PermissionMaskBuilder,
                                                             IPermissionMaskBuilder,
@@ -91,6 +98,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(LIBRARY_FACTORY,
  * @param permissionMask Permission mask defined as 64-bit integer where each bit corresponds
  * to a specific permission defined in Permission enum.
  */
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(LIBRARY_FACTORY,
                                                             PermissionMaskBuilderFromMask,
                                                             IPermissionMaskBuilder,

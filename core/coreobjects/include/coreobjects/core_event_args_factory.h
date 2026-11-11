@@ -33,6 +33,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @param id The ID of the event. If the ID is not equal to one of the pre-defined IDs, the event name will be "Unknown".
  * @param parameters The parameters of the event.
  */
+// [api(core)]
 inline CoreEventArgsPtr CoreEventArgs(CoreEventId id, const StringPtr& name, const DictPtr<IString, IBaseObject>& parameters)
 {
     CoreEventArgsPtr obj(CoreEventArgs_Create(id, name,parameters));
@@ -47,6 +48,7 @@ inline CoreEventArgsPtr CoreEventArgs(CoreEventId id, const StringPtr& name, con
  * @param path The relative path to the property owner from the sender component. Used for object-type properties. Eg. "child1.child2".
  * Does not include the Component id and property name.
  */
+// [api(core)]
 inline CoreEventArgsPtr CoreEventArgsPropertyValueChanged(const PropertyObjectPtr& propOwner, const StringPtr& propName, const BaseObjectPtr& value, const StringPtr& path)
 {
     CoreEventArgsPtr obj(CoreEventArgsPropertyValueChanged_Create(propOwner, propName, value, path));
@@ -63,6 +65,7 @@ inline CoreEventArgsPtr CoreEventArgsPropertyValueChanged(const PropertyObjectPt
  *
  * A component finished updating when `endUpdate` is called, or at the end of the `update` call.
  */
+// [api(core)]
 inline CoreEventArgsPtr CoreEventArgsPropertyObjectUpdateEnd(const PropertyObjectPtr& propOwner, const DictPtr<IString, IBaseObject>& updatedProperties, const StringPtr& path)
 {
     CoreEventArgsPtr obj(CoreEventArgsPropertyObjectUpdateEnd_Create(propOwner, updatedProperties, path));
@@ -76,6 +79,7 @@ inline CoreEventArgsPtr CoreEventArgsPropertyObjectUpdateEnd(const PropertyObjec
  * @param path The relative path to the property owner from the sender component. Used for object-type properties. Eg. "child1.child2".
  * Does not include the Component id and property name.
  */
+// [api(core)]
 inline CoreEventArgsPtr CoreEventArgsPropertyAdded(const PropertyObjectPtr& propOwner, const PropertyPtr& prop, const StringPtr& path)
 {
     CoreEventArgsPtr obj(CoreEventArgsPropertyAdded_Create(propOwner, prop, path));
@@ -89,6 +93,7 @@ inline CoreEventArgsPtr CoreEventArgsPropertyAdded(const PropertyObjectPtr& prop
  * @param path The relative path to the property owner from the sender component. Used for object-type properties. Eg. "child1.child2".
  * Does not include the Component id and property name.
  */
+// [api(core)]
 inline CoreEventArgsPtr CoreEventArgsPropertyRemoved(const PropertyObjectPtr& propOwner, const StringPtr& propName, const StringPtr& path)
 {
     CoreEventArgsPtr obj(CoreEventArgsPropertyRemoved_Create(propOwner, propName, path));
@@ -101,6 +106,7 @@ inline CoreEventArgsPtr CoreEventArgsPropertyRemoved(const PropertyObjectPtr& pr
  *
  * The ID of the event is 130, and the event name is "TypeAdded".
  */
+// [api(core)]
 inline CoreEventArgsPtr CoreEventArgsTypeAdded(const TypePtr& type)
 {
     CoreEventArgsPtr obj(CoreEventArgsTypeAdded_Create(type));
@@ -113,6 +119,7 @@ inline CoreEventArgsPtr CoreEventArgsTypeAdded(const TypePtr& type)
  *
  * The ID of the event is 140, and the event name is "TypeRemoved".
  */
+// [api(core)]
 inline CoreEventArgsPtr CoreEventArgsTypeRemoved(const StringPtr& typeName)
 {
     CoreEventArgsPtr obj(CoreEventArgsTypeRemoved_Create(typeName));
@@ -127,6 +134,7 @@ inline CoreEventArgsPtr CoreEventArgsTypeRemoved(const StringPtr& typeName)
  *
  * The ID of the event is 190, and the event name is "PropertyOrderChanged".
  */
+// [api(core)]
 inline CoreEventArgsPtr CoreEventArgsPropertyOrderChanged(const PropertyObjectPtr& propOwner, const ListPtr<IString>& propertyOrder, const StringPtr& path)
 {
     CoreEventArgsPtr obj(CoreEventArgsPropertyOrderChanged_Create(propOwner, propertyOrder, path));

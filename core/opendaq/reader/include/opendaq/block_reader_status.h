@@ -31,6 +31,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief IBlockReaderStatus inherits from IReaderStatus to expand information returned read function
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IBlockReaderStatus, IReaderStatus)
 {
     /*!
@@ -43,6 +44,7 @@ DECLARE_OPENDAQ_INTERFACE(IBlockReaderStatus, IReaderStatus)
 };
 /*!@}*/
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY (
     LIBRARY_FACTORY, BlockReaderStatus,
     IEventPacket*, eventPacket,

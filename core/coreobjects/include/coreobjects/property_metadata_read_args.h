@@ -39,6 +39,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * Listeners of such events are expected to always override the current value
  * via the `setValue` method.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IPropertyMetadataReadArgs, IEventArgs)
 {
     /*!
@@ -71,6 +72,7 @@ DECLARE_OPENDAQ_INTERFACE(IPropertyMetadataReadArgs, IEventArgs)
  * @brief Creates a new PropertyMetadataReadArgs object with a given property that owns the metadata field.
  * @param prop The property that owns the metadata field.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(
     LIBRARY_FACTORY, PropertyMetadataReadArgs,
     IProperty*, prop

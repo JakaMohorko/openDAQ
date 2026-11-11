@@ -37,6 +37,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * The configuration interface allows for modifying the list of properties, the class's name, parent, and the
  * sorting order of properties. To build the Class, the `build` method is used.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IPropertyObjectClassBuilder, IBaseObject)
 {
     /*!
@@ -133,6 +134,7 @@ DECLARE_OPENDAQ_INTERFACE(IPropertyObjectClassBuilder, IBaseObject)
  * @brief Creates a property object class configuration object with a given name.
  * @param name The name of the class.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, PropertyObjectClassBuilder, IPropertyObjectClassBuilder,
     IString*, name
@@ -143,6 +145,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  * @param manager The Property object class manager object.
  * @param name The name of the class.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, PropertyObjectClassBuilderWithManager, IPropertyObjectClassBuilder,
     ITypeManager*, manager,

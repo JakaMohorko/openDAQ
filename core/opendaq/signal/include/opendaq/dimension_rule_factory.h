@@ -39,6 +39,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * The scale and offset are stored within the `parameters` member of the Rule object
  * with the scale being at the first position of the list, and the offset at the second.
  */
+// [api(module)]
 inline DimensionRulePtr LinearDimensionRule(const NumberPtr& delta,
                                             const NumberPtr& start,
                                             const SizeT& size)
@@ -55,6 +56,7 @@ inline DimensionRulePtr LinearDimensionRule(const NumberPtr& delta,
  *
  * The list is stored within the `parameters` member of the Rule object.
  */
+// [api(module)]
 inline DimensionRulePtr ListDimensionRule(const ListPtr<INumber>& list)
 {
     DimensionRulePtr obj(ListDimensionRule_Create(list));
@@ -69,6 +71,7 @@ inline DimensionRulePtr ListDimensionRule(const ListPtr<INumber>& list)
  * @param base The base of the logarithm.
  * @param size The size of the dimension described by the rule.
  */
+// [api(module)]
 inline DimensionRulePtr LogarithmicDimensionRule(const NumberPtr& delta,
                                                  const NumberPtr& start,
                                                  const NumberPtr& base,
@@ -84,6 +87,7 @@ inline DimensionRulePtr LogarithmicDimensionRule(const NumberPtr& delta,
  * @param type The type of the Dimension rule
  * @param parameters Tha parameters of the Dimension rule
  */
+// [api(module)]
 inline DimensionRulePtr DimensionRule(DimensionRuleType type, const DictPtr<IString, IBaseObject> parameters)
 {
     DimensionRulePtr obj(DimensionRule_Create(type, parameters));
@@ -93,6 +97,7 @@ inline DimensionRulePtr DimensionRule(DimensionRuleType type, const DictPtr<IStr
 /*!
  * @brief Creates a Data rule builder with no parameters.
  */
+// [api(module)]
 inline DimensionRuleBuilderPtr DimensionRuleBuilder()
 {
     DimensionRuleBuilderPtr obj(DimensionRuleBuilder_Create());
@@ -104,6 +109,7 @@ inline DimensionRuleBuilderPtr DimensionRuleBuilder()
  * @brief Dimension rule copy factory that creates a builder Rule object from a possibly non-configurable Rule.
  * @param ruleToCopy The rule of which configuration should be copied.
  */
+// [api(module)]
 inline DimensionRuleBuilderPtr DimensionRuleBuilderCopy(const DimensionRulePtr& rule)
 {
     DimensionRuleBuilderPtr obj(DimensionRuleBuilderFromExisting_Create(rule));
@@ -113,6 +119,7 @@ inline DimensionRuleBuilderPtr DimensionRuleBuilderCopy(const DimensionRulePtr& 
 /*!
  * @brief Creates the Struct type object that defines the Dimension rule struct.
  */
+// [api(module)]
 inline StructTypePtr DimensionRuleStructType()
 {
     return StructType("DimensionRule",
@@ -125,6 +132,7 @@ inline StructTypePtr DimensionRuleStructType()
  * @brief Creates a DimensionRule using Builder
  * @param builder DimensionRule Builder
  */
+// [api(module)]
 inline DimensionRulePtr DimensionRuleFromBuilder(const DimensionRuleBuilderPtr& builder)
 {
     DimensionRulePtr obj(DimensionRuleFromBuilder_Create(builder));

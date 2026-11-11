@@ -28,6 +28,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class StructBuilderImpl : public ImplementationOf<IStructBuilder>
 {
 public:

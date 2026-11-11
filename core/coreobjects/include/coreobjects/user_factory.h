@@ -32,6 +32,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * Hashed passwords should follow the Modular Crypt Format. For security purposes, hashed passwords are preferred.
  * @param groups The list of group IDs which the user belongs to.
  */
+// [api(application)]
 inline UserPtr User(const StringPtr& username, const StringPtr& passwordHash, const ListPtr<IString> groups = nullptr)
 {
     UserPtr obj(User_Create(username, passwordHash, groups));

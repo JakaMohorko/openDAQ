@@ -33,6 +33,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * For String type signals, the string data must be encoded as UTF-8 strings. The string length is
  * determined by the `sampleMemSize` parameter, and the string does not need to be null-terminated.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(
     LIBRARY_FACTORY, BinaryDataPacket,
     IDataPacket, createBinaryDataPacket,
@@ -56,6 +57,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(
  * For String type signals, the string data must be encoded as UTF-8 strings. The string length is
  * determined by the `sampleMemSize` parameter, and the string does not need to be null-terminated.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(
     LIBRARY_FACTORY, BinaryDataPacketWithExternalMemory,
     IDataPacket, createBinaryDataPacketWithExternalMemory,

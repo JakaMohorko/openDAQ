@@ -29,6 +29,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Provides protected access that allows changing read-only property values of a Property object.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IPropertyObjectProtected, IBaseObject)
 {
     /*!

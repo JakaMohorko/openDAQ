@@ -23,6 +23,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class EndUpdateEventArgsImpl : public EventArgsBase<IEndUpdateEventArgs>
 {
 public:

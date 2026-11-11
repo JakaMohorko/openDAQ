@@ -20,6 +20,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class ReferenceDomainInfoImpl : public GenericStructImpl<IReferenceDomainInfo, IStruct>
 {
 public:

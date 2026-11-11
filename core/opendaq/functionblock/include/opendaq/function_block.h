@@ -51,6 +51,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * Function blocks also provide a status signal, through which a status packet is sent whenever a connection to a
  * new input port is formed, or when the status changes.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IFunctionBlock, IFolder)
 {
     /*!

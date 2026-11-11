@@ -54,6 +54,7 @@ private:
     bool running{ false };
 };
 
+// [api(core)]
 class SchedulerImpl final : public ImplementationOf<IScheduler>
 {
 public:

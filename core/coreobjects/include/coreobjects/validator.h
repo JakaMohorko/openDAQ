@@ -39,6 +39,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * "value == 5" would reject any value that is not equal to 5.
  */
 
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IValidator, IBaseObject)
 {
     /*!
@@ -69,6 +70,7 @@ DECLARE_OPENDAQ_INTERFACE(IValidator, IBaseObject)
  * @brief Creates a Validator with the given evaluation expression.
  * @param eval The evaluation expression used for validation.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, Validator, IString*, eval)
 
 /*!@}*/

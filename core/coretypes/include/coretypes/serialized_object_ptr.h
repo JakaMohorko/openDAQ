@@ -38,6 +38,7 @@ struct InterfaceToSmartPtr<ISerializedObject>
  * @{
  */
 
+// [api(module)]
 class SerializedObjectPtr : public ObjectPtr<ISerializedObject>
 {
 public:

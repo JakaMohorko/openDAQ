@@ -28,6 +28,7 @@ class ChannelImpl;
 
 using Channel = ChannelImpl<>;
 
+// [api(module)]
 template <typename... Interfaces>
 class ChannelImpl : public FunctionBlockImpl<IChannel, Interfaces...>
 {

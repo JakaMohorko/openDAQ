@@ -63,6 +63,7 @@ protected:
     TFunctor* functor;
 };
 
+// [api(core)]
 template <typename TFunctor>
 class ProcedureBase : public ImplementationOf<IProcedure, ICoreType>
                     , public ProcedureFunctor<TFunctor>
@@ -111,6 +112,7 @@ protected:
     }
 };
 
+// [api(core)]
 template <typename TFunctor, std::size_t ArgCount = FunctionTraits<TFunctor>::Arity>
 class ProcedureImpl : public ProcedureBase<TFunctor>
 {
@@ -177,6 +179,7 @@ public:
     }
 };
 
+// [api(core)]
 class ProcedureNull : public ImplementationOf<IProcedure, ICoreType>
 {
 public:

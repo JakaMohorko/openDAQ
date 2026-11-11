@@ -20,6 +20,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class WeakRefImpl final : public ImplementationOf<IWeakRef>
 {
 public:

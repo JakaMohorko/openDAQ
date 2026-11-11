@@ -48,6 +48,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * object (nullptr for configuration statuses). Removing streaming statuses also triggers said Core event with
  * "Removed" as the value and nullptr for the streaming object parameters.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IConnectionStatusContainerPrivate, IBaseObject)
 {
     /*!

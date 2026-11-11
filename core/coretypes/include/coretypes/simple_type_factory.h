@@ -30,6 +30,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Creates a SimpleType from a given CoreType
  * @param coreType The core type that will be wrapped by the SimpleType
  */
+// [api(module)]
 inline ObjectPtr<ISimpleType> SimpleType(CoreType coreType)
 {
     return {SimpleType_Create(coreType)};

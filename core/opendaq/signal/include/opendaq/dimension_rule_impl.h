@@ -22,6 +22,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class DimensionRuleImpl : public GenericStructImpl<IDimensionRule, IStruct, IRulePrivate>
 {
 public:

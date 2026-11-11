@@ -37,6 +37,7 @@ class FunctionBlockImpl;
 
 using FunctionBlock = FunctionBlockImpl<>;
 
+// [api(module)]
 template <typename TInterface, typename... Interfaces>
 class FunctionBlockImpl : public SignalContainerImpl<TInterface, IInputPortNotifications, Interfaces...>
 {
@@ -73,20 +74,29 @@ public:
     static ConstCharPtr SerializeId();
     static ErrCode Deserialize(ISerializedObject* serialized, IBaseObject* context, IBaseObject** obj);
 
+    // [api(module, override)]
     virtual SignalPtr onGetStatusSignal();
 
+    // [api(module, override)]
     virtual bool onAcceptsSignal(const InputPortPtr& port, const SignalPtr& signal);
+    // [api(module, override)]
     virtual void onConnected(const InputPortPtr& port);
+    // [api(module, override)]
     virtual void onDisconnected(const InputPortPtr& port);
+    // [api(module, override)]
     virtual void onPacketReceived(const InputPortPtr& port);
 
     static ErrCode Deserialize(ISerializedObject* serialized, IBaseObject* context, IFunction* factoryCallback, IBaseObject** obj);
 
 protected:
+    // [api(module)]
     FunctionBlockTypePtr type;
+    // [api(module)]
     LoggerComponentPtr loggerComponent;
+    // [api(module)]
     FolderConfigPtr inputPorts;
 
+    // [api(module)]
     InputPortConfigPtr createAndAddInputPort(const std::string& localId,
                                              PacketReadyNotification notificationMethod,
                                              BaseObjectPtr customData = nullptr,
@@ -94,26 +104,36 @@ protected:
                                              const PermissionsPtr& permissions = nullptr,
                                              LockingStrategy lockingStrategy = LockingStrategy::OwnLock);
 
+    // [api(module)]
     void addInputPort(const InputPortPtr& inputPort);
+    // [api(module)]
     void removeInputPort(const InputPortConfigPtr& inputPort);
 
+    // [api(module, override)]
     void removed() override;
 
+    // [api(module, override)]
     void serializeCustomObjectValues(const SerializerPtr& serializer, bool forUpdate) override;
+    // [api(core)]
     void updateInputPort(const std::string& localId, const SerializedObjectPtr& obj, const BaseObjectPtr& context);
 
+    // [api(core)]
     void deserializeCustomObjectValues(const SerializedObjectPtr& serializedObject,
                                        const BaseObjectPtr& context,
                                        const FunctionPtr& factoryCallback) override;
 
+    // [api(module, override)]
     void updateObject(const SerializedObjectPtr& obj, const BaseObjectPtr& context) override;
+    // [api(module, override)]
     void onUpdatableUpdateEnd(const BaseObjectPtr& context) override;
 
+    // [api(core)]
     template <class Impl>
     static BaseObjectPtr DeserializeFunctionBlock(const SerializedObjectPtr& serialized,
                                                   const BaseObjectPtr& context,
                                                   const FunctionPtr& factoryCallback);
 
+    // [api(core)]
     static void DeserializeVersion(const SerializedObjectPtr& serialized,
                                    const BaseObjectPtr& context,
                                    const FunctionPtr& factoryCallback,

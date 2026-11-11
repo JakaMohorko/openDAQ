@@ -121,6 +121,7 @@ struct IDataDescriptorBuilder;
  * To calculate the value with `PostScaling` configured, take the values of the packet's data buffer and apply the post scaling to each
  * value in the buffer: `Value = PostScaling(Value)`, eg. `Value = Value * Scale + Offset`
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IDataDescriptor, IBaseObject)
 {
     /*!
@@ -258,6 +259,7 @@ DECLARE_OPENDAQ_INTERFACE(IDataDescriptor, IBaseObject)
  * @brief Creates a Data Descriptor using Builder
  * @param builder Data Descriptor Builder
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, DataDescriptorFromBuilder, IDataDescriptor,
     IDataDescriptorBuilder*, builder

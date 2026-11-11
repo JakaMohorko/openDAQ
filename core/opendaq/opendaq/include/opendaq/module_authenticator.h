@@ -34,6 +34,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Module authenticator interface. 
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IModuleAuthenticator, IBaseObject)
 {
     /*!
@@ -42,6 +43,7 @@ DECLARE_OPENDAQ_INTERFACE(IModuleAuthenticator, IBaseObject)
      * @param[out] binaryValid The binarys checksum matches and it's considered valid.
      * @param[out] vendorKey Key for the vendor to identify if their certificate was used to authenticate the module.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC authenticateModuleBinary(Bool* binaryValid, IString** vendorKey, IString* binaryPath) = 0;
 
     /*!
@@ -53,6 +55,7 @@ DECLARE_OPENDAQ_INTERFACE(IModuleAuthenticator, IBaseObject)
      *
      * @param logger The instance's logger.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC setLogger(ILogger* logger) = 0;
 };
 /*!@}*/
@@ -61,6 +64,7 @@ DECLARE_OPENDAQ_INTERFACE(IModuleAuthenticator, IBaseObject)
 // The function takes the name of the called method and a dictionary of its parameters,
 // and returns a dictionary with one entry per output parameter, named as in the interface.
 // [interfaceLibrary(IFunction, "coretypes")]
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, FunctionModuleAuthenticator, IModuleAuthenticator, IFunction*, function)
 
 END_NAMESPACE_OPENDAQ

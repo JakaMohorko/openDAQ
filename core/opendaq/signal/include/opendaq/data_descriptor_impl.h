@@ -27,6 +27,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class DataDescriptorImpl : public GenericStructImpl<IDataDescriptor, IStruct, IScalingCalcPrivate, IDataRuleCalcPrivate>
 {
 public:

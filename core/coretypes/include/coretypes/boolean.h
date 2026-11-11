@@ -39,6 +39,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * ErrCode createBoolean(IBoolean** obj, Bool value)
  * @endcode
  */
+// [api(application, coretype)]
 DECLARE_OPENDAQ_INTERFACE(IBoolean, IBaseObject)
 {
     /*!
@@ -62,7 +63,9 @@ DECLARE_OPENDAQ_INTERFACE(IBoolean, IBaseObject)
 
 /*!@}*/
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, Boolean, const Bool, value)
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_FUNC_WITH_INTERFACE(
     LIBRARY_FACTORY,
     BoolObject,

@@ -37,6 +37,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @param defaultConfig The property object, to be cloned and returned, each time user creates default
  * configuration object. This way each instance of the function block has its own configuration object.
  */
+// [api(module)]
 inline StreamingTypePtr StreamingType(const StringPtr& id,
                                               const StringPtr& name,
                                               const StringPtr& description,
@@ -50,6 +51,7 @@ inline StreamingTypePtr StreamingType(const StringPtr& id,
 /*!
  * @brief Creates the Struct type object that defines the Function block type struct.
  */
+// [api(module)]
 inline StructTypePtr StreamingTypeStructType()
 {
     return StructType("StreamingType",

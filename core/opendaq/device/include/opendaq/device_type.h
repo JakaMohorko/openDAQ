@@ -36,6 +36,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Provides information on what device type can be created by a given module. Can be used
  * to obtain the default configuration used when either adding/creating a new device.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IDeviceType, IComponentType)
 {
     /*
@@ -62,6 +63,7 @@ DECLARE_OPENDAQ_INTERFACE(IDeviceType, IComponentType)
  * @param defaultConfig The property object, to be cloned and returned, each time user creates default
  * configuration object. This way each instance of the device has its own configuration object.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(
     LIBRARY_FACTORY, DeviceType,
     IString*, id,

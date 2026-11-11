@@ -19,6 +19,7 @@
 #include <opendaq/server.h>
 #include <opendaq/server_type_ptr.h>
 
+// [api(core)]
 class MockServerImpl : public daq::Server
 {
 public:
@@ -27,6 +28,7 @@ public:
 protected:
 };
 
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     INTERNAL_FACTORY, MockServer, daq::IServer,
     const daq::StringPtr&, id,

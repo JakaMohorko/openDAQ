@@ -32,6 +32,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * Binary data is just a continuously allocated memory of a specific size. A client can get a pointer to
  * internal buffer and size it.
  */
+// [api(application, coretype)]
 DECLARE_OPENDAQ_INTERFACE(IBinaryData, IBaseObject)
 {
     /*!
@@ -48,6 +49,7 @@ DECLARE_OPENDAQ_INTERFACE(IBinaryData, IBaseObject)
 
 /*!@}*/
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, BinaryData, const SizeT, size)
 
 END_NAMESPACE_OPENDAQ

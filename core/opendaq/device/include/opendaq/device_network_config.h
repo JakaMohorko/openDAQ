@@ -39,6 +39,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * The device must be designated as the root device to enable the use of this interface's methods.
  */
 
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IDeviceNetworkConfig, IBaseObject)
 {
     /*!

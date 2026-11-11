@@ -19,6 +19,7 @@
 #include <opendaq/module.h>
 #include <opendaq/context_ptr.h>
 
+// [api(core)]
 class MockDeviceModuleImpl : public daq::ImplementationOf<daq::IModule>
 {
 public:
@@ -50,4 +51,5 @@ private:
     size_t cnt = 0;
 };
 
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(INTERNAL_FACTORY, MockDeviceModule, daq::IModule, daq::IContext*, ctx)

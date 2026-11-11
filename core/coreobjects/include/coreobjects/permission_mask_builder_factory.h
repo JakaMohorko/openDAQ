@@ -27,6 +27,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Creates a permission mask builder object.
  */
+// [api(application)]
 inline PermissionMaskBuilderPtr PermissionMaskBuilder()
 {
     PermissionMaskBuilderPtr obj(PermissionMaskBuilder_Create());
@@ -38,6 +39,7 @@ inline PermissionMaskBuilderPtr PermissionMaskBuilder()
  * @param permissionMask Permission mask defined as 64-bit integer where each bit corresponds
  * to a specific permission defined in Permission enum.
  */
+// [api(application)]
 inline PermissionMaskBuilderPtr PermissionMaskBuilder(Int permissionMask)
 {
     PermissionMaskBuilderPtr obj(PermissionMaskBuilderFromMask_Create(permissionMask));

@@ -30,6 +30,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Creates a property object class builder object with a given name.
  * @param name The name of the class.
  */
+// [api(module)]
 inline PropertyObjectClassBuilderPtr PropertyObjectClassBuilder(const StringPtr& name)
 {
     PropertyObjectClassBuilderPtr obj(PropertyObjectClassBuilder_Create(name));
@@ -41,6 +42,7 @@ inline PropertyObjectClassBuilderPtr PropertyObjectClassBuilder(const StringPtr&
  * @param manager The Property object class manager object.
  * @param name The name of the class.
  */
+// [api(module)]
 inline PropertyObjectClassBuilderPtr PropertyObjectClassBuilder(const TypeManagerPtr& manager, const StringPtr& name)
 {
     PropertyObjectClassBuilderPtr obj(PropertyObjectClassBuilderWithManager_Create(manager, name));
@@ -51,6 +53,7 @@ inline PropertyObjectClassBuilderPtr PropertyObjectClassBuilder(const TypeManage
  * @brief Creates a PropertyObjectClass using Builder
  * @param builder PropertyObjectClass Builder
  */
+// [api(module)]
 inline PropertyObjectClassPtr PropertyObjectClassFromBuilder(const PropertyObjectClassBuilderPtr& builder)
 {
     PropertyObjectClassPtr obj(PropertyObjectClassFromBuilder_Create(builder));

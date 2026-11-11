@@ -37,6 +37,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Represents configuration interface for mirrored signals. Allows selecting streaming data sources per signal.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IMirroredSignalConfig, ISignalConfig)
 {
     /*!

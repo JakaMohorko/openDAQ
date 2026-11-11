@@ -79,6 +79,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * each device to expose a list of custom properties such as sample rate, scaling factor and many
  * others. By default, openDAQ devices have the UserName and Location string Properties.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IDevice, IFolder)
 {
     /*!

@@ -35,6 +35,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief A thread-pool scheduler that supports scheduling one-off functions as well as
  * dependency graphs.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IScheduler, IBaseObject)
 {
     /*!
@@ -67,12 +68,14 @@ DECLARE_OPENDAQ_INTERFACE(IScheduler, IBaseObject)
      * @param[out] awaitable The object representing the state and result of the execution.
      * @retval OPENDAQ_ERR_SCHEDULER_STOPPED when the scheduler already stopped and is not accepting any more work.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC scheduleGraph(ITaskGraph* graph, IAwaitable** awaitable) = 0;
 
     /*!
      * @brief Cancels all outstanding work and waits for the remaining to complete.
      * After this point the scheduler does not allow any new work or graphs for scheduling.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC stop() = 0;
 
     /*!
@@ -135,12 +138,14 @@ DECLARE_OPENDAQ_INTERFACE(IScheduler, IBaseObject)
 };
 /*!@}*/
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY(
     LIBRARY_FACTORY, Scheduler,
     ILogger*, logger,
     SizeT, numWorkers
 )
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(
     LIBRARY_FACTORY, SchedulerWithMainLoop,
     IScheduler, createSchedulerWithMainLoop,

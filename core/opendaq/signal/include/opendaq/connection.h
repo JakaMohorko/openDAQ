@@ -44,12 +44,14 @@ BEGIN_NAMESPACE_OPENDAQ
  *
  * The Connection has a reference to the connected Signal and Input port.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IConnection, IBaseObject)
 {
     /*!
      * @brief Places a packet at the back of the queue.
      * @param packet The packet to be enqueued.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC enqueue(IPacket* packet) = 0;
 
     /*!
@@ -58,6 +60,7 @@ DECLARE_OPENDAQ_INTERFACE(IConnection, IBaseObject)
      *
      * The connection notifies the listener on the same thread that this method was called.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC enqueueOnThisThread(IPacket * packet) = 0;
 
     /*!
@@ -65,6 +68,7 @@ DECLARE_OPENDAQ_INTERFACE(IConnection, IBaseObject)
      * @param[out] packet The removed packet or @c nullptr if the connection has no packets.
      * @retval OPENDAQ_NO_MORE_ITEMS When the connection does not hold any packets.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC dequeue(IPacket** packet) = 0;
 
     /*!
@@ -123,6 +127,7 @@ DECLARE_OPENDAQ_INTERFACE(IConnection, IBaseObject)
      * After calling the method, the packet should not be touched again. The ownership of the packet
      * is taken by underlying connections and it could be destroyed before the function returns.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC enqueueAndStealRef(IPacket* packet) = 0;
 
     // [elementType(packets, IPacket)]
@@ -130,6 +135,7 @@ DECLARE_OPENDAQ_INTERFACE(IConnection, IBaseObject)
      * @brief Places multiple packets at the back of the queue.
      * @param packets The packets to be enqueued.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC enqueueMultiple(IList* packets) = 0;
 
     // [elementType(packets, IPacket), overloadFor(enqueueMultiple), stealRef(packets)]
@@ -140,6 +146,7 @@ DECLARE_OPENDAQ_INTERFACE(IConnection, IBaseObject)
      * After calling the method, the packets should not be touched again. The ownership of the packets
      * is taken by underlying connections and it could be destroyed before the function returns.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC enqueueMultipleAndStealRef(IList* packets) = 0;
 
     // [elementType(packets, IPacket)]
@@ -149,6 +156,7 @@ DECLARE_OPENDAQ_INTERFACE(IConnection, IBaseObject)
      *
      * Removing all packets can be more efficient than dequeuing packet by packet in heavily loaded systems.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC dequeueAll(IList** packets) = 0;
 
     /*!
@@ -183,10 +191,12 @@ DECLARE_OPENDAQ_INTERFACE(IConnection, IBaseObject)
      *
      * The connection schedules the `onPacketReceived` notification.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC enqueueWithScheduler(IPacket* packet) = 0;
 };
 /*!@}*/
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(
     LIBRARY_FACTORY, Connection,
     IInputPort*, inputPort,

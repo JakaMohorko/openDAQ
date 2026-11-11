@@ -26,6 +26,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class ErrorInfoImpl : public ImplementationOf<IErrorInfo, IFreezable, ISerializable>
 {
 public:
@@ -86,6 +87,7 @@ private:
     IErrorInfo* errorInfo;
 };
 
+// [api(core)]
 class ErrorGuardImpl : public ImplementationOf<IErrorGuard>
 {
 public:

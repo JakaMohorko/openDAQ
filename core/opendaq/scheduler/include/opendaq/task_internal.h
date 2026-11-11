@@ -30,6 +30,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Interface for accessing task and graph internals used to schedule them.
  * It should only be used internally inside the scheduler library.
  */
+// [api(core)]
 DECLARE_OPENDAQ_INTERFACE(ITaskInternal, IBaseObject)
 {
     virtual tf::Task& INTERFACE_FUNC getTask() = 0;

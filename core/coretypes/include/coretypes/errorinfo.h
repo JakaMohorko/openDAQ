@@ -54,12 +54,14 @@ BEGIN_NAMESPACE_OPENDAQ
  * @endcode
  */
 
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IErrorInfo, IBaseObject)
 {
     /*!
      * @brief Sets the message of the error.
      * @param message Error description.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC setMessage(IString* message) = 0;
     /*!
      * @brief Gets the message of the error.
@@ -70,6 +72,7 @@ DECLARE_OPENDAQ_INTERFACE(IErrorInfo, IBaseObject)
      * @brief Sets the source of the error.
      * @param source Error source.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC setSource(IString* source) = 0;
     /*!
      * @brief Gets the source of the error.
@@ -81,6 +84,7 @@ DECLARE_OPENDAQ_INTERFACE(IErrorInfo, IBaseObject)
      * @brief Sets the file name where the error occurred.
      * @param fileName File name.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC setFileName(ConstCharPtr fileName) = 0;
 
     /*!
@@ -93,6 +97,7 @@ DECLARE_OPENDAQ_INTERFACE(IErrorInfo, IBaseObject)
      * @brief Sets the line number in the file where the error occurred.
      * @param fileLine Line number.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC setFileLine(Int fileLine) = 0;
 
     /*!
@@ -105,6 +110,7 @@ DECLARE_OPENDAQ_INTERFACE(IErrorInfo, IBaseObject)
      * @brief Sets the error code.
      * @param errorCode Error code.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC setErrorCode(ErrCode errorCode) = 0;
 
     /*!
@@ -117,6 +123,7 @@ DECLARE_OPENDAQ_INTERFACE(IErrorInfo, IBaseObject)
      * @brief Sets whether this error was caused by a previous error.
      * @param prevErrCode The error code of the previous error.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC setPreviousErrorCode(ErrCode prevErrCode) = 0;
 
     /*!
@@ -134,6 +141,7 @@ DECLARE_OPENDAQ_INTERFACE(IErrorInfo, IBaseObject)
 
 /*!@}*/
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, ErrorInfo)
 
 END_NAMESPACE_OPENDAQ

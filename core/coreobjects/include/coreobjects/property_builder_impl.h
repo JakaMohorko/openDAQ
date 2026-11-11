@@ -26,6 +26,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class PropertyBuilderImpl : public ImplementationOf<IPropertyBuilder>
 {
 protected:

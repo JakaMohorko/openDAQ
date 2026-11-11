@@ -24,6 +24,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class StringImpl : public ImplementationOf<IString, IConvertible, ICoreType, IComparable, ISerializable>
 {
 public:

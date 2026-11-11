@@ -32,6 +32,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Builder component of Block reader objects. Contains setter methods to configure the Block reader parameters
  * and a `build` method that builds the Unit object.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IBlockReaderBuilder, IBaseObject)
 {
     /*!
@@ -158,6 +159,7 @@ DECLARE_OPENDAQ_INTERFACE(IBlockReaderBuilder, IBaseObject)
     virtual ErrCode INTERFACE_FUNC getSkipEvents(Bool* skipEvents) = 0;
 };
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, BlockReaderBuilder, IBlockReaderBuilder)
 
 /*!@}*/

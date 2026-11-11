@@ -41,6 +41,7 @@ inline SyncMode syncModeFromName(const StringPtr& name)
     DAQ_THROW_EXCEPTION(NotFoundException, "Unknown sync mode");
 }
 
+// [api(core)]
 template <typename TInterface = IPropertyObject, typename... Interfaces>
 class GenericSyncInterfaceImpl : public GenericPropertyObjectImpl<TInterface, ISyncInterface, Interfaces...>
 {
@@ -80,6 +81,7 @@ protected:
     #pragma warning(disable : 4275)
 #endif
 
+// [api(core)]
 class PUBLIC_EXPORT SyncInterfaceBaseImpl : public GenericSyncInterfaceImpl<IPropertyObject, ISyncInterfaceInternal>
 {
 public:

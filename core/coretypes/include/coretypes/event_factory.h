@@ -22,6 +22,7 @@ BEGIN_NAMESPACE_OPENDAQ
 template <typename TSender, typename TEventArgs>
 class EventPtr;
 
+// [api(application)]
 template <typename TSender, typename TEventArgs>
 EventPtr<TSender, TEventArgs> EventObject()
 {

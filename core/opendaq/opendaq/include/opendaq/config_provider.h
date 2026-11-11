@@ -33,6 +33,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * - if a provider is trying to override an existing value, it has to have the same type. For example provider can not replace integer value with string or object with list
  * - if a provider is overriding a list, it replaces old list items with a new one. 
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IConfigProvider, IBaseObject)
 {
     // [returnSelf]
@@ -41,12 +42,16 @@ DECLARE_OPENDAQ_INTERFACE(IConfigProvider, IBaseObject)
      * @brief Populate the existing options dictionary with variables from config provider
      * @param options The options dictionary
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC populateOptions(IDict* options) = 0;
 };
 /*!@}*/
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, JsonConfigProvider, IConfigProvider, IString*, filename)
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, EnvConfigProvider, IConfigProvider)
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, CmdLineArgsConfigProvider, IConfigProvider, IList*, cmdLineArgs)
 
 END_NAMESPACE_OPENDAQ

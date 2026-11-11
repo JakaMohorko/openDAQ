@@ -17,6 +17,7 @@
 #pragma once
 #include <opendaq/function_block_impl.h>
 
+// [api(core)]
 class MockFunctionBlockImpl : public daq::FunctionBlock
 {
 public:
@@ -40,6 +41,7 @@ private:
     daq::SizeT nesteadFbCount;
 };
 
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     INTERNAL_FACTORY,
     MockFunctionBlock, daq::IFunctionBlock,
@@ -49,6 +51,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     daq::IString*, localId,
     daq::IPropertyObject*, config)
 
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     INTERNAL_FACTORY,
     MockFunctionBlockInputPorts, daq::IFunctionBlock,
@@ -58,6 +61,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     daq::IString*, localId,
     daq::IPropertyObject*, config)
 
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     INTERNAL_FACTORY,
     MockFunctionBlockOutputPorts, daq::IFunctionBlock,

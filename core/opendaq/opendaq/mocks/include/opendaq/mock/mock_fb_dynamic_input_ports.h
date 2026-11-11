@@ -17,6 +17,7 @@
 #pragma once
 #include <opendaq/function_block_impl.h>
 
+// [api(core)]
 class MockFunctionBlockDynamicInputPortImpl : public daq::FunctionBlock
 {
 public:
@@ -37,6 +38,7 @@ private:
     size_t inputPortCount = 0;
 };
 
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     INTERNAL_FACTORY,
     MockFunctionBlockDynamicInputPort, daq::IFunctionBlock,

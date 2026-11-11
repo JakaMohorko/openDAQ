@@ -34,6 +34,7 @@ BEGIN_NAMESPACE_OPENDAQ
 template <typename Interface = IReader>
 class ReaderImpl;
 
+// [api(core)]
 template <typename Interface>
 class ReaderImpl : public ImplementationOfWeak<Interface, IReaderConfig, IInputPortNotifications>
 {

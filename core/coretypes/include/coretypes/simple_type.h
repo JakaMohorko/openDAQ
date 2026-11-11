@@ -35,12 +35,14 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Simple type created from a CoreType. The name of the type matches that of the CoreType
  * used for its construction (eg. ctInt == "int"
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(ISimpleType, IType)
 {
 };
 
 /*!@}*/
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, SimpleType, ISimpleType,
     CoreType, coreType

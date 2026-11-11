@@ -22,6 +22,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 template <typename TFunctor>
 class CustomFunctionImpl : public ImplementationOf<IFunction, ICoreType>
 {

@@ -35,6 +35,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief As with Data packets, Event packets travel along the signal paths. They are used to
  * notify recipients of any relevant changes to the signal sending the packet.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IEventPacket, IPacket)
 {
     /*!
@@ -58,6 +59,7 @@ DECLARE_OPENDAQ_INTERFACE(IEventPacket, IPacket)
  * @param id The ID of the event.
  * @param params The <String, BaseObject> dictionary containing the event parameters.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, EventPacket, IString*, id, IDict*, params)
 
 /*!
@@ -68,6 +70,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, EventPacket, IString*, id, IDict*
  * The ID of the packet is "DATA_DESCRIPTOR_CHANGED". Its parameters dictionary contains the keys "DataDescriptor"
  * and "DomainDataDescriptor", carrying their respective Signal descriptor objects as values.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY,
                                         DataDescriptorChangedEventPacket,
                                         IEventPacket,
@@ -83,6 +86,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY,
  * The ID of the packet is "IMPLICIT_DOMAIN_GAP_DETECTED". Its parameters dictionary contains the key "Diff", which holds
  * the size of the gap. The size can be negative, in which case it is an overlap of samples.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY,
                                              ImplicitDomainGapDetectedEventPacket,
                                              IEventPacket,

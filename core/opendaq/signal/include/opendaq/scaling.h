@@ -32,6 +32,7 @@ struct IScalingBuilder;
 /*!
  * @brief Enumeration of available scaling types
  */
+// [api(application)]
 enum class ScalingType
 {
     Other = 0, 
@@ -64,6 +65,7 @@ enum class ScalingType
  *
  * The linear scaling output is calculated as follows: <em>inputValue * scale + offset</em>
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IScaling, IBaseObject)
 {
     /*!
@@ -116,6 +118,7 @@ DECLARE_OPENDAQ_INTERFACE(IScaling, IBaseObject)
  * @param inputDataType The scaling's input data type.
  * @param outputDataType The scaling's output data type.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, LinearScaling, IScaling,
     INumber*, scale,
@@ -132,6 +135,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  * @param scalingType The type of the scaling.
  * @param parameters Tha parameters of the Dimension rule.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, Scaling, IScaling,
     SampleType, inputDataType,
@@ -145,6 +149,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  *
  * @param builder Scaling Builder
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, ScalingFromBuilder, IScaling,
     IScalingBuilder*, builder

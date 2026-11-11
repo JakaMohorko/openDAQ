@@ -30,6 +30,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Internal Context interface used for transferring the Module Manager reference to a new owner.
  */
 
+// [api(core)]
 DECLARE_OPENDAQ_INTERFACE(IContextInternal, IBaseObject)
 {
     /*!

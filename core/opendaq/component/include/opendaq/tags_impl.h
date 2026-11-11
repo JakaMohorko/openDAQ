@@ -26,6 +26,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class TagsImpl : public ImplementationOf<ITags, ITagsPrivate, ISerializable>
 {
 public:

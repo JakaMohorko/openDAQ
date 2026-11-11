@@ -21,6 +21,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class BlockReaderBuilderImpl : public ImplementationOf<IBlockReaderBuilder>
 {
 public:

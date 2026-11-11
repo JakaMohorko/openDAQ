@@ -64,6 +64,7 @@ using DeviceBase = GenericDevice<TInterface, TTraits...>;
 
 using Device = DeviceBase<IDevice>;
 
+// [api(module)]
 template <typename TInterface, typename... Interfaces>
 class GenericDevice : public SignalContainerImpl<TInterface, IDevicePrivate, IDeviceNetworkConfig, Interfaces...>
 {
@@ -77,22 +78,33 @@ public:
                   const StringPtr& className = nullptr,
                   const StringPtr& name = nullptr);
 
+    // [api(module, override)]
     virtual DeviceInfoPtr onGetInfo();
 
+    // [api(module, override)]
     virtual uint64_t onGetTicksSinceOrigin();
 
+    // [api(module, override)]
     DictPtr<IString, IFunctionBlockType> onGetAvailableFunctionBlockTypes() override;
+    // [api(module, override)]
     FunctionBlockPtr onAddFunctionBlock(const StringPtr& typeId, const PropertyObjectPtr& config) override;
+    // [api(module, override)]
     void onRemoveFunctionBlock(const FunctionBlockPtr& functionBlock) override;
 
+    // [api(module, override)]
     virtual ListPtr<IDeviceInfo> onGetAvailableDevices();
+    // [api(module, override)]
     virtual DictPtr<IString, IDeviceType> onGetAvailableDeviceTypes();
+    // [api(module, override)]
     virtual DevicePtr onAddDevice(const StringPtr& connectionString, const PropertyObjectPtr& config);
+    // [api(module, override)]
     virtual void onRemoveDevice(const DevicePtr& device);
+    // [api(module, override)]
     virtual DictPtr<IString, IDevice> onAddDevices(const DictPtr<IString, IPropertyObject>& connectionArgs,
                                                    DictPtr<IString, IInteger> errCodes,
                                                    DictPtr<IString, IErrorInfo> errorInfos);
 
+    // [api(module, override)]
     virtual PropertyObjectPtr onCreateDefaultAddDeviceConfig();
 
     ErrCode INTERFACE_FUNC setName(IString* name) override;
@@ -179,81 +191,125 @@ public:
     ErrCode INTERFACE_FUNC enableCoreEventTrigger() override;
 
 protected:
+    // [api(core)]
     FolderConfigPtr devices;
+    // [api(module, readOnly)]
     IoFolderConfigPtr ioFolder;
+    // [api(module, readOnly)]
     SyncComponentPtr syncComponent;
+    // [api(core)]
     FolderConfigPtr servers;
+    // [api(module)]
     LoggerComponentPtr loggerComponent;
+    // [api(core)]
     bool isRootDevice;
+    // [api(core)]
     UserLockPtr userLock;
+    // [api(module, readOnly)]
     ConnectionStatusContainerPrivatePtr connectionStatusContainer;
+    // [api(core)]
     ListPtr<IDeviceInfo> availableDevicesForUpdate;  // one discovery result for all devices of a configuration load
 
+    // [api(module)]
     template <class ChannelImpl, class... Params>
     ChannelPtr createAndAddChannel(const FolderConfigPtr& parentFolder, const StringPtr& localId, Params&&... params);
+    // [api(module)]
     template <class ChannelImpl, class... Params>
     ChannelPtr createAndAddChannelWithPermissions(const FolderConfigPtr& parentFolder, const StringPtr& localId, const PermissionsPtr& permissions, Params&&... params);
 
+    // [api(module)]
     void removeChannel(const FolderConfigPtr& parentFolder, const ChannelPtr& channel);
+    // [api(module)]
     bool hasChannel(const FolderConfigPtr& parentFolder, const ChannelPtr& channel);
 
+    // [api(core)]
     void addSubDevice(const DevicePtr& device);
+    // [api(core)]
     void removeSubDevice(const DevicePtr& device);
+    // [api(module, override)]
     virtual bool allowAddDevicesFromModules();
+    // [api(module, override)]
     virtual bool allowAddFunctionBlocksFromModules();
 
+    // [api(module)]
     void setDeviceDomain(const DeviceDomainPtr& domain);
 
+    // [api(core)]
     DevicePtr createAndAddSubDevice(const StringPtr& connectionString, const PropertyObjectPtr& config);
 
+    // [api(module)]
     IoFolderConfigPtr addIoFolder(const std::string& localId,
                                   const IoFolderConfigPtr& parent = nullptr,
                                   LockingStrategy lockingStrategy = LockingStrategy::OwnLock);
 
+    // [api(module, override)]
     void serializeCustomObjectValues(const SerializerPtr& serializer, bool forUpdate) override;
+    // [api(core)]
     void updateDevice(const std::string& deviceId,
                       const SerializedObjectPtr& serializedDevice,
                       const BaseObjectPtr& context);
+    // [api(core)]
     void updateIoFolderItem(const FolderPtr& ioFolder,
                             const std::string& localId,
                             const SerializedObjectPtr& item,
                             const BaseObjectPtr& context);
 
+    // [api(core)]
     static void DeserializeVersion(const SerializedObjectPtr& serialized,
                                    const BaseObjectPtr& context,
                                    const FunctionPtr& factoryCallback,
                                    const DeviceInfoPtr& deviceInfo);
 
+    // [api(core)]
     void deserializeCustomObjectValues(const SerializedObjectPtr& serializedObject,
                                        const BaseObjectPtr& context,
                                        const FunctionPtr& factoryCallback) override;
 
+    // [api(module, override)]
     void updateObject(const SerializedObjectPtr& obj, const BaseObjectPtr& context) override;
 
+    // [api(core)]
     void setDeviceDomainNoCoreEvent(const DeviceDomainPtr& domain);
 
+    // [api(module, override)]
     virtual StreamingPtr onAddStreaming(const StringPtr& connectionString, const PropertyObjectPtr& config);
+    // [api(module, override)]
     virtual ServerPtr onAddServer(const StringPtr& typeId, const PropertyObjectPtr& config);
+    // [api(module, override)]
     virtual void onRemoveServer(const ServerPtr& server);
 
+    // [api(module, override)]
     virtual ListPtr<ILogFileInfo> onGetLogFileInfos();
+    // [api(module, override)]
     virtual StringPtr onGetLog(const StringPtr& id, Int size, Int offset);
 
+    // [api(module, override)]
     virtual void onSubmitNetworkConfiguration(const StringPtr& ifaceName, const PropertyObjectPtr& config);
+    // [api(module, override)]
     virtual PropertyObjectPtr onRetrieveNetworkConfiguration(const StringPtr& ifaceName);
+    // [api(module, override)]
     virtual Bool onGetNetworkConfigurationEnabled();
+    // [api(module, override)]
     virtual ListPtr<IString> onGetNetworkInterfaceNames();
 
+    // [api(module, override)]
     virtual std::set<OperationModeType> onGetAvailableOperationModes();
+    // [api(module, override)]
     virtual OperationModeType onGetDefaultOperationMode();
 
+    // [api(core)]
     ListPtr<ILockGuard> getTreeLockGuard();
+    // [api(core)]
     ErrCode updateOperationModeNoCoreEvent(OperationModeType modeType);
+    // [api(core)]
     ErrCode updateOperationModeInternal(OperationModeType modeType);
 
+    // [api(core)]
     DevicePtr getParentDevice();
+    // [api(module)]
     OperationModeType getOperationMode();
 
+    // [api(module)]
     void setSynchronization(const SynchronizationPtr& sync);
 
     class DeviceInfoPtrWrapper : public DeviceInfoPtr
@@ -287,6 +343,7 @@ protected:
         }
     };
 
+    // [api(module)]
     DeviceInfoPtrWrapper deviceInfo;
 
 private:

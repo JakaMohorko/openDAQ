@@ -23,6 +23,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 template <typename TInterface = IPacket, typename ... TInterfaces>
 class PacketImpl : public ImplementationOf<TInterface, TInterfaces ...>
 {

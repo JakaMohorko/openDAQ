@@ -42,6 +42,7 @@ BEGIN_NAMESPACE_OPENDAQ
 
 using UndefinedType = void;
 
+// [api(module)]
 inline ReaderStatusPtr ReaderStatus(const EventPacketPtr& packet = nullptr, 
                                     Bool valid = true, 
                                     const NumberPtr& offset = 0)
@@ -49,6 +50,7 @@ inline ReaderStatusPtr ReaderStatus(const EventPacketPtr& packet = nullptr,
     return ReaderStatus_Create(packet, valid, offset);
 }
 
+// [api(module)]
 inline BlockReaderStatusPtr BlockReaderStatus(const EventPacketPtr& packet = nullptr, 
                                               Bool valid = true, 
                                               const NumberPtr& offset = 0, 
@@ -57,6 +59,7 @@ inline BlockReaderStatusPtr BlockReaderStatus(const EventPacketPtr& packet = nul
     return BlockReaderStatus_Create(packet, valid, offset, readSamples);
 }
 
+// [api(module)]
 inline TailReaderStatusPtr TailReaderStatus(const EventPacketPtr& packet = nullptr, 
                                             Bool valid = true, 
                                             const NumberPtr& offset = 0, 
@@ -65,6 +68,7 @@ inline TailReaderStatusPtr TailReaderStatus(const EventPacketPtr& packet = nullp
     return TailReaderStatus_Create(packet, valid, offset, sufficientHistory);
 }
 
+// [api(module)]
 inline MultiReaderStatusPtr MultiReaderStatus(const EventPacketPtr& mainDescriptor = nullptr,
                                               const DictPtr<IString, IEventPacket>& eventPackets = nullptr, 
                                               Bool valid = true, 
@@ -77,6 +81,7 @@ inline MultiReaderStatusPtr MultiReaderStatus(const EventPacketPtr& mainDescript
  * @brief Creates a reader that eases reading packets from the signal.
  * @param signal The signal to read the packets from.
  */
+// [api(application)]
 inline PacketReaderPtr PacketReader(SignalPtr signal)
 {
     return PacketReader_Create(signal);
@@ -86,6 +91,7 @@ inline PacketReaderPtr PacketReader(SignalPtr signal)
  * @brief Creates a reader that eases reading packets from the port.
  * @param port The input port to read the packets from.
  */
+// [api(application)]
 inline PacketReaderPtr PacketReaderFromPort(InputPortConfigPtr port)
 {
     return PacketReaderFromPort_Create(port);
@@ -99,6 +105,7 @@ inline PacketReaderPtr PacketReaderFromPort(InputPortConfigPtr port)
  * @param domainReadType The sample-type type to read signal domain as. Implicitly convert from actual type to this one if conversion exists.
  * @param timeoutType The type of time-out to use. See @see ReadTimeoutType.
  */
+// [api(application)]
 inline StreamReaderPtr StreamReaderFromPort(InputPortConfigPtr port,
                                             SampleType valueReadType,
                                             SampleType domainReadType,
@@ -116,6 +123,7 @@ inline StreamReaderPtr StreamReaderFromPort(InputPortConfigPtr port,
  * @param domainReadType The sample-type type to read signal domain as. Implicitly convert from actual type to this one if conversion exists.
  * @param timeoutType The type of time-out to use. See @see ReadTimeoutType.
  */
+// [api(application)]
 inline StreamReaderPtr StreamReader(SignalPtr signal,
                                     SampleType valueReadType,
                                     SampleType domainReadType,
@@ -135,6 +143,7 @@ inline StreamReaderPtr StreamReader(SignalPtr signal,
  * @tparam TDomainType The sample-type type to read signal domain as. Implicitly convert from actual type to
  * this one if conversion exists.
  */
+// [api(application)]
 template <typename TValueType = double, typename TDomainType = ClockTick>
 StreamReaderPtr StreamReader(SignalPtr signal, ReadMode mode, ReadTimeoutType timeoutType = ReadTimeoutType::All)
 {
@@ -157,6 +166,7 @@ StreamReaderPtr StreamReader(SignalPtr signal, ReadMode mode, ReadTimeoutType ti
  * @tparam TDomainType The sample-type type to read signal domain as. Implicitly convert from actual type to
  * this one if conversion exists.
  */
+// [api(application)]
 template <typename TValueType = double, typename TDomainType = ClockTick>
 StreamReaderPtr StreamReader(SignalPtr signal, ReadTimeoutType timeoutType = ReadTimeoutType::All)
 {
@@ -175,6 +185,7 @@ StreamReaderPtr StreamReader(SignalPtr signal, ReadTimeoutType timeoutType = Rea
  * @param signal The signal to read the data from.
  * @param timeoutType The type of time-out to use. See @see ReadTimeoutType.
  */
+// [api(application)]
 inline StreamReaderPtr StreamReader(SignalPtr signal, ReadMode mode = ReadMode::Scaled, ReadTimeoutType timeoutType = ReadTimeoutType::All)
 {
     return StreamReader<>(signal, mode, timeoutType);
@@ -191,6 +202,7 @@ inline StreamReaderPtr StreamReader(SignalPtr signal, ReadMode mode = ReadMode::
  * @param domainReadType The sample-type type to read signal domain as. Implicitly convert from actual type to
  * this one if conversion exists.
  */
+// [api(application)]
 inline StreamReaderPtr StreamReaderFromExisting(StreamReaderPtr invalidatedReader, SampleType valueReadType, SampleType domainReadType)
 {
     return StreamReaderFromExisting_Create(invalidatedReader, valueReadType, domainReadType);
@@ -207,6 +219,7 @@ inline StreamReaderPtr StreamReaderFromExisting(StreamReaderPtr invalidatedReade
  * @tparam TDomainType The sample-type type to read signal domain as. Implicitly convert from actual type to
  * this one if conversion exists.
  */
+// [api(application)]
 template <typename TValueType = double, typename TDomainType = ClockTick>
 StreamReaderPtr StreamReaderFromExisting(StreamReaderPtr invalidatedReader)
 {
@@ -217,11 +230,13 @@ StreamReaderPtr StreamReaderFromExisting(StreamReaderPtr invalidatedReader)
     );
 }
 
+// [api(application)]
 inline StreamReaderBuilderPtr StreamReaderBuilder()
 {
     return StreamReaderBuilder_Create();
 }
 
+// [api(application)]
 inline StreamReaderPtr StreamReaderFromBuilder(const StreamReaderBuilderPtr& builder)
 {
     return StreamReaderFromBuilder_Create(builder);
@@ -236,6 +251,7 @@ inline StreamReaderPtr StreamReaderFromBuilder(const StreamReaderBuilderPtr& bui
  * @param domainReadType The sample-type type to read signal domain as. Implicitly convert from actual type to
  * this one if conversion exists.
  */
+// [api(application)]
 inline TailReaderPtr TailReader(SignalPtr signal,
                                 SizeT historySize,
                                 SampleType valueReadType,
@@ -253,6 +269,7 @@ inline TailReaderPtr TailReader(SignalPtr signal,
  * @param domainReadType The sample-type type to read signal domain as. Implicitly convert from actual type to
  * this one if conversion exists.
  */
+// [api(application)]
 inline TailReaderPtr TailReaderFromPort(InputPortConfigPtr port,
                                         SizeT historySize,
                                         SampleType valueReadType,
@@ -272,6 +289,7 @@ inline TailReaderPtr TailReaderFromPort(InputPortConfigPtr port,
  * @tparam TDomainType The sample-type type to read signal domain as. Implicitly convert from actual type to
  * this one if conversion exists.
  */
+// [api(application)]
 template <typename TValueType = double, typename TDomainType = ClockTick>
 TailReaderPtr TailReader(SignalPtr signal, SizeT historySize, ReadMode mode = ReadMode::Scaled)
 {
@@ -289,6 +307,7 @@ TailReaderPtr TailReader(SignalPtr signal, SizeT historySize, ReadMode mode = Re
  * @param signal The signal to read the data from.
  * @param historySize The maximum amount of samples in history to keep.
  */
+// [api(application)]
 inline TailReaderPtr TailReader(SignalPtr signal, SizeT historySize, ReadMode mode = ReadMode::Scaled)
 {
     return TailReader<>(std::move(signal), historySize, mode);
@@ -306,6 +325,7 @@ inline TailReaderPtr TailReader(SignalPtr signal, SizeT historySize, ReadMode mo
  * @param domainReadType The sample-type type to read signal domain as. Implicitly convert from actual type to
  * this one if conversion exists.
  */
+// [api(application)]
 inline TailReaderPtr TailReaderFromExisting(TailReaderPtr invalidatedReader, SizeT historySize, SampleType valueReadType, SampleType domainReadType)
 {
     return TailReaderFromExisting_Create(invalidatedReader, historySize, valueReadType, domainReadType);
@@ -323,6 +343,7 @@ inline TailReaderPtr TailReaderFromExisting(TailReaderPtr invalidatedReader, Siz
  * @tparam TDomainType The sample-type type to read signal domain as. Implicitly convert from actual type to
  * this one if conversion exists.
  */
+// [api(application)]
 template <typename TValueType = double, typename TDomainType = ClockTick>
 TailReaderPtr TailReaderFromExisting(TailReaderPtr invalidatedReader, SizeT historySize)
 {
@@ -334,21 +355,25 @@ TailReaderPtr TailReaderFromExisting(TailReaderPtr invalidatedReader, SizeT hist
     );
 }
 
+// [api(application)]
 inline TailReaderBuilderPtr TailReaderBuilder()
 {
     return TailReaderBuilder_Create();
 }
 
+// [api(application)]
 inline TailReaderPtr TailReaderFromBuilder(const TailReaderBuilderPtr& builder)
 {
     return TailReaderFromBuilder_Create(builder);
 }
 
+// [api(application)]
 inline BlockReaderBuilderPtr BlockReaderBuilder()
 {
     return BlockReaderBuilder_Create();
 }
 
+// [api(application)]
 inline BlockReaderPtr BlockReader(SignalPtr signal,
                                   SizeT blockSize,
                                   SampleType valueReadType,
@@ -358,6 +383,7 @@ inline BlockReaderPtr BlockReader(SignalPtr signal,
     return BlockReader_Create(signal, blockSize, valueReadType, domainReadType, mode);
 }
 
+// [api(application)]
 inline BlockReaderPtr BlockReaderFromPort(InputPortConfigPtr port,
                                   SizeT blockSize,
                                   SampleType valueReadType,
@@ -367,6 +393,7 @@ inline BlockReaderPtr BlockReaderFromPort(InputPortConfigPtr port,
     return BlockReaderFromPort_Create(port, blockSize, valueReadType, domainReadType, mode);
 }
 
+// [api(application)]
 inline BlockReaderPtr BlockReaderFromExisting(const BlockReaderPtr& invalidatedReader,
                                               SizeT blockSize,
                                               SampleType valueReadType,
@@ -375,6 +402,7 @@ inline BlockReaderPtr BlockReaderFromExisting(const BlockReaderPtr& invalidatedR
     return BlockReaderFromExisting_Create(invalidatedReader, valueReadType, domainReadType, blockSize);
 }
 
+// [api(application)]
 template <typename TValueType = double, typename TDomainType = ClockTick>
 BlockReaderPtr BlockReader(SignalPtr signal, SizeT blockSize, ReadMode mode = ReadMode::Scaled)
 {
@@ -387,6 +415,7 @@ BlockReaderPtr BlockReader(SignalPtr signal, SizeT blockSize, ReadMode mode = Re
     );
 }
 
+// [api(application)]
 template <typename TValueType = double, typename TDomainType = ClockTick>
 BlockReaderPtr BlockReaderFromPort(InputPortConfigPtr port, SizeT blockSize, ReadMode mode = ReadMode::Scaled)
 {
@@ -400,6 +429,7 @@ BlockReaderPtr BlockReaderFromPort(InputPortConfigPtr port, SizeT blockSize, Rea
 }
 
 
+// [api(application)]
 template <typename TValueType = double, typename TDomainType = ClockTick>
 BlockReaderPtr BlockReaderFromExisting(BlockReaderPtr invalidatedReader, SizeT blockSize)
 {
@@ -411,21 +441,25 @@ BlockReaderPtr BlockReaderFromExisting(BlockReaderPtr invalidatedReader, SizeT b
     );
 }
 
+// [api(application)]
 inline BlockReaderPtr BlockReaderFromBuilder(const BlockReaderBuilderPtr& builder)
 {
     return BlockReaderFromBuilder_Create(builder);
 }
 
+// [api(application)]
 inline MultiReaderBuilderPtr MultiReaderBuilder()
 {
     return MultiReaderBuilder_Create();
 }
 
+// [api(application)]
 inline MultiReaderPtr MultiReaderFromBuilder(const MultiReaderBuilderPtr& builder)
 {
     return MultiReaderFromBuilder_Create(builder);
 }
 
+// [api(application)]
 inline MultiReaderPtr MultiReader(const ListPtr<ISignal>& signals,
                                   SampleType valueReadType,
                                   SampleType domainReadType,
@@ -435,6 +469,7 @@ inline MultiReaderPtr MultiReader(const ListPtr<ISignal>& signals,
     return MultiReader_Create(signals, valueReadType, domainReadType, mode, timeoutType);
 }
 
+// [api(application)]
 inline MultiReaderPtr MultiReaderFromPort(ListPtr<IInputPortConfig> ports,
                                   SampleType valueReadType,
                                   SampleType domainReadType,
@@ -444,6 +479,7 @@ inline MultiReaderPtr MultiReaderFromPort(ListPtr<IInputPortConfig> ports,
     return MultiReader_Create(ports, valueReadType, domainReadType, mode, timeoutType);
 }
 
+// [api(application)]
 inline MultiReaderPtr MultiReaderEx(const ListPtr<ISignal>& signals,
                                     SampleType valueReadType,
                                     SampleType domainReadType,
@@ -456,11 +492,13 @@ inline MultiReaderPtr MultiReaderEx(const ListPtr<ISignal>& signals,
     return MultiReaderEx_Create(signals, valueReadType, domainReadType, mode, timeoutType, requiredCommonSampleRate, startOnFullUnitOfDomain, minReadCount);
 }
 
+// [api(application)]
 inline MultiReaderPtr MultiReaderFromExisting(const MultiReaderPtr& invalidatedReader, SampleType valueReadType, SampleType domainReadType)
 {
     return MultiReaderFromExisting_Create(invalidatedReader, valueReadType, domainReadType);
 }
 
+// [api(application)]
 template <typename TValueType = double, typename TDomainType = ClockTick>
 MultiReaderPtr MultiReader(ListPtr<ISignal> signals, ReadTimeoutType timeoutType = ReadTimeoutType::All)
 {
@@ -472,6 +510,7 @@ MultiReaderPtr MultiReader(ListPtr<ISignal> signals, ReadTimeoutType timeoutType
         timeoutType
     );
 }
+// [api(application)]
 template <typename TValueType = double, typename TDomainType = ClockTick>
 inline MultiReaderPtr MultiReaderFromPort(ListPtr<IInputPortConfig> ports,
                                   ReadMode mode = ReadMode::Scaled,  
@@ -481,6 +520,7 @@ inline MultiReaderPtr MultiReaderFromPort(ListPtr<IInputPortConfig> ports,
         SampleTypeFromType<TDomainType>::SampleType, mode, timeoutType);
 }
 
+// [api(application)]
 template <typename TValueType = double, typename TDomainType = ClockTick>
 MultiReaderPtr MultiReaderEx(ListPtr<ISignal> signals, ReadTimeoutType timeoutType = ReadTimeoutType::All, Int requiredCommonSampleRate = -1, bool startOnFullUnitOfDomain = false)
 {
@@ -493,6 +533,7 @@ MultiReaderPtr MultiReaderEx(ListPtr<ISignal> signals, ReadTimeoutType timeoutTy
                          startOnFullUnitOfDomain);
 }
 
+// [api(application)]
 template <typename TValueType = double, typename TDomainType = ClockTick>
 MultiReaderPtr MultiReader(ListPtr<ISignal> signals, ReadMode mode, ReadTimeoutType timeoutType = ReadTimeoutType::All)
 {
@@ -505,6 +546,7 @@ MultiReaderPtr MultiReader(ListPtr<ISignal> signals, ReadMode mode, ReadTimeoutT
     );
 }
 
+// [api(application)]
 template <typename TDomainType = ClockTick>
 MultiReaderPtr MultiReaderRaw(ListPtr<ISignal> signals, ReadTimeoutType timeoutType = ReadTimeoutType::All)
 {
@@ -517,6 +559,7 @@ MultiReaderPtr MultiReaderRaw(ListPtr<ISignal> signals, ReadTimeoutType timeoutT
     );
 }
 
+// [api(application)]
 template <typename TValueType = double, typename TDomainType = ClockTick>
 MultiReaderPtr MultiReaderFromExisting(MultiReaderPtr invalidatedReader)
 {

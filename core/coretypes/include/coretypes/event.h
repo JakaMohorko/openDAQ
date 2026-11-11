@@ -29,6 +29,7 @@ BEGIN_NAMESPACE_OPENDAQ
 
 typedef std::size_t HandlerId;
 
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IEvent, IBaseObject)
 {
     virtual ErrCode INTERFACE_FUNC addHandler(IEventHandler* eventHandler) = 0;
@@ -51,6 +52,7 @@ DECLARE_OPENDAQ_INTERFACE(IEvent, IBaseObject)
  * @}
  */
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, Event)
 
 END_NAMESPACE_OPENDAQ

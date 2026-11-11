@@ -22,6 +22,7 @@ BEGIN_NAMESPACE_OPENDAQ
 
 // Filter by Visible
 
+// [api(core)]
 class VisibleSearchFilterImpl final : public ImplementationOf<ISearchFilter>
 {
 public:
@@ -33,6 +34,7 @@ public:
 
 // Filter by Required tags
 
+// [api(core)]
 class RequiredTagsSearchFilterImpl final : public ImplementationOf<ISearchFilter>
 {
 public:
@@ -47,6 +49,7 @@ private:
 
 // Filter by Excluded tags
 
+// [api(core)]
 class ExcludedTagsSearchFilterImpl final : public ImplementationOf<ISearchFilter>
 {
 public:
@@ -61,6 +64,7 @@ private:
 
 // Filter by interface ID
 
+// [api(core)]
 class InterfaceIdSearchFilterImpl final : public ImplementationOf<ISearchFilter>
 {
 public:
@@ -75,6 +79,7 @@ private:
 
 // Filter by local ID
 
+// [api(core)]
 class LocalIdSearchFilterImpl final : public ImplementationOf<ISearchFilter>
 {
 public:

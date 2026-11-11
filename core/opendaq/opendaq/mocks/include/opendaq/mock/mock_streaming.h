@@ -18,6 +18,7 @@
 #include <opendaq/streaming_impl.h>
 #include <opendaq/streaming.h>
 
+// [api(core)]
 class MockStreamingImpl : public daq::Streaming
 {
 public:
@@ -38,6 +39,7 @@ protected:
     void onUnregisterStreamedClientSignal(const daq::SignalPtr& signal) override;
 };
 
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     INTERNAL_FACTORY,
     MockStreaming, daq::IStreaming,
@@ -46,6 +48,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
 )
 
 // Same mock, but with a caller-defined protocol id and protocol group id
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(
     INTERNAL_FACTORY,
     MockStreamingWithProtocol, daq::IStreaming,

@@ -34,6 +34,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * 
  * Range objects implement the Struct methods internally and are Core type `ctStruct`.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IRange, IBaseObject)
 {
     /*!
@@ -59,6 +60,7 @@ DECLARE_OPENDAQ_INTERFACE(IRange, IBaseObject)
  * @param highValue The upper boundary of the range.
  * @retval OPENDAQ_ERR_RANGE_BOUNDARIES_INVALID if lowValue > highValue.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, Range, INumber*, lowValue, INumber*, highValue)
 
 /*!@}*/

@@ -28,6 +28,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Creates a new Type manager.
  * The Type manager should usually be created only as part of the Context creation.
  */
+// [api(module)]
 inline TypeManagerPtr TypeManager()
 {
     TypeManagerPtr obj(TypeManager_Create());

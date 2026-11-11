@@ -30,12 +30,14 @@ BEGIN_NAMESPACE_OPENDAQ
  * The callback is expected to return a boolean value indicating whether the work should be repeated.
  * If the callback does return nothing, it is assumed that the work should not be repeated.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IWorkRepetitive, IBaseObject)
 {
     /*!
      * @brief Executes the repetitive task logic and determines whether it should be repeated.
      * @param[out] repeatAfter Set to `true` to continue repeating the task, or `false` to stop.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC executeRepetitively(Bool* repeatAfter) = 0;
 };
 

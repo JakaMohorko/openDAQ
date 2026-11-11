@@ -19,6 +19,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class PacketReaderImpl : public ImplementationOfWeak<IPacketReader, IInputPortNotifications>
 {
 public:

@@ -29,6 +29,7 @@ BEGIN_NAMESPACE_OPENDAQ
  *
  * IO folders are folder created by device and may contain only channels and other IO folders.
  */
+// [api(module)]
 inline IoFolderConfigPtr IoFolder(const ContextPtr& context,
                                   const ComponentPtr& parent,
                                   const StringPtr& localId)

@@ -35,6 +35,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * override this behavior (perhaps using a memory pool or different allocation strategy). An
  * example/reference implementation is provided which uses Microsoft `mimalloc`.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IAllocator, IBaseObject)
 {
     /*!
@@ -68,18 +69,21 @@ DECLARE_OPENDAQ_INTERFACE(IAllocator, IBaseObject)
 };
 /*!@}*/
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, MallocAllocator,
     IAllocator
 )
 
 #ifdef OPENDAQ_MIMALLOC_SUPPORT
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, MiMallocAllocator,
     IAllocator
 )
 #endif
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, ExternalAllocator,
     IAllocator,

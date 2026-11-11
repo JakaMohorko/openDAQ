@@ -46,6 +46,7 @@ struct InterfaceToSmartPtr<ISearchFilter>
  * Visit children defines whether or not the children of said object should be traversed during a recursive search.
  */
 
+// [api(application)]
 class SearchFilterPtr : public ObjectPtr<ISearchFilter>
 {
 public:

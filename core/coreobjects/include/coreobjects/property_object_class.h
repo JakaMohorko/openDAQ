@@ -50,6 +50,7 @@ struct IPropertyObjectClassBuilder;
 /*#
  * [interfaceSmartPtr(IType, GenericTypePtr, "<coretypes/type_ptr.h>")]
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IPropertyObjectClass, IType)
 {
     /*!
@@ -94,6 +95,7 @@ DECLARE_OPENDAQ_INTERFACE(IPropertyObjectClass, IType)
  * @brief Creates a PropertyObjectClass using Builder
  * @param builder PropertyObjectClass Builder
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, PropertyObjectClassFromBuilder, IPropertyObjectClass,
     IPropertyObjectClassBuilder*, builder

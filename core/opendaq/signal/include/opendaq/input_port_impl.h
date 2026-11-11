@@ -51,6 +51,7 @@ class GenericInputPortImpl;
 
 using InputPortImpl = GenericInputPortImpl<IInputPortConfig>;
 
+// [api(module)]
 template <typename TInterface, typename...  Interfaces>
 class GenericInputPortImpl : public ComponentImpl<TInterface, IInputPortPrivate, Interfaces ...>
 {
@@ -100,31 +101,45 @@ public:
     static ErrCode Deserialize(ISerializedObject* serialized, IBaseObject* context, IFunction* factoryCallback, IBaseObject** obj);
 
 protected:
+    // [api(core)]
     ErrCode connectInternal(ISignal* signal, bool scheduled);
+    // [api(module, override)]
     void serializeCustomObjectValues(const SerializerPtr& serializer, bool forUpdate) override;
 
+    // [api(module, override)]
     void updateObject(const SerializedObjectPtr& obj, const BaseObjectPtr& context) override;
+    // [api(module, override)]
     void onUpdatableUpdateEnd(const BaseObjectPtr& context) override;
 
     BaseObjectPtr getDeserializedParameter(const StringPtr& parameter) override;
 
+    // [api(core)]
     void deserializeCustomObjectValues(const SerializedObjectPtr& serializedObject,
                                        const BaseObjectPtr& context,
                                        const FunctionPtr& factoryCallback) override;
 
+    // [api(core)]
     virtual ConnectionPtr createConnection(const SignalPtr& signal);
+    // [api(core)]
     ConnectionPtr getConnectionNoLock();
+    // [api(module, override)]
     void removed() override;
+    // [api(core)]
     void removedNoLock() override;
+    // [api(core)]
     virtual SignalPtr getSignalNoLock();
 
+    // [api(core)]
     StringPtr serializedSignalId;
 
+    // [api(core)]
     ErrCode lockAllAttributesInternal() override;
 
 #ifdef WORKAROUND_MEMBER_INLINE_VARIABLE
+    // [api(core)]
     static std::unordered_set<std::string> inputPortAvailableAttributes;
 #else
+    // [api(core)]
     inline static std::unordered_set<std::string> inputPortAvailableAttributes = INPUT_PORT_AVAILABLE_ATTRIBUTES;
 #endif
 

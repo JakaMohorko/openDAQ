@@ -41,6 +41,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * ErrCode createFloat(IFloat** obj, Float value)
  * @endcode
  */
+// [api(application, coretype)]
 DECLARE_OPENDAQ_INTERFACE(IFloat, IBaseObject)
 {
     /*!
@@ -64,13 +65,16 @@ DECLARE_OPENDAQ_INTERFACE(IFloat, IBaseObject)
 
 /*!@}*/
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, Float, const Float, value)
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_FUNC_WITH_INTERFACE(
     LIBRARY_FACTORY,
     FloatObject, IFloat,
     const Float,
     value
 )
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(LIBRARY_FACTORY, FloatFromPool, IFloat, createFloatFromPool, const Float, value)
 
 END_NAMESPACE_OPENDAQ

@@ -25,6 +25,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class ScalingBuilderImpl : public ImplementationOf<IScalingBuilder>
 {
 public:

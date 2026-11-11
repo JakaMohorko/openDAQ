@@ -22,11 +22,13 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(module)]
 inline SerializerPtr JsonSerializer(Bool pretty = False)
 {
     return SerializerPtr(JsonSerializer_Create(pretty));
 }
 
+// [api(module)]
 inline SerializerPtr JsonSerializerWithVersion(Int version, Bool pretty = False)
 {
     return SerializerPtr(JsonSerializer_Create(version, pretty));

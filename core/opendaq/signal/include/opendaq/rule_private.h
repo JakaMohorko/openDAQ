@@ -28,6 +28,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Private rule interface implemented by Dimension rules, Data rules and Scaling. Allows for parameter verification.
  */
+// [api(core)]
 DECLARE_OPENDAQ_INTERFACE(IRulePrivate, IBaseObject)
 {
     /*!

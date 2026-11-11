@@ -20,6 +20,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 template <class Callback>
 class PacketDestructCallbackImpl : public ImplementationOf<IPacketDestructCallback>
 {

@@ -39,6 +39,7 @@ struct InterfaceToSmartPtr<INumber>
  * Number is used if data type of the number is not strictly defined, i.e.
  * it can accept a float or an int.
  */
+// [api(application)]
 class NumberPtr : public ObjectPtr<INumber>
 {
 public:

@@ -26,6 +26,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class ComplexNumberImpl : public GenericStructImpl<IComplexNumber, IStruct, IComparable, IConvertible>
 {
 public:

@@ -21,16 +21,19 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(application)]
 inline ComplexNumberPtr ComplexNumber()
 {
     return ComplexNumberPtr(ComplexNumber_Create(0, 0));
 }
 
+// [api(application)]
 inline ComplexNumberPtr ComplexNumber(const Float real, const Float imaginary)
 {
     return ComplexNumberPtr(ComplexNumber_Create(real, imaginary));
 }
 
+// [api(module)]
 inline StructTypePtr ComplexNumberStructType()
 {
     return StructType("ComplexNumber",

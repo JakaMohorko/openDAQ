@@ -36,6 +36,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * [templated(defaultAliasName: TaskPtr)]
  * [interfaceSmartPtr(ITask, GenericTaskPtr)]
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(ITask, IBaseObject)
 {
     /*!
@@ -48,6 +49,7 @@ DECLARE_OPENDAQ_INTERFACE(ITask, IBaseObject)
      * @brief Sets the task name that is used in diagnostics.
      * @param name The new task name.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC setName(IString* name) = 0;
 
     /*!
@@ -61,6 +63,7 @@ DECLARE_OPENDAQ_INTERFACE(ITask, IBaseObject)
 };
 /*!@}*/
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, Task, IProcedure*, work, IString*, name)
 
 END_NAMESPACE_OPENDAQ

@@ -46,6 +46,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * ErrCode createStringN(IString** obj, ConstCharPtr data, SizeT length)
  * @endcode
  */
+// [api(application, coretype)]
 DECLARE_OPENDAQ_INTERFACE(IString, IBaseObject)
 {
     /*!
@@ -71,7 +72,9 @@ DECLARE_OPENDAQ_INTERFACE(IString, IBaseObject)
 
 /*!@}*/
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, String, ConstCharPtr, str)
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(
     LIBRARY_FACTORY,
     StringN,

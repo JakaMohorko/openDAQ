@@ -34,6 +34,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * factory function. Expression is evaluated at runtime when result value is requested.
  */
     
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IEvalValue, IBaseObject)
 {
     /*!
@@ -92,10 +93,13 @@ DECLARE_OPENDAQ_INTERFACE(IEvalValue, IBaseObject)
  *@}
  */
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, EvalValue, IString*, eval)
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, EvalValueArgs, IEvalValue, IString*, eval, IList*, args)
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, EvalValueFunc, IEvalValue, IString*, eval, IFunction*, func)
 
 END_NAMESPACE_OPENDAQ

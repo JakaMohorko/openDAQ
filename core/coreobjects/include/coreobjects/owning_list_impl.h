@@ -22,6 +22,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class OwningListImpl final : public ListImpl
 {
 public:

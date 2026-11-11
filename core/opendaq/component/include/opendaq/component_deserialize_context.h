@@ -26,6 +26,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * [interfaceLibrary(ITypeManager, "coretypes")]
  */
 
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IComponentDeserializeContext, IBaseObject)
 {
     virtual ErrCode INTERFACE_FUNC getParent(IComponent** parent) = 0;
@@ -43,6 +44,7 @@ DECLARE_OPENDAQ_INTERFACE(IComponentDeserializeContext, IBaseObject)
         IProcedure* newTriggerCoreEvent = nullptr) = 0;
 };
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(
     LIBRARY_FACTORY, ComponentDeserializeContext, IContext*, context, IComponent*, root, IComponent*, parent, IString*, localId, IntfID*, intfID, IProcedure*, triggerCoreEvent);
 

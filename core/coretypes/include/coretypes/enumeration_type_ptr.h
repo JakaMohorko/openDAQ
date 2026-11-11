@@ -53,6 +53,7 @@ struct InterfaceToSmartPtr<IEnumerationType>
  * specified).
  */
 
+// [api(application)]
 class EnumerationTypePtr : public GenericTypePtr<IEnumerationType>
 {
 public:

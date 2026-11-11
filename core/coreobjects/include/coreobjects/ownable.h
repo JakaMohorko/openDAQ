@@ -40,6 +40,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*#
  * [includeHeader("<coreobjects/property_object_ptr.h>")]
  */
+// [api(core)]
 DECLARE_OPENDAQ_INTERFACE(IOwnable, IBaseObject)
 {
     /*!

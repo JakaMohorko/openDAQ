@@ -25,6 +25,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class MultiReaderImpl : public ImplementationOfWeak<IMultiReader, IReaderConfig, IInputPortNotifications>
 {
 public:

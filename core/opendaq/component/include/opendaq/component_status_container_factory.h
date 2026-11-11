@@ -28,6 +28,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Creates a Component status container
  */
+// [api(module)]
 inline ComponentStatusContainerPtr ComponentStatusContainer()
 {
     ComponentStatusContainerPtr obj(ComponentStatusContainer_Create());

@@ -21,6 +21,7 @@
 #include <gmock/gmock.h>
 #include <coretypes/gmock/mock_ptr.h>
 
+// [api(core)]
 struct MockPacket : daq::ImplementationOf<daq::IPacket>
 {
     typedef MockPtr<

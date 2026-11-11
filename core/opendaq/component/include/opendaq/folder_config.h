@@ -37,29 +37,34 @@ BEGIN_NAMESPACE_OPENDAQ
  *
  * Provides methods to add and remove items to the folder.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IFolderConfig, IFolder)
 {
     /*!
      * @brief Adds a component to the folder.
      * @param item The component.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC addItem(IComponent* item) = 0;
 
     /*!
      * @brief Removes the item from the folder.
      * @param item The item component.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC removeItem(IComponent* item) = 0;
 
     /*!
      * @brief Removes the item from the folder using local id of the component.
      * @param localId The local id of the component.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC removeItemWithLocalId(IString* localId) = 0;
 
     /*!
      * @brief Removes all items from the folder.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC clear() = 0;
 };
 /*!@}*/
@@ -76,6 +81,7 @@ DECLARE_OPENDAQ_INTERFACE(IFolderConfig, IFolder)
  * @param parent The parent component.
  * @param localId The local ID of the component.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, Folder, IFolderConfig,
     IContext*, context,
@@ -89,6 +95,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  * @param parent The parent component.
  * @param localId The local ID of the component.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, FolderWithItemType, IFolderConfig,
     IntfID, itemType,
@@ -104,6 +111,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  *
  * IO folders are folder created by device and may contain only channels and other IO folders.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, IoFolder, IFolderConfig,
     IContext*, context,

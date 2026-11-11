@@ -28,6 +28,7 @@ BEGIN_NAMESPACE_OPENDAQ
  */
 
 /// Core type enumeration
+// [api(application)]
 enum CoreType : int
 {
     ctBool = 0,             ///< Boolean, True or False
@@ -56,6 +57,7 @@ enum CoreType : int
  * specific type. For example, if the `CoreType` reported is ctInt, the object is expected to
  * implement the IIntObject interface.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(ICoreType, IBaseObject)
 {
     /*!

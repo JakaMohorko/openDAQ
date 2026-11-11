@@ -19,12 +19,14 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(application)]
 inline ProcedurePtr CustomProcedure(ProcCall proc)
 {
     ProcedurePtr obj(Procedure_Create(proc));
     return obj;
 }
 
+// [api(application)]
 template <typename TFunctor>
 ProcedurePtr Procedure(TFunctor value)
 {
@@ -32,6 +34,7 @@ ProcedurePtr Procedure(TFunctor value)
     return obj;
 }
 
+// [api(application)]
 template <typename TFunctor>
 ProcedurePtr Procedure(TFunctor* value)
 {

@@ -27,6 +27,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Creates an Address with no parameters configured.
  */
+// [api(module)]
 inline AddressInfoPtr AddressInfo()
 {
     AddressInfoPtr obj(AddressInfo_Create());
@@ -36,6 +37,7 @@ inline AddressInfoPtr AddressInfo()
 /*!
  * @brief Creates an Address builder with no parameters configured.
  */
+// [api(module)]
 inline AddressInfoBuilderPtr AddressInfoBuilder()
 {
     AddressInfoBuilderPtr obj(AddressInfoBuilder_Create());

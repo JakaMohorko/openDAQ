@@ -33,6 +33,7 @@ struct InterfaceToSmartPtr<IRecursiveSearch>
  * @{
  */
 
+// [api(application)]
 class RecursiveSearchPtr : public ObjectPtr<IRecursiveSearch>
 {
 public:

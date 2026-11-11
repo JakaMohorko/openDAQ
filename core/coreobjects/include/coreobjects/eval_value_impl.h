@@ -28,6 +28,7 @@ BEGIN_NAMESPACE_OPENDAQ
 
 struct ISerializedObject;
 
+// [api(core)]
 class EvalValueImpl : public ImplementationOf<IEvalValue, IOwnable, ICoreType, IInteger_Helper, ISerializable, IFloat_Helper,
                                               IBoolean_Helper, IString_Helper, IConvertible, IList, INumber, IProperty_Helper, 
                                               IUnit_Helper, IStruct_Helper, IDict>

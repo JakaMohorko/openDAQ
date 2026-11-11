@@ -29,6 +29,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Builder component of Struct objects. Contains setter methods to configure the Struct parameters, and a
  * `build` method that builds the Struct object.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IStructBuilder, IBaseObject)
 {
     /*!
@@ -103,7 +104,9 @@ DECLARE_OPENDAQ_INTERFACE(IStructBuilder, IBaseObject)
 
 /*!@}*/
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, StructBuilder, IString*, name, ITypeManager*, typeManager)
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, StructBuilderFromStruct, IStructBuilder, IStruct*, struct_)
 
 END_NAMESPACE_OPENDAQ

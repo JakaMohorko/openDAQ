@@ -30,6 +30,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class EnumerationImpl : public ImplementationOf<IEnumeration, IConvertible, ICoreType, ISerializable>
 {
 public:

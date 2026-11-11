@@ -34,6 +34,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief This class manages the lock state of an object, usually a device. A device can be locked either with a specific user or without one.
  * If the device is locked with a specific user, only that user can unlock it. If the device is locked without a user, any user can unlock it.
  */
+// [api(core)]
 DECLARE_OPENDAQ_INTERFACE(IUserLock, IBaseObject)
 {
     /*!
@@ -70,6 +71,7 @@ DECLARE_OPENDAQ_INTERFACE(IUserLock, IBaseObject)
 /*!
  * @brief Creates an unlocked UserLock object.
  */
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, UserLock)
 
 END_NAMESPACE_OPENDAQ

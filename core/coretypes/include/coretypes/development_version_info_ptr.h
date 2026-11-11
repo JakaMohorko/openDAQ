@@ -33,6 +33,7 @@ struct InterfaceToSmartPtr<IDevelopmentVersionInfo>
  * @{
  */
 
+// [api(application)]
 class DevelopmentVersionInfoPtr : public daq::ObjectPtr<IDevelopmentVersionInfo>
 {
 public:

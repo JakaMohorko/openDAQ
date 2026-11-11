@@ -46,6 +46,7 @@ struct InterfaceToSmartPtr<IComplexNumber>
  * ComplexNumberPtr ComplexNumber(ComplexFloat64* value)
  * @endcode
  */
+// [api(application)]
 class ComplexNumberPtr : public daq::ObjectPtr<IComplexNumber>
 {
 public:

@@ -48,6 +48,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * set up the minimum severity level of messages to be written out automatically,
  * see `flushOnLevel` method.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(ILoggerComponent, IBaseObject)
 {
     /*!
@@ -104,6 +105,7 @@ DECLARE_OPENDAQ_INTERFACE(ILoggerComponent, IBaseObject)
 
 /*!@}*/
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(
     LIBRARY_FACTORY, LoggerComponent,
     IString*, name,

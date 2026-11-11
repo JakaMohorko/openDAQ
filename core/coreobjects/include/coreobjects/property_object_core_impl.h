@@ -40,6 +40,7 @@ struct NullMutex
     bool try_lock() { return true; }
 };
 
+// [api(core)]
 class PropertyObjectCoreImpl : public ImplementationOfWeak<IPropertyObjectCore>
 {
 public:
@@ -56,6 +57,7 @@ private:
     int externalCallDepth = 0;
 };
 
+// [api(core)]
 struct LockGuardImpl : ImplementationOf<ILockGuard>
 {
     LockGuardImpl(IPropertyObjectCore* owner, MutexPtr lock);
@@ -67,6 +69,7 @@ private:
     std::lock_guard<MutexPtr> lock;
 };
 
+// [api(core)]
 template <typename TMutex>
 class RecursiveLockGuardImpl : public ImplementationOf<ILockGuard>
 {

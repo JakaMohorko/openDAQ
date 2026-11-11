@@ -24,6 +24,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 template <class Class, class TInterface>
 struct MockGenericComponent : GenericPropertyObjectImpl<TInterface>
 {
@@ -60,6 +61,7 @@ struct MockGenericComponent : GenericPropertyObjectImpl<TInterface>
     }
 };
 
+// [api(core)]
 struct MockSearchFilter : daq::ImplementationOf<daq::ISearchFilter>
 {
     typedef MockPtr<
@@ -72,10 +74,12 @@ struct MockSearchFilter : daq::ImplementationOf<daq::ISearchFilter>
     MOCK_METHOD(daq::ErrCode, visitChildren, (daq::IBaseObject* obj, daq::Bool* visit), (override MOCK_CALL));
 };
 
+// [api(core)]
 struct MockComponent: MockGenericComponent<MockComponent, IComponent>
 {
 };
 
+// [api(core)]
 template <class Class, class TInterface>
 struct MockGenericSignalContainer : MockGenericComponent<Class, TInterface>
 {

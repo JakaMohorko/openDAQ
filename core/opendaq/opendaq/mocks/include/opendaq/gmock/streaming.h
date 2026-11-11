@@ -22,6 +22,7 @@
 #include <coretypes/gmock/mock_ptr.h>
 #include <opendaq/packet_factory.h>
 
+// [api(core)]
 DECLARE_OPENDAQ_INTERFACE(IMockStreaming, daq::IBaseObject)
 {
     virtual void makeSignalAvailable(const daq::StringPtr& signalStreamingId) = 0;
@@ -30,6 +31,7 @@ DECLARE_OPENDAQ_INTERFACE(IMockStreaming, daq::IBaseObject)
     virtual void triggerReconnectionCompletion() = 0;
 };
 
+// [api(core)]
 struct MockStreaming : daq::StreamingImpl<IMockStreaming>
 {
     typedef MockPtr<

@@ -88,6 +88,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * - **Module options:** Local options dictionary of instance builder has `modules` key which contains custom values for modules.
  *   By default this dictionary is empty, but can be populated from json file, env variables or command line arguments.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IInstanceBuilder, IBaseObject)
 {
     /*!
@@ -389,6 +390,7 @@ DECLARE_OPENDAQ_INTERFACE(IInstanceBuilder, IBaseObject)
 /*!
  * @brief Creates a InstanceBuilder with no parameters configured.
  */
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, InstanceBuilder, IInstanceBuilder)
 /*!@}*/
 

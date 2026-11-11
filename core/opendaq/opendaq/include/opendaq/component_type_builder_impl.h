@@ -22,6 +22,7 @@
 #include <opendaq/module_info_ptr.h>
 
 BEGIN_NAMESPACE_OPENDAQ
+// [api(core)]
 class ComponentTypeBuilderImpl : public ImplementationOf<IComponentTypeBuilder>
 {
 public:

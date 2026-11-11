@@ -28,6 +28,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Wrapper pointer for PacketBuffer
  */
+// [api(module)]
 inline PacketBufferPtr PacketBuffer(const PacketBufferBuilderPtr& builder)
 {
     return PacketBufferPtr(PacketBuffer_Create(builder));
@@ -42,6 +43,7 @@ inline PacketBufferPtr PacketBuffer(const PacketBufferBuilderPtr& builder)
 /*!
  * @brief Wrapper pointer for PacketBufferBuilder
  */
+// [api(module)]
 inline PacketBufferBuilderPtr PacketBufferBuilder()
 {
     return PacketBufferBuilderPtr(PacketBufferBuilder_Create());

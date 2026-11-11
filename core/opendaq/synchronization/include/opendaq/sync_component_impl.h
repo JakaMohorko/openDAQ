@@ -27,6 +27,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(module)]
 template <typename MainInterface, typename ... Interfaces>
 class GenericSyncComponentImpl : public ComponentImpl<ISyncComponentPrivate, MainInterface, Interfaces...>
 {

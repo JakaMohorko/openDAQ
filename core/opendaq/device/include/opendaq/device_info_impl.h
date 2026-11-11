@@ -44,6 +44,7 @@ class DeviceInfoConfigImpl;
 
 using DeviceInfoConfigBase = DeviceInfoConfigImpl<>;
 
+// [api(core)]
 template <typename TInterface, typename... Interfaces>
 class DeviceInfoConfigImpl : public GenericPropertyObjectImpl<TInterface, IDeviceInfoInternal, Interfaces...>
 {

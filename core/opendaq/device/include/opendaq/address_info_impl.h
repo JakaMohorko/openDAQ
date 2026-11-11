@@ -23,6 +23,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class AddressInfoImpl : public GenericPropertyObjectImpl<IAddressInfo, IAddressInfoPrivate>
 {
 public:

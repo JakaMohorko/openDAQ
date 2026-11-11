@@ -30,6 +30,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class PacketBufferImpl : public ImplementationOf<IPacketBuffer>
 {
 public:

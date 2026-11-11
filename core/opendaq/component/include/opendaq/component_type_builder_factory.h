@@ -29,6 +29,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Creates a ComponentTypeBuilder with the type sort set to "Streaming".
  */
+// [api(module)]
 inline ComponentTypeBuilderPtr StreamingTypeBuilder()
 {
     ComponentTypeBuilderPtr obj(StreamingTypeBuilder_Create());
@@ -38,6 +39,7 @@ inline ComponentTypeBuilderPtr StreamingTypeBuilder()
 /*!
  * @brief Creates a ComponentTypeBuilder with the type sort set to "Device".
  */
+// [api(module)]
 inline ComponentTypeBuilderPtr DeviceTypeBuilder()
 {
     ComponentTypeBuilderPtr obj(DeviceTypeBuilder_Create());
@@ -47,6 +49,7 @@ inline ComponentTypeBuilderPtr DeviceTypeBuilder()
 /*!
  * @brief Creates a ComponentTypeBuilder with the type sort set to "FunctionBlock".
  */
+// [api(module)]
 inline ComponentTypeBuilderPtr FunctionBlockTypeBuilder()
 {
     ComponentTypeBuilderPtr obj(FunctionBlockTypeBuilder_Create());
@@ -56,6 +59,7 @@ inline ComponentTypeBuilderPtr FunctionBlockTypeBuilder()
 /*!
  * @brief Creates a ComponentTypeBuilder with the type sort set to "Server".
  */
+// [api(module)]
 inline ComponentTypeBuilderPtr ServerTypeBuilder()
 {
     ComponentTypeBuilderPtr obj(ServerTypeBuilder_Create());

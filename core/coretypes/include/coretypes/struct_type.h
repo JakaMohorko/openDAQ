@@ -48,6 +48,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * `ctStruct`, or `ctUndefined`. Additionally, all Container types (`ctList`, `ctDict`) should only have values of the aforementioned
  * types.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IStructType, IType)
 {
     // [elementType(names, IString)]
@@ -74,7 +75,9 @@ DECLARE_OPENDAQ_INTERFACE(IStructType, IType)
 
 /*!@}*/
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, StructType, IString*, name, IList*, names, IList*, defaultValues, IList*, types)
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, StructTypeNoDefaults, IStructType, IString*, name, IList*, names, IList*, types)
 

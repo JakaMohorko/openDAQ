@@ -36,6 +36,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * To manipulate the list of tags, the add/remove tag functions can be used. The Tags
  * object can only be modified if the object is not locked by the owning Component.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(ITags, IBaseObject)
 {
     // [elementType(value, IString)]
@@ -61,6 +62,7 @@ DECLARE_OPENDAQ_INTERFACE(ITags, IBaseObject)
 /*!@}*/
 
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, Tags, ITags)
 
 END_NAMESPACE_OPENDAQ

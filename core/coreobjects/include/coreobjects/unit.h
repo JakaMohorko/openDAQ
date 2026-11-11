@@ -40,6 +40,7 @@ struct IUnitBuilder;
  * - Name: The full name of the unit, i.e. "meters per second". The unit's name is optional.
  * - Quantity: The quantity represented by the unit, i.e. "Velocity". The unit's quantity is optional.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IUnit, IBaseObject)
 {
     /*!
@@ -80,6 +81,7 @@ DECLARE_OPENDAQ_INTERFACE(IUnit, IBaseObject)
  * @param name The full name of the unit, i.e. "meters per second". (optional)
  * @param quantity The quantity represented by the unit, i.e. "Velocity". (optional)
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, Unit,
     Int, id,
     IString*, symbol,
@@ -92,6 +94,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, Unit,
  * @brief Creates a Unit with Builder
  * @param builder Unit Builder
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, UnitFromBuilder, IUnit,
     IUnitBuilder*, builder

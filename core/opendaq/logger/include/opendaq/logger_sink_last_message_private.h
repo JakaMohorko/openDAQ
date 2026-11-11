@@ -21,6 +21,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 DECLARE_OPENDAQ_INTERFACE(ILastMessageLoggerSinkPrivate, IBaseObject)
 {
     /*!

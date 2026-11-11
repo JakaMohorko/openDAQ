@@ -29,6 +29,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Configuration component of Dimension rule objects. Contains setter methods that allow for Dimension rule
  * parameter configuration, and a `build` method that builds the Dimension rule.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IDimensionRuleBuilder, IBaseObject)
 {
     /*!
@@ -94,12 +95,14 @@ DECLARE_OPENDAQ_INTERFACE(IDimensionRuleBuilder, IBaseObject)
 /*!
  * @brief Creates a DataRuleConfig with no parameters.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, DimensionRuleBuilder, IDimensionRuleBuilder)
 
 /*!
  * @brief Dimension rule copy factory that creates a builder Rule object from a possibly non-configurable Rule.
  * @param ruleToCopy The rule of which configuration should be copied.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, DimensionRuleBuilderFromExisting, IDimensionRuleBuilder,
     IDimensionRule*, ruleToCopy

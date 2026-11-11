@@ -35,6 +35,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * Struct type construction follows the standard rules of Structs. The three lists must be of equal
  * size, and the field types must be of types supported in Structs.
  */
+// [api(module)]
 inline StructTypePtr StructType(const StringPtr& name,
                                 const ListPtr<IString>& fieldNames,
                                 const ListPtr<IBaseObject>& defaultValues,
@@ -53,6 +54,7 @@ inline StructTypePtr StructType(const StringPtr& name,
  * Struct type construction follows the standard rules of Structs. The two lists must be of equal
  * size, and the field types must be of types supported in Structs.
  */
+// [api(module)]
 inline StructTypePtr StructType(const StringPtr& name,
                                 const ListPtr<IString>& fieldNames,
                                 const ListPtr<IType>& fieldTypes)

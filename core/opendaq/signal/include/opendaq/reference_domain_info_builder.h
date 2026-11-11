@@ -34,6 +34,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Builder component of Reference Domain Info objects. Contains setter methods that allow for Reference Domain Info
  * parameter configuration, and a `build` method that builds the Reference Domain Info.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IReferenceDomainInfoBuilder, IBaseObject)
 {
     /*!
@@ -169,6 +170,7 @@ DECLARE_OPENDAQ_INTERFACE(IReferenceDomainInfoBuilder, IBaseObject)
 /*!
  * @brief Reference Domain Info builder factory that creates a builder object with no parameters configured.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, ReferenceDomainInfoBuilder, IReferenceDomainInfoBuilder)
 
 /*!
@@ -176,6 +178,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, ReferenceDomainInf
  * different Reference Domain Info, copying its parameters.
  * @param referenceDomainInfoToCopy The Reference Domain Info of which configuration should be copied.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, ReferenceDomainInfoBuilderFromExisting, IReferenceDomainInfoBuilder, IReferenceDomainInfo*, referenceDomainInfoToCopy)
 

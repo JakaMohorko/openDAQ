@@ -24,6 +24,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class CallableInfoImpl : public GenericStructImpl<ICallableInfo, IStruct>
 {
 public:

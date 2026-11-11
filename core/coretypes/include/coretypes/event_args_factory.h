@@ -19,6 +19,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(module)]
 template <typename TArgs = IEventArgs>
 EventArgsPtr<TArgs> EventArgs(Int id, const StringPtr& name)
 {

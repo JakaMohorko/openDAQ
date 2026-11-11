@@ -34,6 +34,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Internal functions used by openDAQ core. This interface should never be used in
  * client SDK or module code.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IMirroredSignalPrivate, IBaseObject)
 {
     /*!
@@ -42,18 +43,21 @@ DECLARE_OPENDAQ_INTERFACE(IMirroredSignalPrivate, IBaseObject)
      * @param eventPacket The event packet to be handled.
      * @returns True if the eventPacket should be sent along the signal path; False otherwise.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC triggerEvent(IEventPacket* eventPacket, Bool* forward) = 0;
 
     /*!
      * @brief Adds streaming source for signal.
      * @param streaming The Streaming object representing the data source.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC addStreamingSource(IStreaming* streaming) = 0;
 
     /*!
      * @brief Removes streaming source for signal.
      * @param streamingConnectionString The connection string of streaming source to be removed.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC removeStreamingSource(IString* streamingConnectionString) = 0;
 
     /*!
@@ -61,6 +65,7 @@ DECLARE_OPENDAQ_INTERFACE(IMirroredSignalPrivate, IBaseObject)
      * @param streamingConnectionString The connection string of the streaming source that completed
      * the subscription for the signal.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC subscribeCompleted(IString* streamingConnectionString) = 0;
 
     /*!
@@ -68,6 +73,7 @@ DECLARE_OPENDAQ_INTERFACE(IMirroredSignalPrivate, IBaseObject)
      * @param streamingConnectionString The connection string of the streaming source that completed
      * the unsubscription for the signal.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC unsubscribeCompleted(IString * streamingConnectionString) = 0;
 
     /*!
@@ -75,11 +81,14 @@ DECLARE_OPENDAQ_INTERFACE(IMirroredSignalPrivate, IBaseObject)
      * @param streamingConnectionString The connection string of the streaming source that completed
      * the unsubscription for the signal.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC unsubscribeCompletedNoLock(IString * streamingConnectionString) = 0;
 
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC getMirroredDataDescriptor(IDataDescriptor** descriptor) = 0;
     virtual ErrCode INTERFACE_FUNC setMirroredDataDescriptor(IDataDescriptor* descriptor) = 0;
 
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC getMirroredDomainSignal(IMirroredSignalConfig** domainSignals) = 0;
     virtual ErrCode INTERFACE_FUNC setMirroredDomainSignal(IMirroredSignalConfig* domainSignal) = 0;
 };

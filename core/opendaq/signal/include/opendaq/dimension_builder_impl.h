@@ -25,6 +25,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class DimensionBuilderImpl : public ImplementationOf<IDimensionBuilder>
 {
 public:

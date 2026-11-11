@@ -32,6 +32,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @param enumeratorNames The list of enumerator names (String objects)
  * @param firstEnumeratorIntValue The Int value of first enumerator (Integer)
  */
+// [api(module)]
 inline EnumerationTypePtr EnumerationType(
     const StringPtr& typeName,
     const ListPtr<IString>& enumeratorNames,
@@ -47,6 +48,7 @@ inline EnumerationTypePtr EnumerationType(
  * @param typeName The name of the Enumeration type
  * @param enumerators The dictionary of enumerators (String objects as keys, Integer objects as values)
  */
+// [api(module)]
 inline EnumerationTypePtr EnumerationTypeWithValues(
     const StringPtr& typeName,
     const DictPtr<IString, IInteger>& enumerators)

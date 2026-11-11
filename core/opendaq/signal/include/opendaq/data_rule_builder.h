@@ -30,6 +30,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Configuration component of Data rule objects. Contains setter methods that allow for Data rule
  * parameter configuration, and a `build` method that builds the Data rule.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IDataRuleBuilder, IBaseObject)
 {
     /*!
@@ -90,6 +91,7 @@ DECLARE_OPENDAQ_INTERFACE(IDataRuleBuilder, IBaseObject)
 /*!
  * @brief Creates a Data rule builder with no parameters.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, DataRuleBuilder, IDataRuleBuilder)
 
 /*!
@@ -97,6 +99,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, DataRuleBuilder, I
  * possibly non-configurable Data rule.
  * @param ruleToCopy The rule of which configuration should be copied.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY,
     DataRuleBuilderFromExisting, IDataRuleBuilder,
     IDataRule*, ruleToCopy

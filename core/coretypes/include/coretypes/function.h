@@ -48,6 +48,7 @@ typedef ErrCode (*FuncCall)(IBaseObject*, IBaseObject**);
  * ErrCode createFunction(IFuncObject** obj, FuncCall value)
  * @endcode
  */
+// [api(application, coretype)]
 DECLARE_OPENDAQ_INTERFACE(IFunction, IBaseObject)
 {
     /*!
@@ -65,6 +66,7 @@ DECLARE_OPENDAQ_INTERFACE(IFunction, IBaseObject)
 
 /*!@}*/
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(LIBRARY_FACTORY, Function, IFunction, createFunction, FuncCall, value)
 
 END_NAMESPACE_OPENDAQ

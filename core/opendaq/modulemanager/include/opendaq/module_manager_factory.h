@@ -32,6 +32,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * based on the current working directory.
  * @param searchPath The location of the module libraries.
  */
+// [api(application)]
 inline ModuleManagerPtr ModuleManager(const StringPtr& searchPath)
 {
     ModuleManagerPtr obj(ModuleManager_Create(searchPath));
@@ -44,6 +45,7 @@ inline ModuleManagerPtr ModuleManager(const StringPtr& searchPath)
  * based on the current working directory.
  * @param paths The locations of the module libraries.
  */
+// [api(application)]
 inline ModuleManagerPtr ModuleManagerMultiplePaths(const ListPtr<IString>& paths)
 {
     ModuleManagerPtr obj(ModuleManagerMultiplePaths_Create(paths));

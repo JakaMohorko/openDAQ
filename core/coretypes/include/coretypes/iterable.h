@@ -34,6 +34,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * Use this interface to get the start and end iterators. Use iterators to iterate through
  * available items. Containers such as lists and dictionaries usually implement this interface.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IIterable, IBaseObject)
 {
     /*!

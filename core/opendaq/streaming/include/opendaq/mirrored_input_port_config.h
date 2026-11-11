@@ -38,6 +38,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * (and the associated domain signal) data to the device, which is then consumed by the connection formed
  * by the input port origin and the mirrored signal connected to it.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IMirroredInputPortConfig, IInputPortConfig)
 {
     /*!

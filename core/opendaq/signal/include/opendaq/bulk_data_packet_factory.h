@@ -35,6 +35,7 @@ BEGIN_NAMESPACE_OPENDAQ
  *
  * `dataAlign` parameter specifies the alignment in bytes of packet data memory.
  */
+// [api(module)]
 inline DataPacketPtr DataPacketWithImplicitDomainPacket(const DataDescriptorPtr& valueDescriptor,
                                                         const DataDescriptorPtr& domainDescriptor,
                                                         size_t sampleCount,
@@ -60,6 +61,7 @@ inline DataPacketPtr DataPacketWithImplicitDomainPacket(const DataDescriptorPtr&
  *
  * `dataAlign` parameter specifies the alignment in bytes of packet data memory.
  */
+// [api(module)]
 inline DataPacketPtr
 DataPacketWithExplicitDomainPacket(const DataDescriptorPtr& valueDescriptor,
                                    const DataDescriptorPtr& domainDescriptor,

@@ -21,6 +21,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class ServerTypeImpl : public GenericComponentTypeImpl<IServerType>
 {
 public:

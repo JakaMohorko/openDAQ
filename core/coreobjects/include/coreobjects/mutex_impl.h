@@ -22,6 +22,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class MutexImpl : public ImplementationOf<IMutex>
 {
 public:

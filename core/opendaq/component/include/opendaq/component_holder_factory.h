@@ -19,12 +19,14 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 inline ComponentHolderPtr ComponentHolder(const StringPtr& id, const StringPtr& parentGlobalId, const ComponentPtr& component)
 {
     ComponentHolderPtr obj(ComponentHolderWithIds_Create(id, parentGlobalId, component));
     return obj;
 }
 
+// [api(core)]
 inline ComponentHolderPtr ComponentHolder(const ComponentPtr& component)
 {
     ComponentHolderPtr obj(ComponentHolder_Create(component));

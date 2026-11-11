@@ -28,6 +28,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Creates a default authentication provider with only anonymous authentication allowed.
  */
+// [api(application)]
 inline AuthenticationProviderPtr AuthenticationProvider()
 {
     AuthenticationProviderPtr obj(AuthenticationProvider_Create(true));
@@ -38,6 +39,7 @@ inline AuthenticationProviderPtr AuthenticationProvider()
  * @brief Creates an empty authentication provider without any user.
  * @param allowAnonymous True if anonymous authentication is allowed.
  */
+// [api(application)]
 inline AuthenticationProviderPtr AuthenticationProvider(Bool allowAnonymous)
 {
     AuthenticationProviderPtr obj(AuthenticationProvider_Create(allowAnonymous));
@@ -49,6 +51,7 @@ inline AuthenticationProviderPtr AuthenticationProvider(Bool allowAnonymous)
  * @param allowAnonymous True if anonymous authentication is allowed.
  * @param users List of user objects.
  */
+// [api(application)]
 inline AuthenticationProviderPtr StaticAuthenticationProvider(Bool allowAnonymous, const ListPtr<IUser>& users)
 {
     AuthenticationProviderPtr obj(StaticAuthenticationProvider_Create(allowAnonymous, users));
@@ -59,6 +62,7 @@ inline AuthenticationProviderPtr StaticAuthenticationProvider(Bool allowAnonymou
  * @brief Creates an authentication provider out of static json file.
  * @param filename File path to json file contianung a list of user objects.
  */
+// [api(application)]
 inline AuthenticationProviderPtr JsonFileAuthenticationProvider(const StringPtr& filename)
 {
     AuthenticationProviderPtr obj(JsonFileAuthenticationProvider_Create(filename));
@@ -69,6 +73,7 @@ inline AuthenticationProviderPtr JsonFileAuthenticationProvider(const StringPtr&
  * @brief Creates an authentication provider out of static json string.
  * @param jsonString List of users and their groups encoded as json string.
  */
+// [api(application)]
 inline AuthenticationProviderPtr JsonStringAuthenticationProvider(const StringPtr& jsonString)
 {
     AuthenticationProviderPtr obj(JsonStringAuthenticationProvider_Create(jsonString));

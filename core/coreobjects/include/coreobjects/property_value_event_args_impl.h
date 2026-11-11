@@ -23,6 +23,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class PropertyValueEventArgsImpl : public EventArgsBase<IPropertyValueEventArgs>
 {
 public:

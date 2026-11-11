@@ -46,6 +46,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * Note that all devices might note provide a device domain implementation. Such devices cannot be directly queried
  * for their domain data. In such a case, the domain data can be obtained through the device's output signals.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IDeviceDomain, IBaseObject)
 {
     /*!
@@ -76,12 +77,14 @@ DECLARE_OPENDAQ_INTERFACE(IDeviceDomain, IBaseObject)
 };
 /*!@}*/
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, DeviceDomain,
     IRatio*, tickResolution,
     IString*, origin,
     IUnit*, unit
 )
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(LIBRARY_FACTORY, DeviceDomain, IDeviceDomain, createDeviceDomainWithReferenceDomainInfo,
     IRatio*, tickResolution,
     IString*, origin,

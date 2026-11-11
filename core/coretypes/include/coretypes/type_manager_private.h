@@ -24,6 +24,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @defgroup types_types_type_manager Type manager private
  * @{
  */
+// [api(core)]
 DECLARE_OPENDAQ_INTERFACE(ITypeManagerPrivate, IBaseObject)
 {
     virtual ErrCode INTERFACE_FUNC setCoreEventCallback(IProcedure* callback) = 0;

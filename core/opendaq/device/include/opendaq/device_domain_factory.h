@@ -28,6 +28,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @{
  */
 
+// [api(module)]
 inline DeviceDomainPtr DeviceDomain(const RatioPtr& tickResolution,
                                     const StringPtr& origin,
                                     const UnitPtr& unit,
@@ -37,6 +38,7 @@ inline DeviceDomainPtr DeviceDomain(const RatioPtr& tickResolution,
     return obj;
 }
 
+// [api(module)]
 inline StructTypePtr DeviceDomainStructType()
 {
     return StructType(

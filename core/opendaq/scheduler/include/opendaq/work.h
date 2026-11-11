@@ -33,11 +33,13 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  *  @brief A lightweight implementation of callback used in scheduler for worker tasks.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IWork, IBaseObject)
 {
     /*!
      * @brief Executes the callback.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC execute() = 0;
 };
 

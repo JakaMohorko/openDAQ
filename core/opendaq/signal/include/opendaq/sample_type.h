@@ -19,6 +19,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(application)]
 enum class SampleType : EnumType
 {
     Invalid = 0,
@@ -48,6 +49,7 @@ enum class SampleType : EnumType
 
 #define INVALID_SAMPLE_TYPE SampleType::Invalid
 
+// [api(application)]
 enum class ScaledSampleType : EnumType
 {
     Invalid = 0,

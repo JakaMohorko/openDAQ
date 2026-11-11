@@ -28,6 +28,7 @@
 #include <opendaq/module_manager_utils.h>
 
 BEGIN_NAMESPACE_OPENDAQ
+// [api(module)]
 template <class Intf = IFolder, class ... Intfs>
 class GenericSignalContainerImpl : public ComponentImpl<Intf, Intfs ...>
 {
@@ -49,15 +50,22 @@ public:
     ErrCode INTERFACE_FUNC updateOperationMode(OperationModeType modeType) override;
 
 protected:
+    // [api(module)]
     FolderConfigPtr signals;
+    // [api(module, readOnly)]
     FolderConfigPtr functionBlocks;
 
+    // [api(core)]
     std::vector<ComponentPtr> components;
+    // [api(core)]
     std::unordered_set<std::string> defaultComponents;
+    // [api(core)]
     bool allowNonDefaultComponents;
 
+    // [api(core)]
     LoggerComponentPtr signalContainerLoggerComponent;
 
+    // [api(module)]
     SignalConfigPtr createAndAddSignal(const std::string& localId,
                                        const DataDescriptorPtr& descriptor = nullptr,
                                        bool visible = true,
@@ -65,52 +73,73 @@ protected:
                                        const PermissionsPtr& permissions = nullptr,
                                        LockingStrategy lockingStrategy = LockingStrategy::OwnLock);
 
+    // [api(module)]
     void addSignal(const SignalPtr& signal);
+    // [api(module)]
     void removeSignal(const SignalConfigPtr& signal);
 
+    // [api(module)]
     void addNestedFunctionBlock(const FunctionBlockPtr& functionBlock);
+    // [api(module)]
     void removeNestedFunctionBlock(const FunctionBlockPtr& functionBlock);
+    // [api(module)]
     FunctionBlockPtr createAndAddNestedFunctionBlock(const StringPtr& typeId,
                                                      const StringPtr& localId,
                                                      const PropertyObjectPtr& config = nullptr);
 
+    // [api(core)]
     void validateComponentNotExists(const std::string& localId);
+    // [api(core)]
     void validateComponentIsDefault(const std::string& localId);
 
+    // [api(core)]
     template <class TItemInterface = IComponent>
     FolderConfigPtr addFolder(const std::string& localId,
                               const FolderConfigPtr& parent = nullptr,
                               LockingStrategy lockingStrategy = LockingStrategy::OwnLock);
 
+    // [api(core)]
     ComponentPtr addComponent(const std::string& localId,
                               const FolderConfigPtr& parent = nullptr,
                               LockingStrategy lockingStrategy = LockingStrategy::OwnLock);
 
+    // [api(core)]
     ComponentPtr addExistingComponent(const ComponentPtr& component, const FolderConfigPtr& parent = nullptr);
+    // [api(core)]
     void removeComponentById(const std::string& localId);
 
+    // [api(module, override)]
     void removed() override;
 
+    // [api(module, override)]
     void serializeCustomObjectValues(const SerializerPtr& serializer, bool forUpdate) override;
+    // [api(core)]
     virtual void updateFunctionBlock(const std::string& fbId,
                                      const SerializedObjectPtr& serializedFunctionBlock,
                                      const BaseObjectPtr& context);
+    // [api(core)]
     virtual void updateSignal(const std::string& sigId,
                               const SerializedObjectPtr& serializedSignal,
                               const BaseObjectPtr& context);
 
+    // [api(core)]
     template <class F>
     void updateFolder(const SerializedObjectPtr& obj, const std::string& folderType, const std::string& itemType, F&& f);
 
+    // [api(module, override)]
     void updateObject(const SerializedObjectPtr& obj, const BaseObjectPtr& context) override;
+    // [api(module, override)]
     void onUpdatableUpdateEnd(const BaseObjectPtr& context) override;
 
+    // [api(core)]
     void deserializeCustomObjectValues(const SerializedObjectPtr& serializedObject,
                                        const BaseObjectPtr& context,
                                        const FunctionPtr& factoryCallback) override;
 
+    // [api(core)]
     void serializeFolder(const SerializerPtr& serializer, const FolderConfigPtr& folder, const std::string& id, bool forUpdate);
 
+    // [api(core)]
     template <class Interface, class FolderPtr>
     void deserializeDefaultFolder(const SerializedObjectPtr& serializedObject,
                                   const BaseObjectPtr& context,
@@ -118,15 +147,23 @@ protected:
                                   FolderPtr& folder,
                                   const std::string& id);
 
+    // [api(core)]
     ErrCode getAvailableFunctionBlockTypesInternal(IDict** functionBlockTypes);
+    // [api(core)]
     ErrCode addFunctionBlockInternal(IFunctionBlock** functionBlock, IString* typeId, IPropertyObject* config = nullptr);
+    // [api(core)]
     ErrCode removeFunctionBlockInternal(IFunctionBlock* functionBlock);
 
+    // [api(module, override)]
     virtual DictPtr<IString, IFunctionBlockType> onGetAvailableFunctionBlockTypes();
+    // [api(module, override)]
     virtual FunctionBlockPtr onAddFunctionBlock(const StringPtr& typeId, const PropertyObjectPtr& config);
+    // [api(module, override)]
     virtual void onRemoveFunctionBlock(const FunctionBlockPtr& functionBlock);
 
+    // [api(core)]
     void callBeginUpdateOnChildren() override;
+    // [api(core)]
     void callEndUpdateOnChildren() override;
 
 private:
@@ -134,6 +171,7 @@ private:
     void swapComponent(Component& origComponent, const Component& newComponent);
 };
 
+// [api(module)]
 template <class Intf = IFolder, class... Intfs>
 class SignalContainerImpl : public GenericSignalContainerImpl<Intf, Intfs...>
 {
@@ -148,6 +186,7 @@ public:
                         const StringPtr& name = nullptr);
     
 protected:
+    // [api(core)]
     void notifyActiveChanged(bool onUpdate) override;
 
     virtual ErrCode INTERFACE_FUNC getItems(IList** items, ISearchFilter* searchFilter) override;

@@ -20,6 +20,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(application)]
 enum class SubscriptionEventType : EnumType
 {
     Subscribed,
@@ -29,12 +30,14 @@ enum class SubscriptionEventType : EnumType
 /*#
  * [interfaceSmartPtr(IEventArgs, EventArgsPtr, "<coretypes/event_args_ptr.h>")]
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(ISubscriptionEventArgs, IEventArgs)
 {
     virtual ErrCode INTERFACE_FUNC getStreamingConnectionString(IString** streamingConnectionString) = 0;
     virtual ErrCode INTERFACE_FUNC getSubscriptionEventType(SubscriptionEventType* type) = 0;
 };
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(
     LIBRARY_FACTORY, SubscriptionEventArgs,
     IString*, streamingConnectionString,

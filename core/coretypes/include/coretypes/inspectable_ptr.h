@@ -35,6 +35,7 @@ struct InterfaceToSmartPtr<IInspectable>
  * @{
  */
 
+// [api(application)]
 class InspectablePtr : public ObjectPtr<IInspectable>
 {
 public:

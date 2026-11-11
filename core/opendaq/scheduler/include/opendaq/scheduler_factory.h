@@ -30,12 +30,14 @@ BEGIN_NAMESPACE_OPENDAQ
  * @param numWorkers The amount of worker threads. If @c 0 then maximum number of concurrent threads supported by the implementation is used.
  * @returns A Scheduler instance with the specified amount of worker threads.
  */
+// [api(application)]
 inline SchedulerPtr Scheduler(LoggerPtr logger, SizeT numWorkers = 0)
 {
     SchedulerPtr obj(Scheduler_Create(logger, numWorkers));
     return obj;
 }
 
+// [api(application)]
 inline SchedulerPtr SchedulerWithMainLoop(LoggerPtr logger, SizeT numWorkers = 0)
 {
     SchedulerPtr obj(SchedulerWithMainLoop_Create(logger, numWorkers, True));

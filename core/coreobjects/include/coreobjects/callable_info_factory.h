@@ -35,6 +35,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @param isConst Flag indicating if the function is marked as const. A const function promises not to modify the state
  * of the device or any other objects under the openDAQ instance.
  */
+// [api(module)]
 inline CallableInfoPtr FunctionInfo(CoreType returnType, ListPtr<IArgumentInfo> arguments = nullptr, Bool isConst = false)
 {
     return CallableInfoPtr::Adopt(CallableInfo_Create(arguments, returnType, isConst));
@@ -46,6 +47,7 @@ inline CallableInfoPtr FunctionInfo(CoreType returnType, ListPtr<IArgumentInfo> 
  * @param isConst Flag indicating if the function is marked as const. A const function promises not to modify the state
  * of the device or any other objects under the openDAQ instance.
  */
+// [api(module)]
 inline CallableInfoPtr ProcedureInfo(ListPtr<IArgumentInfo> arguments = nullptr, Bool isConst = false)
 {
     return FunctionInfo(CoreType::ctUndefined, std::move(arguments), isConst);
@@ -54,6 +56,7 @@ inline CallableInfoPtr ProcedureInfo(ListPtr<IArgumentInfo> arguments = nullptr,
 /*!
  * @brief Creates the Struct type object that defines the Callable info struct.
  */
+// [api(module)]
 inline StructTypePtr CallableInfoStructType()
 {
     return StructType("CallableInfo",

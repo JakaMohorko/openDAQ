@@ -30,6 +30,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * events. Eg. when a signal is connected to an input port, or when a signal is used as a domain
  * signal of another.
  */
+// [api(core)]
 DECLARE_OPENDAQ_INTERFACE(ISignalEvents, IBaseObject)
 {
     /*!

@@ -19,6 +19,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 inline MutexPtr Mutex()
 {
     return { Mutex_Create() };

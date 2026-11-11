@@ -21,6 +21,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class JsonConfigProviderImpl final : public ImplementationOf<IConfigProvider>
 {
 public:

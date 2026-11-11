@@ -58,6 +58,7 @@ struct IStructBuilder;
  * `ctStruct`, or `ctUndefined`. Additionally, all Container types (`ctList`, `ctDict`) should only have values of the aforementioned
  * types.
  */
+// [api(application, coretype)]
 DECLARE_OPENDAQ_INTERFACE(IStruct, IBaseObject)
 {
     /*!
@@ -110,7 +111,9 @@ DECLARE_OPENDAQ_INTERFACE(IStruct, IBaseObject)
 
 /*!@}*/
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, Struct, IString*, name, IDict*, fields, ITypeManager*, typeManager)
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, StructFromBuilder, IStruct, IStructBuilder*, builder)
 
 END_NAMESPACE_OPENDAQ

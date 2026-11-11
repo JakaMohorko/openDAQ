@@ -21,6 +21,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(module)]
 template <class... Intfs>
 class IoFolderImpl : public FolderImpl<IIoFolderConfig, Intfs ...>
 {
@@ -44,6 +45,7 @@ public:
     static ConstCharPtr SerializeId();
     static ErrCode Deserialize(ISerializedObject* serialized, IBaseObject* context, IFunction* factoryCallback, IBaseObject** obj);
 protected:
+    // [api(core)]
     bool addItemInternal(const ComponentPtr& component) override;
 
 };

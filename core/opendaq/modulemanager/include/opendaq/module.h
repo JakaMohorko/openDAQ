@@ -42,6 +42,7 @@ BEGIN_NAMESPACE_OPENDAQ
  *  The object is usually implemented in an external dynamic link / shared library.
  *  IModuleManager is responsible for loading all modules.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IModule, IBaseObject)
 {
     /*!
@@ -73,6 +74,7 @@ DECLARE_OPENDAQ_INTERFACE(IModule, IBaseObject)
      * @param parent The parent component/device to which the device attaches.
      * @param config A configuration object that contains parameters used to configure a device in the form of key-value pairs.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC createDevice(IDevice** device, IString* connectionString, IComponent* parent, IPropertyObject* config = nullptr) = 0;
 
     /*!
@@ -91,6 +93,7 @@ DECLARE_OPENDAQ_INTERFACE(IModule, IBaseObject)
      * @param config Function block configuration. In case of a null value, implementation should use default configuration.
      * @param[out] functionBlock The created function block.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC createFunctionBlock(IFunctionBlock** functionBlock, IString* id, IComponent* parent, IString* localId, IPropertyObject* config = nullptr) = 0;
 
     /*!
@@ -107,6 +110,7 @@ DECLARE_OPENDAQ_INTERFACE(IModule, IBaseObject)
      * @param rootDevice Root device.
      * @param[out] server The created server.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC createServer(IServer** server, IString* serverTypeId, IDevice* rootDevice, IPropertyObject* config = nullptr) = 0;
 
 
@@ -117,8 +121,10 @@ DECLARE_OPENDAQ_INTERFACE(IModule, IBaseObject)
      * In case of a null value, implementation should use default configuration.
      * @param[out] streaming The created streaming object.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC createStreaming(IStreaming** streaming, IString* connectionString, IPropertyObject* config = nullptr) = 0;
 
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC completeServerCapability(Bool* succeeded, IServerCapability* source, IServerCapabilityConfig* target) = 0;
 
     /*!

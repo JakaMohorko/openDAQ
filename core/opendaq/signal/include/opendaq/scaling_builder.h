@@ -35,6 +35,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Configuration component of Scaling objects. Contains setter methods that allow for Scaling
  * parameter configuration, and a `build` method that builds the Scaling object.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IScalingBuilder, IBaseObject)
 {
     /*!
@@ -133,6 +134,7 @@ DECLARE_OPENDAQ_INTERFACE(IScalingBuilder, IBaseObject)
 /*!
  * @brief Creates a Scaling builder object with no parameters configured.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, ScalingBuilder, IScalingBuilder)
 
 /*!
@@ -140,6 +142,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, ScalingBuilder, IS
  * non-configurable one.
  * @param scalingToCopy The scaling of which configuration should be copied.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, ScalingBuilderFromExisting, IScalingBuilder,
     IScaling*, scalingToCopy

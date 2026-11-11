@@ -22,6 +22,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 template <typename TReturn = void>
 class AwaitableImpl : public ImplementationOf<IAwaitable>
 {

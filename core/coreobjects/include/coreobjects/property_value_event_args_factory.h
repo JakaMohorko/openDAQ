@@ -20,6 +20,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(module)]
 inline PropertyValueEventArgsPtr PropertyValueEventArgs(const PropertyPtr& propChanged,
                                                         const BaseObjectPtr& newValue,
                                                         const BaseObjectPtr& oldValue,

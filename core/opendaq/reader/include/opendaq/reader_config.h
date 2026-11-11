@@ -33,6 +33,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief An interface providing access to a new reader in order to reuse the invalidated reader's settings and configuration.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IReaderConfig, IBaseObject)
 {
     /*!

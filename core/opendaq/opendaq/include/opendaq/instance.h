@@ -47,6 +47,7 @@ struct IInstanceBuilder;
  * can connect to any TMS enabled device by using the `addDevice` function. The Client is set as the root device
  * when the instance is created.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IInstance, IDevice)
 {
     /*!
@@ -103,6 +104,7 @@ DECLARE_OPENDAQ_INTERFACE(IInstance, IDevice)
  *
  * The caller should provide configured module manager and context.
  */
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY(
     LIBRARY_FACTORY, Instance,
     IContext*, context,
@@ -113,6 +115,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY(
  * @brief Creates a Instance with Builder
  * @param builder Instance Builder
  */
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, InstanceFromBuilder, IInstance,
     IInstanceBuilder*, builder
@@ -128,6 +131,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
 /*#
  * [factory(NoConstructor)]
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(
     LIBRARY_FACTORY, Client, IDevice, createClient,
     IContext*, ctx,

@@ -24,6 +24,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class ArgumentInfoImpl : public GenericStructImpl<IArgumentInfo, IStruct>
 {
 public:

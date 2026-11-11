@@ -32,6 +32,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * Input ports invoke the notification functions within the Input port notifications object when corresponding
  * events occur. The listener can then react on those events.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IInputPortNotifications, IBaseObject)
 {
     /*!

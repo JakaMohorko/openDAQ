@@ -48,6 +48,7 @@ typedef ErrCode (*ProcCall)(IBaseObject*);
  * ErrCode createProcedure(IFuncObject** obj, ProcCall value)
  * @endcode
  */
+// [api(application, coretype)]
 DECLARE_OPENDAQ_INTERFACE(IProcedure, IBaseObject)
 {
     /*!
@@ -64,6 +65,7 @@ DECLARE_OPENDAQ_INTERFACE(IProcedure, IBaseObject)
 
 /*!@}*/
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(LIBRARY_FACTORY, Procedure, IProcedure, createProcedure, ProcCall, value)
 
 END_NAMESPACE_OPENDAQ

@@ -20,12 +20,14 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 DECLARE_OPENDAQ_INTERFACE(IMockChannel, IBaseObject)
 {
     virtual void generateSamplesUntil(std::chrono::milliseconds currentTime) = 0;
     virtual uint64_t getOutputRate() = 0;
 };
 
+// [api(core)]
 class MockChannelImpl : public ChannelImpl<IMockChannel>
 {
 public:
@@ -52,6 +54,7 @@ protected:
     void createInputPorts();
 };
 
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(INTERNAL_FACTORY,
     MockChannel, IChannel,
     IContext*, ctx,

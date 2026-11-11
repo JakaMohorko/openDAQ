@@ -59,6 +59,7 @@ BEGIN_NAMESPACE_OPENDAQ
 
 #define COMPONENT_AVAILABLE_ATTRIBUTES {"Name", "Description", "Visible", "Active"}
 
+// [api(module)]
 template <class Intf = IComponent, class ... Intfs>
 class ComponentImpl : public GenericPropertyObjectImpl<Intf, IRemovable, IComponentPrivate, IDeserializeComponent, Intfs ...>
 {
@@ -129,61 +130,95 @@ public:
     static ErrCode Deserialize(ISerializedObject* serialized, IBaseObject* context, IFunction* factoryCallback, IBaseObject** obj);
 
 protected:
+    // [api(module, override)]
     virtual void activeChanged();
+    // [api(module, override)]
     virtual void visibleChanged();
+    // [api(module, override)]
     virtual void removed();
+    // [api(core)]
     virtual void removedNoLock();
+    // [api(core)]
     virtual ErrCode lockAllAttributesInternal();
+    // [api(core)]
     ListPtr<IComponent> searchItems(const SearchFilterPtr& searchFilter, const std::vector<ComponentPtr>& items);
 
+    // [api(core)]
     void notifyItemsActiveChanged(const std::vector<ComponentPtr>& items, bool onUpdate);
+    // [api(core)]
     virtual void notifyActiveChanged(bool onUpdate);
 
 private:
     bool updateActive();
 
 protected:
+    // [api(module, readOnly)]
     ContextPtr context;
 
+    // [api(core)]
     bool isComponentRemoved;
+    // [api(module)]
     WeakRefPtr<IComponent> parent;
+    // [api(module)]
     StringPtr localId;
+    // [api(module, readOnly)]
     TagsPrivatePtr tags;
+    // [api(module, readOnly)]
     StringPtr globalId;
+    // [api(core)]
     EventPtr<const ComponentPtr, const CoreEventArgsPtr> coreEvent;
 
 #ifdef WORKAROUND_MEMBER_INLINE_VARIABLE
+    // [api(core)]
     static std::unordered_set<std::string> componentAvailableAttributes;
 #else
+    // [api(core)]
     inline static std::unordered_set<std::string> componentAvailableAttributes = COMPONENT_AVAILABLE_ATTRIBUTES;
 #endif
 
     // Ordered so that the serialized list is the same on the device and on its clients
+    // [api(core)]
     std::set<std::string> lockedAttributes;
+    // [api(core)]
     bool visible;
     // computed: localActive && parentActive; atomic so the data path (Signal::sendPacket,
     // Connection::enqueue via IInputPort::getActive) can read it without taking the config lock
+    // [api(module)]
     std::atomic<bool> active;
+    // [api(core)]
     bool parentActive;
+    // [api(core)]
     bool localActive;
+    // [api(module)]
     StringPtr name;
+    // [api(module, readOnly)]
     StringPtr description;
+    // [api(module, readOnly)]
     ComponentStatusContainerPtr statusContainer;
+    // [api(module)]
     PropertyObjectPtr componentConfig;
 
+    // [api(core)]
     ErrCode serializeCustomValues(ISerializer* serializer, bool forUpdate) override;
 
+    // [api(core)]
     std::vector<std::pair<std::string, SerializedObjectPtr>> getSerializedItems(const SerializedObjectPtr& object);
 
+    // [api(module, override)]
     virtual void updateObject(const SerializedObjectPtr& obj, const BaseObjectPtr& context);
+    // [api(module, override)]
     void onUpdatableUpdateEnd(const BaseObjectPtr& context) override;
+    // [api(module, override)]
     virtual void serializeCustomObjectValues(const SerializerPtr& serializer, bool forUpdate);
+    // [api(core)]
     void triggerCoreEvent(const CoreEventArgsPtr& args);
 
+    // [api(core)]
     virtual void deserializeCustomObjectValues(const SerializedObjectPtr& serializedObject,
                                                const BaseObjectPtr& context,
                                                const FunctionPtr& factoryCallback);
 
+    // [api(module)]
     template <class CreateComponentCallback>
     static BaseObjectPtr DeserializeComponent(const SerializedObjectPtr& serialized,
                                               const BaseObjectPtr& context,
@@ -191,19 +226,26 @@ protected:
                                               CreateComponentCallback&& createComponentCallback);
 
     virtual BaseObjectPtr getDeserializedParameter(const StringPtr& parameter);
+    // [api(core)]
     ComponentPtr findComponentInternal(const ComponentPtr& component, const std::string& id);
 
+    // [api(core)]
     PropertyObjectPtr getPropertyObjectParent() override;
 
+    // [api(core)]
     static bool validateComponentId(const std::string& id);
 
     // Initialize component status with "Ok" status
+    // [api(module)]
     virtual void initComponentStatus() const;
     // Set component status with default message (empty string) and log status and message (if different from previous, and not OK)
+    // [api(module)]
     virtual void setComponentStatus(const ComponentStatus& status) const;
     // Set component status with message and log status and message (if different from previous, and not OK and empty string)
+    // [api(module)]
     virtual void setComponentStatusWithMessage(const ComponentStatus& status, const StringPtr& message) const;
 
+    // [api(module, override)]
     virtual void onOperationModeChanged(OperationModeType modeType);
 
 private:

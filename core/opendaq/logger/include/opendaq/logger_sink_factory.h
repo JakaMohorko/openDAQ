@@ -30,6 +30,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Creates a Logger Sink object with Stderr as a target.
  */
+// [api(application)]
 inline LoggerSinkPtr StdErrLoggerSink()
 {
     return LoggerSinkPtr(StdErrLoggerSink_Create());
@@ -38,6 +39,7 @@ inline LoggerSinkPtr StdErrLoggerSink()
 /*!
  * @brief Creates a Logger Sink object with Stdout as a target.
  */
+// [api(application)]
 inline LoggerSinkPtr StdOutLoggerSink()
 {
     return LoggerSinkPtr(StdOutLoggerSink_Create());
@@ -49,6 +51,7 @@ inline LoggerSinkPtr StdOutLoggerSink()
  * @param maxFileSize The maximum size of each file.
  * @param maxFiles The maximum count of files.
  */
+// [api(application)]
 inline LoggerSinkPtr RotatingFileLoggerSink(const StringPtr& fileName, SizeT maxFileSize, SizeT maxFiles)
 {
     return LoggerSinkPtr(RotatingFileLoggerSink_Create(fileName, maxFileSize, maxFiles));
@@ -58,6 +61,7 @@ inline LoggerSinkPtr RotatingFileLoggerSink(const StringPtr& fileName, SizeT max
  * @brief Creates a Logger Sink object with basic file as a target.
  * @param fileName The name of the file.
  */
+// [api(application)]
 inline LoggerSinkPtr BasicFileLoggerSink(const StringPtr& fileName)
 {
     return LoggerSinkPtr(BasicFileLoggerSink_Create(fileName));
@@ -67,6 +71,7 @@ inline LoggerSinkPtr BasicFileLoggerSink(const StringPtr& fileName)
 /*!
  * @brief Creates a Logger Sink object with WinDebug output as a target.
  */
+// [api(application)]
 inline LoggerSinkPtr WinDebugLoggerSink()
 {
     return LoggerSinkPtr(WinDebugLoggerSink_Create());
@@ -75,6 +80,7 @@ inline LoggerSinkPtr WinDebugLoggerSink()
 #endif
 
 
+// [api(application)]
 inline LoggerSinkPtr LastMessageLoggerSink()
 {
     return LoggerSinkPtr(LastMessageLoggerSink_Create());
@@ -135,6 +141,7 @@ inline void getEnvFileSinkLogLevelAndFileName(LogLevel& level, std::string& file
  * The rotating files sink is present in the created list if @p fileName is provided,
  * otherwise only Stdout and WinDebug sinks are present
  */
+// [api(application)]
 inline ListPtr<ILoggerSink> DefaultSinks(const StringPtr& fileName = nullptr)
 {
     auto sinks = List<ILoggerSink>();

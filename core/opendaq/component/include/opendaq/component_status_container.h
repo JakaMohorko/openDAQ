@@ -39,6 +39,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * such as connection status, synchronization status, etc. The statuses' values are represented
  * by Enumeration objects.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IComponentStatusContainer, IBaseObject)
 {
     /*!
@@ -65,6 +66,7 @@ DECLARE_OPENDAQ_INTERFACE(IComponentStatusContainer, IBaseObject)
     virtual ErrCode INTERFACE_FUNC getStatusMessage(IString* name, IString** message) = 0;
 };
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, ComponentStatusContainer)
 
 /*!@}*/

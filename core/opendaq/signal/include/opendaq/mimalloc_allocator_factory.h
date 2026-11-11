@@ -19,6 +19,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(module)]
 inline AllocatorPtr MiMallocAllocator()
 {
     AllocatorPtr obj(MiMallocAllocator_Create());

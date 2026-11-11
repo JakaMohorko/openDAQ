@@ -29,6 +29,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Allows the component to be notified when it is removed.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IRemovable, IBaseObject)
 {
     /*!

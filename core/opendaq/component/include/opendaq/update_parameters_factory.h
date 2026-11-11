@@ -24,6 +24,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @{
  */
 
+// [api(application)]
 inline UpdateParametersPtr UpdateParameters()
 {
     UpdateParametersPtr obj(UpdateParameters_Create());

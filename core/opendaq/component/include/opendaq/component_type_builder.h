@@ -27,6 +27,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @{
  */
 
+// [api(application)]
 enum class ComponentTypeSort
 {
     Undefined = 0,
@@ -48,6 +49,7 @@ enum class ComponentTypeSort
  * Depending on the set "Type" builder parameter, a different Component type is created - eg. Streaming type,
  * Device type, Function block type, or Server type
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IComponentTypeBuilder, IBaseObject)
 {
     /*!
@@ -176,26 +178,31 @@ DECLARE_OPENDAQ_INTERFACE(IComponentTypeBuilder, IBaseObject)
 /*!
  * @brief Creates a ComponentTypeBuilder with default parameters.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, ComponentTypeBuilder, IComponentTypeBuilder)
 
 /*!
  * @brief Creates a ComponentTypeBuilder with the type sort set to "Device".
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, DeviceTypeBuilder, IComponentTypeBuilder)
 
 /*!
  * @brief Creates a ComponentTypeBuilder with the type sort set to "Streaming".
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, StreamingTypeBuilder, IComponentTypeBuilder)
 
 /*!
  * @brief Creates a ComponentTypeBuilder with the type sort set to "Server".
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, ServerTypeBuilder, IComponentTypeBuilder)
 
 /*!
  * @brief Creates a ComponentTypeBuilder with the type sort set to "FunctionBlock".
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, FunctionBlockTypeBuilder, IComponentTypeBuilder)
 
 /*!@}*/

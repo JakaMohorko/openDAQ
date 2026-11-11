@@ -22,6 +22,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class SubscriptionEventArgsImpl : public EventArgsBase<ISubscriptionEventArgs>
 {
 public:

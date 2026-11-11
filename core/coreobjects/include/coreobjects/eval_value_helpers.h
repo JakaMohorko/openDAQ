@@ -20,6 +20,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class IInteger_Helper : public IInteger
 {
 public:
@@ -37,6 +38,7 @@ public:
     }
 };
 
+// [api(core)]
 class IFloat_Helper : public IFloat
 {
 public:
@@ -54,6 +56,7 @@ public:
     }
 };
 
+// [api(core)]
 class IBoolean_Helper : public IBoolean
 {
 public:
@@ -71,6 +74,7 @@ public:
     }
 };
 
+// [api(core)]
 class IString_Helper : public IString
 {
 public:
@@ -88,6 +92,7 @@ public:
     }
 };
 
+// [api(core)]
 class IUnit_Helper : public IUnit
 {
 public:
@@ -117,6 +122,7 @@ public:
     }
 };
 
+// [api(core)]
 class IStruct_Helper : public IStruct
 {
 public:
@@ -158,6 +164,7 @@ public:
     }
 };
 
+// [api(core)]
 class IProperty_Helper : public IProperty
 {
 public:

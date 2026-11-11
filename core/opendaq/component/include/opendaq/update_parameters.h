@@ -37,6 +37,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief IUpdateParameters interface provides a set of methods to give user flexibility to load instance configuration.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IUpdateParameters, IPropertyObject)
 {
     /*!
@@ -72,6 +73,7 @@ DECLARE_OPENDAQ_INTERFACE(IUpdateParameters, IPropertyObject)
  */
 
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY(
     LIBRARY_FACTORY, UpdateParameters
 )

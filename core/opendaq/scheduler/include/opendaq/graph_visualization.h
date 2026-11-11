@@ -30,6 +30,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Represents a way to get a string representation of a graph
  * usually in some diagram description language like DOT, mermaid or D2.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IGraphVisualization, IBaseObject)
 {
     /*!

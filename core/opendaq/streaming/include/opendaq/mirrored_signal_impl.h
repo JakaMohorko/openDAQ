@@ -30,6 +30,7 @@ class MirroredSignalBase;
 
 using MirroredSignal = MirroredSignalBase<>;
 
+// [api(module)]
 template <typename... Interfaces>
 class MirroredSignalBase : public SignalBase<IMirroredSignalConfig, IMirroredSignalPrivate, Interfaces...>
 {
@@ -42,7 +43,9 @@ public:
                                 const StringPtr& localId,
                                 const StringPtr& className = nullptr);
 
+    // [api(module, override)]
     virtual StringPtr onGetRemoteId() const = 0;
+    // [api(module, override)]
     virtual Bool onTriggerEvent(const EventPacketPtr& eventPacket);
 
     // IMirroredSignalConfig
@@ -82,20 +85,31 @@ public:
     ErrCode INTERFACE_FUNC getSignalSerializeId(IString** serializeId) override;
 
 protected:
+    // [api(core)]
     EventPacketPtr createDataDescriptorChangedEventPacket() override;
+    // [api(module, override)]
     void onListenedStatusChanged(bool listened) override;
+    // [api(module, override)]
     void removed() override;
+    // [api(core)]
     virtual bool clearDescriptorOnUnsubscribe();
+    // [api(module, override)]
     void deserializeCustomObjectValues(const SerializedObjectPtr& serializedObject,
                                        const BaseObjectPtr& context,
                                        const FunctionPtr& factoryCallback) override;
+    // [api(core)]
     DevicePtr getOwnerDevice(const ComponentPtr& parent);
 
+    // [api(core)]
     std::mutex signalMutex;
 
+    // [api(module, readOnly)]
     DataDescriptorPtr mirroredDataDescriptor;
+    // [api(core)]
     DataDescriptorPtr mirroredDomainDataDescriptor;
+    // [api(module, readOnly)]
     MirroredSignalConfigPtr mirroredDomainSignal;
+    // [api(core)]
     StringPtr ownerSignalGlobalId;
 
 private:

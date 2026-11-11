@@ -31,6 +31,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * Modifying the tags of a component might have unintended sideffects and should in most cases only be done
  * by the component owner module.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(ITagsPrivate, IBaseObject)
 {
     /*!
@@ -38,6 +39,7 @@ DECLARE_OPENDAQ_INTERFACE(ITagsPrivate, IBaseObject)
      * @param name The name of the tag to be added.
      * @retval OPENDAQ_IGNORED if a node with the `name` is already in the list of tags.
      */
+    // [api(application)]
     virtual ErrCode INTERFACE_FUNC add(IString* name) = 0;
 
     /*!
@@ -45,6 +47,7 @@ DECLARE_OPENDAQ_INTERFACE(ITagsPrivate, IBaseObject)
      * @param name The name of the tag to be removed.
      * @retval OPENDAQ_IGNORED if a node with the `name` is not in the list of tags.
      */
+    // [api(application)]
     virtual ErrCode INTERFACE_FUNC remove(IString* name) = 0;
 
     // [templateType(tags, IString)]
@@ -52,6 +55,7 @@ DECLARE_OPENDAQ_INTERFACE(ITagsPrivate, IBaseObject)
      * @brief Replaces all tags.
      * @param tags The new list of tags.
      */
+    // [api(application)]
     virtual ErrCode INTERFACE_FUNC replace(IList* tags) = 0;
 };
 

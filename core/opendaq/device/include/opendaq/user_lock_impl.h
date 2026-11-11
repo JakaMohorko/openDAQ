@@ -24,6 +24,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class UserLockImpl final : public ImplementationOf<IUserLock, ISerializable>
 {
 public:

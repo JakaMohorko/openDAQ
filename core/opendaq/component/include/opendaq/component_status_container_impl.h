@@ -25,6 +25,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 template <typename TInterface, typename... Interfaces>
 class StatusContainerBase : public ImplementationOf<TInterface, Interfaces...>
 {
@@ -107,6 +108,7 @@ ErrCode StatusContainerBase<TInterface, Interfaces...>::getStatusMessage(IString
 }
 
 // ComponentStatusContainer
+// [api(core)]
 class ComponentStatusContainerImpl final : public StatusContainerBase<IComponentStatusContainer, IComponentStatusContainerPrivate, ISerializable>
 {
 public:

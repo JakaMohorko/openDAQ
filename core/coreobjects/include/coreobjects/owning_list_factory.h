@@ -21,8 +21,10 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, OwningList, IList, IPropertyObject*, owner, IString*, ref)
 
+// [api(module)]
 template <class TValueInterface, class TValuePtr = typename InterfaceToSmartPtr<TValueInterface>::SmartPtr>
 ListObjectPtr<IList, TValueInterface, TValuePtr> OwningList(const PropertyObjectPtr& owner, StringPtr ref = "List")
 {
@@ -30,6 +32,7 @@ ListObjectPtr<IList, TValueInterface, TValuePtr> OwningList(const PropertyObject
     return obj;
 }
 
+// [api(module)]
 template <class T, class S = typename InterfaceToSmartPtr<T>::SmartPtr, typename... Elements>
 ListPtr<T, S> OwningList(StringPtr ref, PropertyObjectPtr owner, Elements&&... elements)
 {

@@ -23,6 +23,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Interface enabling introspection into the expected key and value types of the dictionary.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IDictElementType, IBaseObject)
 {
     /*!

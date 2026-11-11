@@ -24,6 +24,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*#
  * [interfaceSmartPtr(IEventArgs, EventArgsPtr, "<coretypes/event_args_ptr.h>")]
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IEndUpdateEventArgs, IEventArgs)
 {
     // [elementType(properties, IString)]
@@ -31,6 +32,7 @@ DECLARE_OPENDAQ_INTERFACE(IEndUpdateEventArgs, IEventArgs)
     virtual ErrCode INTERFACE_FUNC getIsParentUpdating(Bool* isParentUpdating) = 0;
 };
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(
     LIBRARY_FACTORY, EndUpdateEventArgs,
     IList*, properties,

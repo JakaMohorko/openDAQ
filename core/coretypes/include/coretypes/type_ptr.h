@@ -46,6 +46,7 @@ struct InterfaceToSmartPtr<IType>
  * Structs and Property objects. Types should be inserted into the Type manager to be used by different parts
  * of the SDK.
  */
+// [api(application)]
 template <typename InterfaceType>
 class GenericTypePtr : public ObjectPtr<InterfaceType>
 {

@@ -28,6 +28,7 @@ struct ILogFileInfoBuilder;
  */
 
 
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(ILogFileInfo, IBaseObject)
 {
     /*!
@@ -84,6 +85,7 @@ DECLARE_OPENDAQ_INTERFACE(ILogFileInfo, IBaseObject)
  * @brief Creates an log file info from the builder.
  * @param builder The log file info builder.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, LogFileInfoFromBuilder, ILogFileInfo,
     ILogFileInfoBuilder*, builder

@@ -49,6 +49,7 @@ struct IConnection;
  * when `requiresSignal` is called. Such input ports are usually a part of function blocks that do not require
  * a given signal to perform calculations.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IInputPort, IComponent)
 {
     /*!

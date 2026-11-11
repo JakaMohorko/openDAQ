@@ -28,6 +28,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Creates a new Tags object with an empty list of tags.
  */
+// [api(module)]
 inline TagsPtr Tags()
 {
     return TagsPtr(Tags_Create());

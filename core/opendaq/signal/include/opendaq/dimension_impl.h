@@ -23,6 +23,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class DimensionImpl : public GenericStructImpl<IDimension, IStruct>
 {
 public:

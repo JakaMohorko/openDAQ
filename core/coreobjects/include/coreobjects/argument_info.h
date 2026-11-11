@@ -35,6 +35,7 @@ BEGIN_NAMESPACE_OPENDAQ
  *
  * Argument info objects implement the Struct methods internally and are Core type `ctStruct`.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IArgumentInfo, IBaseObject)
 {
     /*!
@@ -86,6 +87,7 @@ DECLARE_OPENDAQ_INTERFACE(IArgumentInfo, IBaseObject)
  * @param name The name of the argument.
  * @param type The type expected of the argument.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(
     LIBRARY_FACTORY, ArgumentInfo,
     IString*, name,
@@ -98,6 +100,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY(
  * @param name The name of the argument.
  * @param itemType Corresponds to the expected type of items in the list argument.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY,
     ListArgumentInfo, IArgumentInfo,
@@ -112,6 +115,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  * @param keyType Corresponds to the expected type of key in the dictionary argument.
  * @param itemType Corresponds to the expected type of items in the dictionary argument.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY,
     DictArgumentInfo, IArgumentInfo,

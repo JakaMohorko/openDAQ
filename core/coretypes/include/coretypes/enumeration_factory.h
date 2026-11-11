@@ -38,6 +38,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * Construction of the Enumeration will fail if the value does not match the corresponding type available
  * in the Type Manager.
  */
+// [api(application)]
 inline EnumerationPtr Enumeration(const StringPtr& typeName, const StringPtr& value, const TypeManagerPtr& typeManager)
 {
     EnumerationPtr obj(Enumeration_Create(typeName, value, typeManager));
@@ -54,6 +55,7 @@ inline EnumerationPtr Enumeration(const StringPtr& typeName, const StringPtr& va
  * Construction of the Enumeration will fail if the value does not match the corresponding type available
  * in the Type Manager.
  */
+// [api(application)]
 inline EnumerationPtr EnumerationWithIntValue(const StringPtr& typeName, const IntegerPtr& value, const TypeManagerPtr& typeManager)
 {
     EnumerationPtr obj(EnumerationWithIntValue_Create(typeName, value, typeManager));
@@ -69,6 +71,7 @@ inline EnumerationPtr EnumerationWithIntValue(const StringPtr& typeName, const I
  * Construction of the Enumeration will fail if the value does not match the corresponding type available
  * in the Type Manager.
  */
+// [api(application)]
 inline EnumerationPtr EnumerationWithIntValueAndType(const EnumerationTypePtr& type, const IntegerPtr& value)
 {
     EnumerationPtr obj(EnumerationWithIntValueAndType_Create(type, value));

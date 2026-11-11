@@ -26,6 +26,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class TypeManagerImpl : public ImplementationOfWeak<ITypeManager, ITypeManagerPrivate, ISerializable>
 {
 public:

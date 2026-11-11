@@ -35,6 +35,7 @@ struct DefaultValueSelector
     }
 };
 
+// [api(core)]
 template <typename T, typename ElementTypeInterface, typename ValueSelector = DefaultValueSelector<typename T::iterator::value_type>>
 class IteratorBaseImpl : public ImplementationOf<IIterator, ElementTypeInterface>
 {

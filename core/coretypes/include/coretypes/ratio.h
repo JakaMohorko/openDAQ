@@ -42,6 +42,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * ErrCode createRatio(IRatio** obj, Int numerator, Int denominator)
  * @endcode
  */
+// [api(application, coretype)]
 DECLARE_OPENDAQ_INTERFACE(IRatio, IBaseObject)
 {
     /*!
@@ -68,6 +69,7 @@ DECLARE_OPENDAQ_INTERFACE(IRatio, IBaseObject)
 
 /*!@}*/
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, Ratio, Int, numerator, Int, denominator)
 
 END_NAMESPACE_OPENDAQ

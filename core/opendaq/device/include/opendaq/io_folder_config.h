@@ -36,6 +36,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * Every device has an IO folder, which allows only other IO folders and
  * channels as children.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IIoFolderConfig, IFolderConfig)
 {
 };

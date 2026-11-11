@@ -50,6 +50,7 @@ struct IModuleManager;
  * [interfaceSmartPtr(IComponent, ComponentPtr, "<opendaq/context_ptr.fwd_declare.h>")]
  * [includeHeader("<coretypes/event_wrapper.h>")]
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IContext, IBaseObject)
 {
     /*!
@@ -104,6 +105,7 @@ DECLARE_OPENDAQ_INTERFACE(IContext, IBaseObject)
      * @param moduleId The identifier of the module for which options are requested.
      * @param[out] options A dictionary containing the options associated with the specified module ID.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC getModuleOptions(IString* moduleId, IDict** options) = 0;
 
     // [templateType(servers, IString, IBaseObject)]
@@ -129,6 +131,7 @@ DECLARE_OPENDAQ_INTERFACE(IContext, IBaseObject)
 
 // [templateType(options, IString, IBaseObject)]
 // [templateType(discoveryServers, IString, IDiscoveryServer)]
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY(
     LIBRARY_FACTORY, Context,
     IScheduler*, Scheduler,

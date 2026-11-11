@@ -38,6 +38,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * 
  * Argument info objects implement the Struct methods internally and are Core type `ctStruct`.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(ICallableInfo, IBaseObject)
 {
     /*!
@@ -75,6 +76,7 @@ DECLARE_OPENDAQ_INTERFACE(ICallableInfo, IBaseObject)
  * @param constFlag A flag indicating if the function is marked as const or not. A const function promises not to modify the state
  * of the device or any other objects under the openDAQ instance.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(
     LIBRARY_FACTORY, CallableInfo,
     IList*, argumentInfo,

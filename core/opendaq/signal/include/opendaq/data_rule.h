@@ -31,6 +31,7 @@ struct IDataRuleBuilder;
 /*!
  * @brief Enumeration of available Data rule types
  */
+// [api(application)]
 enum class DataRuleType
 {
     Other = 0, ///< The rule is unknown to openDAQ and cannot be handled automatically.
@@ -74,6 +75,7 @@ enum class DataRuleType
  * The parameters contain a `constant` number member. The value described by the constant rule is always equal to the
  * constant.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IDataRule, IBaseObject)
 {
    /*!
@@ -106,6 +108,7 @@ DECLARE_OPENDAQ_INTERFACE(IDataRule, IBaseObject)
  * The scale and offset are stored within the `parameters` member of the Rule object
  * with the scale being at the first position of the list, and the offset at the second.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, LinearDataRule, IDataRule,
     INumber*, delta,
@@ -115,6 +118,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
 /*!
  * @brief Creates a DataRule with a Constant rule type configuration.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, ConstantDataRule, IDataRule
 )
@@ -122,6 +126,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
 /*!
  * @brief Creates a DataRule with an Explicit rule type configuration and no parameters.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, ExplicitDataRule, IDataRule,
     OPENDAQ_FACTORY_PARAMS()
@@ -135,6 +140,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  * Most often used for domain signals to specify estimates on how close together/far apart two
  * subsequent samples might be.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, ExplicitDomainDataRule, IDataRule,
     INumber*, minExpectedDelta,
@@ -146,6 +152,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  * @param ruleType .
  * @param parameters .
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, DataRule, IDataRule,
     DataRuleType, ruleType,
@@ -156,6 +163,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  * @brief Creates a DataRulePtr from Builder.
  * @param builder DataRule Builder
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, DataRuleFromBuilder, IDataRule,
     IDataRuleBuilder*, builder

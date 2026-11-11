@@ -31,6 +31,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Loads all available modules in a implementation-defined manner.
  * User can also side-load custom modules via `addModule` call.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IModuleManager, IBaseObject)
 {
     // [elementType(modules, IModule)]
@@ -52,6 +53,7 @@ DECLARE_OPENDAQ_INTERFACE(IModuleManager, IBaseObject)
      * Context is passed to all loaded modules for internal use.
      * @param context The Context containing the Logger, Scheduler, Property Object Class Manager and Module Manager
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC loadModules(IContext* context) = 0;
 
     /*!
@@ -87,9 +89,11 @@ DECLARE_OPENDAQ_INTERFACE(IModuleManager, IBaseObject)
 };
 /*!@}*/
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY(
     LIBRARY_FACTORY, ModuleManager, IString*, path)
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY,
     ModuleManagerMultiplePaths, IModuleManager, IList*, paths)
 

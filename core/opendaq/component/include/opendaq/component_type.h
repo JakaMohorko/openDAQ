@@ -40,6 +40,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * the Struct fields.
  */
 
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IComponentType, IBaseObject)
 {
     /*!

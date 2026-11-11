@@ -21,11 +21,13 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 DECLARE_OPENDAQ_INTERFACE(IMockDefaultDevice, IBaseObject)
 {
     virtual void addCustomComponent(const ComponentPtr& component) = 0;
 };
 
+// [api(core)]
 class DefaultDevice : public DeviceBase<IDevice, IMockDefaultDevice>
 {
 public:
@@ -46,6 +48,7 @@ public:
     }
 };
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     INTERNAL_FACTORY, DefaultChannel, IChannel,
     IFunctionBlockType*, fbType,
@@ -54,6 +57,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     IString*, localId
 )
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     INTERNAL_FACTORY, DefaultFunctionBlock, IFunctionBlock,
     IFunctionBlockType*, fbType,
@@ -62,6 +66,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     IString*, localId
 )
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     INTERNAL_FACTORY, DefaultDevice, IDevice,
     IContext*, context,

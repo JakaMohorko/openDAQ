@@ -45,6 +45,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * - **"dhcp6"**, **"address6"**, **"gateway6"**: These properties follow the same format and rules as their IPv4 counterparts but apply to IPv6 configuration.
  */
 
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(INetworkInterface, IBaseObject)
 {
     /*!
@@ -75,6 +76,7 @@ DECLARE_OPENDAQ_INTERFACE(INetworkInterface, IBaseObject)
 
 /*!@}*/
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(
     LIBRARY_FACTORY, NetworkInterface,
     IString*, name,

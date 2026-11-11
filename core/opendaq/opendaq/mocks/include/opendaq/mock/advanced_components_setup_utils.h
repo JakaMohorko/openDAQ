@@ -28,6 +28,7 @@ namespace daq::test_utils
     PropertyObjectPtr createMockNestedPropertyObject();
     FolderPtr dummyExtSigFolder(const ContextPtr& ctx);
 
+    // [api(core)]
     class MockFb1Impl final : public FunctionBlock
     {
     public:
@@ -37,24 +38,28 @@ namespace daq::test_utils
         void onRemoveFunctionBlock(const FunctionBlockPtr& functionBlock) override;
     };
 
+    // [api(core)]
     class MockFb2Impl final : public FunctionBlock
     {
     public:
         MockFb2Impl(const ContextPtr& ctx, const ComponentPtr& parent, const StringPtr& localId);
     };
 
+    // [api(core)]
     class MockChannel1Impl final : public Channel
     {
     public:
         MockChannel1Impl(const ContextPtr& ctx, const ComponentPtr& parent, const StringPtr& localId);
     };
 
+    // [api(core)]
     class MockChannel2Impl final : public Channel
     {
     public:
         MockChannel2Impl(const ContextPtr& ctx, const ComponentPtr& parent, const StringPtr& localId);
     };
 
+    // [api(core)]
     class MockDevice1Impl final : public Device
     {
     public:
@@ -70,6 +75,7 @@ namespace daq::test_utils
         uint64_t ticksSinceOrigin;
     };
 
+    // [api(core)]
     class MockDevice2Impl final : public Device
     {
     public:
@@ -198,12 +204,14 @@ namespace daq::test_utils
         int callCntDeviceInfo = 0;
     };
 
+    // [api(core)]
     class MockSrvImpl final : public Server
     {
     public:
         MockSrvImpl(const ContextPtr& ctx, const DevicePtr& rootDev, const StringPtr& id);
     };
 
+    // [api(core)]
     class MockRecorderFb1Impl final : public FunctionBlockImpl<IFunctionBlock, IRecorder>
     {
     public:

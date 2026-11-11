@@ -34,6 +34,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * after, or the same as a second object of the same type.
  */
 
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IComparable, IBaseObject)
 {
     /*!

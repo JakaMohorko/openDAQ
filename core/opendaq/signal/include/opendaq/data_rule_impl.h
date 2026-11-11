@@ -23,6 +23,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class DataRuleImpl final : public GenericStructImpl<IDataRule, IStruct, IRulePrivate>
 {
 public:

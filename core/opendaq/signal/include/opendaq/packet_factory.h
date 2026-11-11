@@ -37,6 +37,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @param offset Optional packet offset parameter, used to calculate the data of the packet
  * if the Data rule of the Signal descriptor is not explicit.
  */
+// [api(module)]
 inline DataPacketPtr DataPacket(const DataDescriptorPtr& descriptor,
                                 uint64_t sampleCount,
                                 const NumberPtr& offset = nullptr)
@@ -54,6 +55,7 @@ inline DataPacketPtr DataPacket(const DataDescriptorPtr& descriptor,
  * @param offset Optional packet offset parameter, used to calculate the data of the packet
  * if the Data rule of the Signal descriptor is not explicit.
  */
+// [api(module)]
 inline DataPacketPtr DataPacketWithDomain(const DataPacketPtr& domainPacket,
                                           const DataDescriptorPtr& descriptor,
                                           uint64_t sampleCount,
@@ -85,6 +87,7 @@ struct ConstantPosAndValue
  * can be used. Other values are passed as an array of struct with uint32_t sample position field and value field.
  * Value field (as well as initial value) are of type defined as sample type in the descriptor.
  */
+// [api(module)]
 template <class T>
 DataPacketPtr ConstantDataPacketWithDomain(const DataPacketPtr& domainPacket,
                                            const DataDescriptorPtr& descriptor,
@@ -116,6 +119,7 @@ DataPacketPtr ConstantDataPacketWithDomain(const DataPacketPtr& domainPacket,
  * @param offset Optional packet offset parameter, used to calculate the data of the packet
  * if the Data rule of the Signal descriptor is not explicit.
  */
+// [api(module)]
 inline DataPacketPtr DataPacketWithExternalMemory(const DataPacketPtr& domainPacket,
                                           const DataDescriptorPtr& descriptor,
                                           uint64_t sampleCount,
@@ -139,6 +143,7 @@ inline DataPacketPtr DataPacketWithExternalMemory(const DataPacketPtr& domainPac
  * @param id The ID of the event.
  * @param parameters The <String, BaseObject> dictionary containing the event parameters.
  */
+// [api(module)]
 inline EventPacketPtr EventPacket(const StringPtr& id, const DictPtr<IString, IBaseObject>& parameters)
 {
     EventPacketPtr obj(EventPacket_Create(id, parameters));
@@ -157,6 +162,7 @@ inline EventPacketPtr EventPacket(const StringPtr& id, const DictPtr<IString, IB
  * The ID of the packet is "DATA_DESCRIPTOR_CHANGED". Its parameters dictionary contains the keys "DataDescriptor"
  * and "DomainDataDescriptor", carrying their respective data descriptor objects as values.
  */
+// [api(module)]
 inline EventPacketPtr DataDescriptorChangedEventPacket(const DataDescriptorPtr& dataDescriptor, const DataDescriptorPtr& domainDataDescriptor)
 {
     EventPacketPtr obj(DataDescriptorChangedEventPacket_Create(dataDescriptor, domainDataDescriptor));
@@ -170,6 +176,7 @@ inline EventPacketPtr DataDescriptorChangedEventPacket(const DataDescriptorPtr& 
  * The ID of the packet is "IMPLICIT_DOMAIN_GAP_DETECTED". Its parameters dictionary contains the key "GapDiff", which holds
  * the size of the gap. The size can be negative, in which case it is an overlap of samples.
  */
+// [api(module)]
 inline EventPacketPtr ImplicitDomainGapDetectedEventPacket(const NumberPtr& diff)
 {
     EventPacketPtr obj(ImplicitDomainGapDetectedEventPacket_Create(diff));

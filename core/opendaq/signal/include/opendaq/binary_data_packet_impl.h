@@ -47,6 +47,7 @@ struct BinaryDataDeleter<false>
     }
 };
 
+// [api(core)]
 template <bool ExternalMemory>
 class BinaryDataPacketImpl : public GenericDataPacketImpl<IDataPacket>
 {

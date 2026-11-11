@@ -113,6 +113,7 @@ private:
 
 }
 
+// [api(module)]
 template <typename TInterface, typename... Interfaces>
 class SignalBase : public ComponentImpl<TInterface, ISignalEvents, ISignalPrivate, Interfaces...>
 {
@@ -173,35 +174,51 @@ public:
     static ConstCharPtr SerializeId();
     static ErrCode Deserialize(ISerializedObject* serialized, IBaseObject* context, IFunction* factoryCallback, IBaseObject** obj);
 protected:
+    // [api(module, override)]
     void visibleChanged() override;
 
+    // [api(module, override)]
     void serializeCustomObjectValues(const SerializerPtr& serializer, bool forUpdate) override;
+    // [api(module, override)]
     void updateObject(const SerializedObjectPtr& obj, const BaseObjectPtr& context) override;
 
+    // [api(core)]
     virtual EventPacketPtr createDataDescriptorChangedEventPacket();
+    // [api(module, override)]
     virtual void onListenedStatusChanged(bool listened);
+    // [api(core)]
     ErrCode setDomainSignalInternal(ISignal* signal);
+    // [api(module, override)]
     virtual SignalPtr onGetDomainSignal();
+    // [api(module, override)]
     virtual DataDescriptorPtr onGetDescriptor();
 
+    // [api(module, override)]
     void removed() override;
     BaseObjectPtr getDeserializedParameter(const StringPtr& parameter) override;
+    // [api(core)]
     void deserializeCustomObjectValues(const SerializedObjectPtr& serializedObject,
                                        const BaseObjectPtr& context,
                                        const FunctionPtr& factoryCallback) override;
 
+    // [api(core)]
     ErrCode lockAllAttributesInternal() override;
     
 #ifdef WORKAROUND_MEMBER_INLINE_VARIABLE
+    // [api(core)]
     static std::unordered_set<std::string> signalAvailableAttributes;
 #else
+    // [api(core)]
     inline static std::unordered_set<std::string> signalAvailableAttributes = SIGNAL_AVAILABLE_ATTRIBUTES;
 #endif
 
+    // [api(module, readOnly)]
     DataDescriptorPtr dataDescriptor;
+    // [api(core)]
     StringPtr deserializedDomainSignalId;
     // all last-value state and handling (see last_value_cache.h); mutable because the
     // producer publishes from the const sendPacketInternal path
+    // [api(core)]
     mutable details::LastValueStore lastValueStore;
 
 private:

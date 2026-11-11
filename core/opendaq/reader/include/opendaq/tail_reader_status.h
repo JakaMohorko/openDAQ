@@ -31,6 +31,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief ITailReaderStatus inherits from IReaderStatus to expand information returned read function
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(ITailReaderStatus, IReaderStatus)
 {
 
@@ -38,6 +39,7 @@ DECLARE_OPENDAQ_INTERFACE(ITailReaderStatus, IReaderStatus)
 };
 /*!@}*/
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY (
     LIBRARY_FACTORY, TailReaderStatus,
     IEventPacket*, eventPacket,

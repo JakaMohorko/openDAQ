@@ -34,6 +34,7 @@
 BEGIN_NAMESPACE_OPENDAQ
 struct ModuleLibrary;
 
+// [api(core)]
 class ModuleManagerImpl : public ImplementationOfWeak<IModuleManager, IModuleManagerUtils>
 {
 public:

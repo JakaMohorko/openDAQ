@@ -27,6 +27,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Creates an LogFileInfo builder with no parameters configured.
  */
+// [api(module)]
 inline LogFileInfoBuilderPtr LogFileInfoBuilder()
 {
     LogFileInfoBuilderPtr obj(LogFileInfoBuilder_Create());

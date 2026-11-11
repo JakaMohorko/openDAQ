@@ -57,6 +57,7 @@ BEGIN_NAMESPACE_OPENDAQ
  *
  * @deprecated ISyncComponent is deprecated and will be removed in a future release. Use ISynchronization through IDevice::getSynchronization instead.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(ISyncComponent, IComponent)
 {
     /*!
@@ -90,6 +91,7 @@ DECLARE_OPENDAQ_INTERFACE(ISyncComponent, IComponent)
 };
 /*!@}*/
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, SyncComponent, ISyncComponent,
     IContext*, context,

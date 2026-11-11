@@ -48,6 +48,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @endcode 
  */
 
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IConvertible, IBaseObject)
 {
     /*!

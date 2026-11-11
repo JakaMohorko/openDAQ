@@ -22,6 +22,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 inline FunctionBlockPtr MockFunctionBlock(
     const FunctionBlockTypePtr& type,
     const daq::ContextPtr& ctx,
@@ -34,6 +35,7 @@ inline FunctionBlockPtr MockFunctionBlock(
     return obj;
 }
 
+// [api(core)]
 inline FunctionBlockPtr MockFunctionBlockDynamicInputPort(
     const FunctionBlockTypePtr& type,
     const daq::ContextPtr& ctx,
@@ -46,6 +48,7 @@ inline FunctionBlockPtr MockFunctionBlockDynamicInputPort(
     return obj;
 }
 
+// [api(core)]
 inline FunctionBlockPtr MockFunctionBlockDynamicOutputPort(
     const FunctionBlockTypePtr& type,
     const daq::ContextPtr& ctx,

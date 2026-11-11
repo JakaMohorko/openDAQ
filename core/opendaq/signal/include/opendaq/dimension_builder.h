@@ -33,6 +33,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Configuration component of Dimension objects. Contains setter methods that allow for Dimension
  * parameter configuration, and a `build` method that builds the Dimension.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IDimensionBuilder, IBaseObject)
 {
     /*!
@@ -97,12 +98,14 @@ DECLARE_OPENDAQ_INTERFACE(IDimensionBuilder, IBaseObject)
 /*!
  * @brief Creates a Dimension builder object with no configuration parameters.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, DimensionBuilder, IDimensionBuilder)
 
 /*!
  * @brief Creates a builder copy of the dimension object passed as parameter.
  * @param dimensionToCopy The dimension object to be copied.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, DimensionBuilderFromExisting, IDimensionBuilder,
     IDimension*, dimensionToCopy

@@ -27,6 +27,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class DataDescriptorBuilderImpl : public ImplementationOf<IDataDescriptorBuilder>
 {
 public:

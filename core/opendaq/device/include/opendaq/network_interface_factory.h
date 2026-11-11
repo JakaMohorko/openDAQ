@@ -31,6 +31,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @param ownerDeviceSerialNumber The serial number of the device which owns the interface.
  * @param moduleManager The module manager.
  */
+// [api(module)]
 inline NetworkInterfacePtr NetworkInterface(const StringPtr& name,
                                             const StringPtr& ownerDeviceManufacturerName,
                                             const StringPtr& ownerDeviceSerialNumber,

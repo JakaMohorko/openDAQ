@@ -31,11 +31,13 @@ BEGIN_NAMESPACE_OPENDAQ
 /*#
  * [interfaceSmartPtr(ITask, GenericTaskPtr)]
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(ITaskGraph, ITask)
 {
 };
 /*!@}*/
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, TaskGraph, IProcedure*, work, IString*, name)
 
 END_NAMESPACE_OPENDAQ

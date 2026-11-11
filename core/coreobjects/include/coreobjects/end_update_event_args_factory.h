@@ -20,6 +20,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(module)]
 inline EndUpdateEventArgsPtr EndUpdateEventArgs(const ListPtr<IString>& properties, bool parentUpdating)
 {
     return EndUpdateEventArgsPtr(EndUpdateEventArgs_Create(properties, parentUpdating));

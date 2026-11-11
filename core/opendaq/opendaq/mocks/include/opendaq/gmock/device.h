@@ -20,6 +20,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 struct MockDevice : MockGenericSignalContainer<MockDevice, IDevice>
 {
     typedef MockPtr<IDevice, typename daq::InterfaceToSmartPtr<IDevice>::SmartPtr, MockDevice> Strict;

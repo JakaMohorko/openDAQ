@@ -31,6 +31,7 @@ struct ISerializedList;
  * @{
  */
 
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(ISerializedObject, IBaseObject)
 {
     virtual ErrCode INTERFACE_FUNC readSerializedObject(IString* key, ISerializedObject** plainObj) = 0;

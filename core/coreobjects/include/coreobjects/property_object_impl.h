@@ -73,6 +73,7 @@ namespace config_protocol
     class ConfigClientPropertyObjectBaseImpl;
 }
 
+// [api(module)]
 template <typename PropObjInterface, typename... Interfaces>
 class GenericPropertyObjectImpl : public ImplementationOfWeak<PropObjInterface,
                                                               IOwnable,
@@ -166,6 +167,7 @@ public:
     // IOwnable
     virtual ErrCode INTERFACE_FUNC setOwner(IPropertyObject* newOwner) override;
 
+    // [api(core)]
     [[nodiscard]]
     WeakRefPtr<IPropertyObject> getOwner() const;
 
@@ -196,7 +198,9 @@ public:
         const std::set<StringPtr>& corePropertyNames;
     };
 
+    // [api(core)]
     void configureClonedMembers(const CloneParameters& parameters);
+    // [api(core)]
     void configureClonedMembers(const std::unordered_map<StringPtr, PropertyValueEventEmitter>& valueWriteEvents,
                                 const std::unordered_map<StringPtr, PropertyValueEventEmitter>& valueReadEvents,
                                 const EndUpdateEventEmitter& endUpdateEvent,
@@ -231,6 +235,7 @@ protected:
      * that is called during a property value read/write event to prevent deadlocks. The lock behaves
      * similarly to a lock guard created with recursive mutex.
      */
+    // [api(module)]
     std::unique_ptr<RecursiveConfigLockGuard> getRecursiveConfigLock();
     
     /**
@@ -240,6 +245,7 @@ protected:
      *
      * WARNING: Only usable if locking strategy is set to `OwnLock` or `ForwardOwnerLockOwn`.
      */
+    // [api(module)]
     std::lock_guard<std::mutex> getAcquisitionLock();
     
     /**
@@ -247,6 +253,7 @@ protected:
      *
      * WARNING: Only usable if locking strategy is set to `OwnLock` or `ForwardOwnerLockOwn`.
      */
+    // [api(module)]
     std::unique_lock<std::mutex> getUniqueLock();
 
     /**
@@ -256,6 +263,7 @@ protected:
      *
      * Wraps the mutex of the closest owner/parent if the locking strategy is set to `InheritLock`.
      */
+    // [api(module)]
     LockGuardPtr getRecursiveConfigLock2();
     
     /**
@@ -265,6 +273,7 @@ protected:
      *
      * Wraps the mutex of the closest owner/parent if the locking strategy is set to `InheritLock`.
      */
+    // [api(module)]
     std::lock_guard<MutexPtr> getAcquisitionLock2();
     
     /**
@@ -272,52 +281,81 @@ protected:
      *
      * Wraps the mutex of the closest owner/parent if the locking strategy is set to `InheritLock`.
      */
+    // [api(core)]
     std::unique_lock<MutexPtr> getUniqueLock2();
     
+    // [api(module, readOnly)]
     PropertyObjectPtr objPtr;
+    // [api(core)]
     std::atomic<bool> coreEventMuted;
 
+    // [api(core)]
     bool isFrozen();
+    // [api(core)]
     void unfreeze();
+    // [api(core)]
     StringPtr getPath() const;
+    // [api(core)]
     TypeManagerPtr getTypeManager();
+    // [api(core)]
     CloneParameters getCloneParameters();
 
+    // [api(core)]
     void setMutex(const MutexPtr& mutex);
+    // [api(core)]
     void setLockOwner(const PropertyObjectInternalPtr& owner);
     // The mutex the object's lock guards lock: the lock owner's when inheriting, as the owner may have been attached later
+    // [api(core)]
     MutexPtr getLockedMutex();
     // True when obj locks the same mutex, so holding this object's lock also covers obj
+    // [api(core)]
     bool sharesLock(const BaseObjectPtr& obj);
+    // [api(core)]
     void internalDispose(bool) override;
+    // [api(core)]
     ErrCode setPropertyOrderInternal(IList* orderedPropertyNames, bool isUpdating = false);
 
     // Serialization
 
+    // [api(core)]
     virtual ErrCode serializeCustomValues(ISerializer* serializer, bool forUpdate);
+    // [api(core)]
     virtual ErrCode serializePropertyValue(const StringPtr& name, const ObjectPtr<IBaseObject>& value, ISerializer* serializer, bool forUpdate = false);
+    // [api(core)]
     virtual ErrCode serializeProperty(const PropertyPtr& property, ISerializer* serializer);
 
     // Update
+    // [api(module, override)]
     virtual void endApplyUpdate();
+    // [api(module, override)]
     virtual void beginApplyUpdate();
+    // [api(module, override)]
     virtual void beginApplyProperties(const UpdatingActions& propsAndValues, bool parentUpdating);
+    // [api(module, override)]
     virtual void endApplyProperties(const UpdatingActions& propsAndValues, bool parentUpdating);
+    // [api(core)]
     bool isParentUpdating();
+    // [api(module, override)]
     virtual void onUpdatableUpdateEnd(const BaseObjectPtr& context);
 
+    // [api(core)]
     template <class F>
     static PropertyObjectPtr DeserializePropertyObject(const SerializedObjectPtr& serialized,
                                                        const BaseObjectPtr& context,
                                                        const FunctionPtr& factoryCallback,
                                                        F&& f);
 
+    // [api(core)]
     virtual void callBeginUpdateOnChildren();
+    // [api(core)]
     virtual void callEndUpdateOnChildren();
 
+    // [api(core)]
     virtual PropertyObjectPtr getPropertyObjectParent();
+    // [api(core)]
     virtual PropertyObjectPtr cloneChildPropertyObject(const PropertyPtr& prop);
 
+    // [api(core)]
     ErrCode addCoreProperty(IProperty* property);
 
 private:

@@ -23,6 +23,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 template <typename F>
 class CustomProcedureImpl : public ImplementationOf<IProcedure, ICoreType>
 {

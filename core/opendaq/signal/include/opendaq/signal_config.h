@@ -41,6 +41,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * the signal. They react on property, or input signal changes to modify a signal's data descriptor,
  * and send processed/acquired data down its signal path.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(ISignalConfig, ISignal)
 {
     /*!
@@ -138,6 +139,7 @@ DECLARE_OPENDAQ_INTERFACE(ISignalConfig, ISignal)
 /*!@}*/
 
 // [allowNull(parent), allowNull(className)]
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, Signal, ISignalConfig,
     IContext*, context,
@@ -147,6 +149,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
 )
 
 // [allowNull(parent), allowNull(className)]
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, SignalWithDescriptor, ISignalConfig,
     IContext*, context,

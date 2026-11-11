@@ -51,6 +51,7 @@ struct InterfaceToSmartPtr<ITypeManager>
  * Thus, a parent of a given class must be added to the manager before any of its children. Likewise, a class
  * cannot be removed before its children are removed.
  */
+// [api(application)]
 class TypeManagerPtr : public ObjectPtr<ITypeManager>
 {
 public:

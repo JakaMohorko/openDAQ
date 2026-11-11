@@ -34,6 +34,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 template <typename TInterface = IPropertyObject, typename... Interfaces>
 class GenericSynchronizationImpl : public GenericPropertyObjectImpl<TInterface, ISynchronization, Interfaces...>
 {
@@ -53,6 +54,7 @@ public:
     ErrCode INTERFACE_FUNC getSerializeId(ConstCharPtr* id) const override;
 };
 
+// [api(core)]
 class SynchronizationImpl : public GenericSynchronizationImpl<IPropertyObject, ISynchronizationPrivate>
 {
 public:

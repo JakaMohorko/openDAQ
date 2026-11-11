@@ -36,6 +36,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @param inputDataType The scaling's input data type.
  * @param outputDataType The scaling's output data type.
  */
+// [api(module)]
 inline ScalingPtr LinearScaling(const NumberPtr& scale,
                                 const NumberPtr& offset,
                                 SampleType inputDataType = SampleType::Float64,
@@ -53,6 +54,7 @@ inline ScalingPtr LinearScaling(const NumberPtr& scale,
  * @param outputDataType The data type output by the rule after calculation.
  * @param inputDataType The type of input data expected by the rule.
  */
+// [api(module)]
 inline ScalingPtr Scaling(SampleType inputDataType, ScaledSampleType outputDataType, ScalingType scalingType, const DictPtr<IString, IBaseObject>& params)
 {
     ScalingPtr obj(Scaling_Create(inputDataType, outputDataType, scalingType, params));
@@ -64,6 +66,7 @@ inline ScalingPtr Scaling(SampleType inputDataType, ScaledSampleType outputDataT
  *
  * @param builder Scaling Builder
  */
+// [api(module)]
 inline ScalingPtr ScalingFromBuilder(const ScalingBuilderPtr& builder)
 {
     ScalingPtr obj(ScalingFromBuilder_Create(builder));
@@ -73,6 +76,7 @@ inline ScalingPtr ScalingFromBuilder(const ScalingBuilderPtr& builder)
 /*!
  * @brief Creates a Scaling builder object with no parameters configured.
  */
+// [api(module)]
 inline ScalingBuilderPtr ScalingBuilder()
 {
     ScalingBuilderPtr obj(ScalingBuilder_Create());
@@ -84,12 +88,14 @@ inline ScalingBuilderPtr ScalingBuilder()
  * non-configurable one.
  * @param scaling The scaling of which configuration should be copied.
  */
+// [api(module)]
 inline ScalingBuilderPtr ScalingBuilderCopy(const ScalingPtr& scaling)
 {
     ScalingBuilderPtr obj(ScalingBuilderFromExisting_Create(scaling));
     return obj;
 }
 
+// [api(module)]
 inline StructTypePtr ScalingStructType()
 {
     return StructType("Scaling",

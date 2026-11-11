@@ -19,6 +19,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class MultiReaderBuilderImpl : public ImplementationOf<IMultiReaderBuilder>
 {
 public:

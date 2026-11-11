@@ -36,6 +36,7 @@ static constexpr IntfID UnknownGuid = { 0x00000000, 0x0000, 0x0000, { { 0xC0, 0x
  *
  * IUnknown on Windows OS is compatible with Microsoft COM IUnknown interface.
  */
+// [api(application)]
 struct IUnknown
 {
     /// @privatesection
@@ -114,6 +115,7 @@ struct IUnknown
  * ErrCode createBaseObject(IBaseObject** obj)
  * @endcode
  */
+// [api(application, coretype)]
 struct IBaseObject : public IUnknown
 {
     /// @privatesection
@@ -216,6 +218,7 @@ struct IBaseObject : public IUnknown
 
 // ReSharper restore CppPolymorphicClassWithNonVirtualPublicDestructor
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, BaseObject)
 
 END_NAMESPACE_OPENDAQ

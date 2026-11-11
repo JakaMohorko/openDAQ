@@ -23,6 +23,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 template <typename StructInterfaces, typename... Interfaces>
 class VersionInfoBase : public GenericStructImpl<StructInterfaces, IStruct, Interfaces...>
 {
@@ -46,12 +47,14 @@ protected:
     void serializeVersionInfo(ISerializer* serializer);
 };
 
+// [api(core)]
 class VersionInfoImpl : public VersionInfoBase<IVersionInfo>
 {
 public:
     using VersionInfoBase<IVersionInfo>::VersionInfoBase;
 };
 
+// [api(core)]
 class DevelopmentVersionInfoImpl : public VersionInfoBase<IDevelopmentVersionInfo, IVersionInfo>
 {
 public:

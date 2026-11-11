@@ -29,6 +29,7 @@ BEGIN_NAMESPACE_OPENDAQ
 
 static const char* ConfigurationConnectionStatusAlias = "ConfigurationStatus";
 
+// [api(core)]
 class ConnectionStatusContainerImpl final : public StatusContainerBase<IComponentStatusContainer, IConnectionStatusContainerPrivate, ISerializable>
 {
 public:

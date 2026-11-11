@@ -28,6 +28,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Internal Permissions interface. It should be used only in openDAQ core implementation files.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IPermissionsInternal, IBaseObject)
 {
     // [templateType(permissions, IString, IInteger)]

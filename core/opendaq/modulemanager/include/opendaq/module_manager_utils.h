@@ -31,6 +31,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @{
  */
 
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IModuleManagerUtils, IBaseObject)
 {
     
@@ -63,6 +64,7 @@ DECLARE_OPENDAQ_INTERFACE(IModuleManagerUtils, IBaseObject)
      *
      * Iterates through all loaded modules and creates a device with the first module that accepts the provided connection string.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC createDevice(IDevice** device, IString* connectionString, IComponent* parent, IPropertyObject* config = nullptr) = 0;
 
     /*!
@@ -89,6 +91,7 @@ DECLARE_OPENDAQ_INTERFACE(IModuleManagerUtils, IBaseObject)
      * A custom local ID can be provided by adding a "LocalId" string property to the `config` property object input parameter, or by providing the
      * localId string argument.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC createFunctionBlock(IFunctionBlock** functionBlock, IString* id, IComponent* parent, IPropertyObject* config = nullptr, IString* localId = nullptr) = 0;
     
     /*!
@@ -99,10 +102,13 @@ DECLARE_OPENDAQ_INTERFACE(IModuleManagerUtils, IBaseObject)
      *
      * Iterates through all loaded modules and creates a streaming connection with the first module that accepts the provided connection string.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC createStreaming(IStreaming** streaming, IString* connectionString, IPropertyObject* config = nullptr) = 0;
     // [templateType(streamingTypes, IString, IStreamingType)]
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC getAvailableStreamingTypes(IDict** streamingTypes) = 0;
 
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC createDefaultAddDeviceConfig(IPropertyObject** defaultConfig) = 0;
 
     /*!
@@ -117,6 +123,7 @@ DECLARE_OPENDAQ_INTERFACE(IModuleManagerUtils, IBaseObject)
      * The servers folder of the root device is automatically assigned as parent for created server component.
      * The local ID of created server component is equal to the name of the server type.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC createServer(IServer** server, IString* serverTypeId, IDevice* rootDevice, IPropertyObject* serverConfig = nullptr) = 0;
 
     /*!
@@ -130,6 +137,7 @@ DECLARE_OPENDAQ_INTERFACE(IModuleManagerUtils, IBaseObject)
      * the new config parameters are advertised via multicast to all devices in the subnet. The target device compares the received
      * identification parameters with its own and, if they match, attempts to apply the new configuration parameters for the specified interface.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC changeIpConfig(IString* iface, IString* manufacturer, IString* serialNumber, IPropertyObject* config) = 0;
 
     /*!
@@ -144,12 +152,14 @@ DECLARE_OPENDAQ_INTERFACE(IModuleManagerUtils, IBaseObject)
      * The target device compares the received identification parameters with its own and, if they match, attempts to retrieve
      * the currently active configuration parameters for the specified interface.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC requestIpConfig(IString* iface, IString* manufacturer, IString* serialNumber, IPropertyObject** config) = 0;
 
     /*!
      * @brief Completes the DeviceInfo's ServerCapabilities of existing device with the information obtained from device discovery.
      * @param device The device whose ServerCapabilities should be completed.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC completeDeviceCapabilities(IDevice* device) = 0;
 
     // [templateType(devices, IString, IDevice)]
@@ -179,6 +189,7 @@ DECLARE_OPENDAQ_INTERFACE(IModuleManagerUtils, IBaseObject)
      * @return OPENDAQ_PARTIAL_SUCCESS if at least one device was successfully created, but not all of them;
      *         OPENDAQ_ERR_GENERALERROR if no devices were created.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC createDevices(IDict** devices, IDict* connectionArgs, IComponent* parent, IDict* errCodes = nullptr, IDict* errorInfos = nullptr) = 0;
 
     /*!
@@ -190,6 +201,7 @@ DECLARE_OPENDAQ_INTERFACE(IModuleManagerUtils, IBaseObject)
      * The manufacturer name and serial number are used to uniquely identify the target device.
      * This method searches through the available devices discovered during the last scan.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC getDiscoveryInfo(IDeviceInfo** deviceInfo, IString* manufacturer, IString* serialNumber) = 0;
 
 };

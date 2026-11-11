@@ -30,6 +30,7 @@ BEGIN_NAMESPACE_OPENDAQ
 
 class TaskGraph;
 
+// [api(core)]
 class SubTask : public ImplementationOf<ITask, ITaskInternal>
 {
 public:
@@ -77,6 +78,7 @@ struct std::hash<daq::TaskPtr>
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class TaskGraph : public ImplementationOf<ITaskGraph, ITaskInternal, IGraphVisualization>
 {
 public:

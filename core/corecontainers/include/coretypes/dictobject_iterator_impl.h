@@ -23,6 +23,7 @@ BEGIN_NAMESPACE_OPENDAQ
 
 struct KeyValueSelector;
 
+// [api(core)]
 template <typename T>
 class DictIterator : public IteratorBaseImpl<T, IDictElementType, KeyValueSelector>
 {
@@ -60,6 +61,7 @@ private:
     const IntfID& valueId;
 };
 
+// [api(core)]
 template <typename T, typename Selector>
 class DictListIterator : public IteratorBaseImpl<T, IListElementType, Selector>
 {

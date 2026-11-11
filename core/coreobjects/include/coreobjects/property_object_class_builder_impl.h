@@ -24,6 +24,7 @@ BEGIN_NAMESPACE_OPENDAQ
 
 struct ISerializedObject;
 
+// [api(core)]
 class PropertyObjectClassBuilderImpl : public ImplementationOf<IPropertyObjectClassBuilder>
 {
 public:

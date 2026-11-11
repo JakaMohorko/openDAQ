@@ -293,6 +293,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * are enabled recursively for the entirety of the subtree. A converse function can be used to instead recursively
  * mute the events.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(ICoreEventArgs, IEventArgs)
 {
     // [templateType(parameters, IString, IBaseObject)]
@@ -316,6 +317,7 @@ DECLARE_OPENDAQ_INTERFACE(ICoreEventArgs, IEventArgs)
  * @param eventId The ID of the event. If the ID is not equal to one of the pre-defined IDs, the event name will be "Unknown".
  * @param parameters The parameters of the event.
  */
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY(
     LIBRARY_FACTORY, CoreEventArgs,
     CoreEventId, eventId,
@@ -333,6 +335,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY(
  *
  * The ID of the event is 0, and the event name is "PropertyValueChanged".
  */
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, CoreEventArgsPropertyValueChanged, ICoreEventArgs,
     IPropertyObject*, propOwner,
@@ -352,6 +355,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  * A property object finished updating when `endUpdate` is called, or at the end of the `update` call.
  * The ID of the event is 10, and the event name is "PropertyObjectUpdateEnd".
  */
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, CoreEventArgsPropertyObjectUpdateEnd, ICoreEventArgs,
     IPropertyObject*, propOwner,
@@ -368,6 +372,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  *
  * The ID of the event is 20, and the event name is "PropertyAdded".
  */
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, CoreEventArgsPropertyAdded, ICoreEventArgs,
     IPropertyObject*, propOwner,
@@ -384,6 +389,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  *
  * The ID of the event is 30, and the event name is "PropertyRemoved".
  */
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, CoreEventArgsPropertyRemoved, ICoreEventArgs,
     IPropertyObject*, propOwner,
@@ -397,6 +403,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  *
  * The ID of the event is 130, and the event name is "TypeAdded".
  */
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, CoreEventArgsTypeAdded, ICoreEventArgs,
     IType*, type
@@ -408,6 +415,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  *
  * The ID of the event is 140, and the event name is "TypeRemoved".
  */
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, CoreEventArgsTypeRemoved, ICoreEventArgs,
     IString*, typeName
@@ -421,6 +429,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  *
  * The ID of the event is 190, and the event name is "PropertyOrderChanged".
  */
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, CoreEventArgsPropertyOrderChanged, ICoreEventArgs,
     IPropertyObject*, propOwner,

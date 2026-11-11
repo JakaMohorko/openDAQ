@@ -20,6 +20,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(module)]
 inline SubscriptionEventArgsPtr SubscriptionEventArgs(const StringPtr& streamingConnectionString,
                                                       SubscriptionEventType eventType)
 {

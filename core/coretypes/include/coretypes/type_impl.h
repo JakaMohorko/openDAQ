@@ -22,6 +22,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 template <class TypeInterface>
 class GenericTypeImpl : public ImplementationOf<TypeInterface, ISerializable, ICoreType>
 {

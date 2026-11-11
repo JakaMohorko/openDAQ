@@ -34,6 +34,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @param localId <description-missing>
  * @param className <description-missing>
  */
+// [api(module)]
 inline SignalConfigPtr SignalWithDescriptor(const ContextPtr& context,
                                             const DataDescriptorPtr& descriptor,
                                             const ComponentPtr& parent,
@@ -51,6 +52,7 @@ inline SignalConfigPtr SignalWithDescriptor(const ContextPtr& context,
  * @param localId <description-missing>
  * @param className <description-missing>
  */
+// [api(module)]
 inline SignalConfigPtr Signal(const ContextPtr& context,
                               const ComponentPtr& parent,
                               const StringPtr& localId,

@@ -40,6 +40,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * Other components use the folder component to organize the children components, 
  * such as channels, signals, function blocks, etc.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IFolder, IComponent)
 {
     // [elementType(items, IComponent)]

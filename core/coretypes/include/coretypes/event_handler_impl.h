@@ -23,6 +23,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 template <typename TSenderPtr, typename TEventArgsPtr>
 class EventHandlerImpl : public ImplementationOf<IEventHandler>
 {

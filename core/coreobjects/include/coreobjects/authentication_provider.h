@@ -34,6 +34,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * make a call to an external database, do a lookup to a json file with defined users or it might simply check the
  * password against a hardcoded one.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IAuthenticationProvider, IBaseObject)
 {
     /*!
@@ -44,6 +45,7 @@ DECLARE_OPENDAQ_INTERFACE(IAuthenticationProvider, IBaseObject)
      * @param password The password in plain text.
      * @param user[out] And instance of successfully authenticated user. If authentication is not successful, an exception is thrown.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC authenticate(IString* username, IString* password, IUser** userOut) = 0;
 
     /*!
@@ -58,6 +60,7 @@ DECLARE_OPENDAQ_INTERFACE(IAuthenticationProvider, IBaseObject)
      * 
      * @param user[out] Pointer to anonymous user instance. If authentication is not successful, an exception is thrown.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC authenticateAnonymous(IUser** userOut) = 0;
 
     /*!
@@ -75,6 +78,7 @@ DECLARE_OPENDAQ_INTERFACE(IAuthenticationProvider, IBaseObject)
  * @brief Creates an empty authentication provider without any user.
  * @param allowAnonymous True if anonymous authentication is allowed.
  */
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(LIBRARY_FACTORY,
                                                             AuthenticationProvider,
                                                             IAuthenticationProvider,
@@ -87,6 +91,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(LIBRARY_FACTORY,
  * @param allowAnonymous True if anonymous authentication is allowed.
  * @param userList List of User objects.
  */
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(LIBRARY_FACTORY,
                                                             StaticAuthenticationProvider,
                                                             IAuthenticationProvider,
@@ -100,6 +105,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(LIBRARY_FACTORY,
  * @brief Creates an authentication provider out of json string.
  * @param jsonString Json string containg a list of serialized User objects.
  */
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(LIBRARY_FACTORY,
                                                             JsonStringAuthenticationProvider,
                                                             IAuthenticationProvider,
@@ -111,6 +117,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(LIBRARY_FACTORY,
  * @brief Creates an authentication provider out of json file.
  * @param filename File path to a json file containing a list of serialized User objects.
  */
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(LIBRARY_FACTORY,
                                                             JsonFileAuthenticationProvider,
                                                             IAuthenticationProvider,

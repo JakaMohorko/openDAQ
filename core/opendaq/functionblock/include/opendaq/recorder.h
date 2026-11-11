@@ -35,6 +35,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * may expose additional properties for configuring the storage (such as file type, storage
  * location, etc.). tags.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IRecorder, IBaseObject)
 {
     /*!

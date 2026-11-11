@@ -20,6 +20,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class CoercerImpl final : public ImplementationOf<ICoercer, ISerializable>
 {
 public:

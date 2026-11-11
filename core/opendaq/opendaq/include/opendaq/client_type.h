@@ -24,6 +24,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Enumeration of available client types
  */
+// [api(application)]
 enum class ClientType : EnumType
 {
     Control = 0, /// A client connected to the server can view and configure the device just like other Control clients

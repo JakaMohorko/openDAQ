@@ -23,6 +23,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class MdnsDiscoveryServerImpl : public ImplementationOf<IDiscoveryServer>
 {
 public:

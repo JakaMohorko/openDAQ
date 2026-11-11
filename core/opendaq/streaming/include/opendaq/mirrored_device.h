@@ -35,6 +35,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Represents an openDAQ mirrored client device.
  * Allows accessing streaming data sources associated with the device.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IMirroredDevice, IDevice)
 {
     // [elementType(streamingSources, IStreaming)]

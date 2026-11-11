@@ -43,24 +43,28 @@ BEGIN_NAMESPACE_OPENDAQ
  *
  * Fields of Core type `ctUndefined` can have any type value.
  */
+// [api(application)]
 inline StructPtr Struct(const StringPtr& name, const DictPtr<IString, IBaseObject>& fields, const TypeManagerPtr& typeManager)
 {
     StructPtr obj(Struct_Create(name, fields, typeManager));
     return obj;
 }
 
+// [api(application)]
 inline StructPtr StructFromBuilder(const StructBuilderPtr& builder)
 {
     StructPtr obj(StructFromBuilder_Create(builder));
     return obj;
 }
 
+// [api(application)]
 inline StructBuilderPtr StructBuilder(const StringPtr& name, const TypeManagerPtr& typeManager)
 {
     StructBuilderPtr obj(StructBuilder_Create(name, typeManager));
     return obj;
 }
 
+// [api(application)]
 inline StructBuilderPtr StructBuilder(const StructPtr& struct_)
 {
     StructBuilderPtr obj(StructBuilderFromStruct_Create(struct_));

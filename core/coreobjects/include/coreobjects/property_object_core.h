@@ -19,12 +19,14 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 DECLARE_OPENDAQ_INTERFACE(IPropertyObjectCore, IBaseObject)
 {
     virtual ErrCode INTERFACE_FUNC getRecursiveLockGuard(ILockGuard** lockGuard, IMutex* sync) = 0;
     virtual ErrCode INTERFACE_FUNC getLockGuard(ILockGuard** lockGuard, IMutex* sync) = 0;
 };
 
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, PropertyObjectCore)
 
 END_NAMESPACE_OPENDAQ

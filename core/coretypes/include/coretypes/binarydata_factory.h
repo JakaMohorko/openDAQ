@@ -19,12 +19,14 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(application)]
 inline BinaryDataPtr BinaryData(const SizeT size)
 {
     BinaryDataPtr obj(BinaryData_Create(size));
     return obj;
 }
 
+// [api(application)]
 inline BinaryDataPtr BinaryData(char* data, const SizeT size)
 {
     BinaryDataPtr obj(BinaryData_Create(size));

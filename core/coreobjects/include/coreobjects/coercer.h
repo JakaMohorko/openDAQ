@@ -40,6 +40,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * "if(value > 5, 5, value)" would enforce that the property value is always equal to or lower than 5.
  */
 
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(ICoercer, IBaseObject)
 {
     /*!
@@ -71,6 +72,7 @@ DECLARE_OPENDAQ_INTERFACE(ICoercer, IBaseObject)
  * @brief Creates a Coercer with the given evaluation expression.
  * @param eval The evaluation expression used for coercion.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, Coercer, IString*, eval)
 
 /*!@}*/

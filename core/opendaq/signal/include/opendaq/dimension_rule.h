@@ -31,6 +31,7 @@ struct IDimensionRuleBuilder;
 /*!
  * @brief Enumeration of available rule types
  */
+// [api(application)]
 enum class DimensionRuleType
 {
     Other = 0,   ///< The rule is unknown to openDAQ and cannot be handled automatically.
@@ -69,6 +70,7 @@ enum class DimensionRuleType
  * Number example list: = [1.2, 10.5, 20.2, 50.7]
  * Range example list: [1-10, 10-20, 20-30, 30-40, 40-50]
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IDimensionRule, IBaseObject)
 {
     /*!
@@ -102,6 +104,7 @@ DECLARE_OPENDAQ_INTERFACE(IDimensionRule, IBaseObject)
  * The scale and offset are stored within the `parameters` member of the Rule object
  * with the scale being at the first position of the list, and the offset at the second.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, LinearDimensionRule, IDimensionRule,
     INumber*, delta,
@@ -116,6 +119,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  *
  * The list is stored within the `parameters` member of the Rule object.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, ListDimensionRule, IDimensionRule,
     IList*, list
@@ -129,6 +133,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  * @param base The base of the logarithm.
  * @param size The size of the dimension described by the rule.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, LogarithmicDimensionRule, IDimensionRule,
     INumber*, delta,
@@ -143,6 +148,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  * @param type The type of the Dimension rule
  * @param parameters Tha parameters of the Dimension rule
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, DimensionRule, IDimensionRule,
     DimensionRuleType, type,
@@ -153,6 +159,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  * @brief Creates a DimensionRule using Builder
  * @param builder DimensionRule Builder
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, DimensionRuleFromBuilder, IDimensionRule,
     IDimensionRuleBuilder*, builder

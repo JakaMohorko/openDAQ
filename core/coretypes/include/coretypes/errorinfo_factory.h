@@ -21,11 +21,13 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(module)]
 inline ObjectPtr<IErrorInfo> ErrorInfo()
 {
     return ErrorInfo_Create();
 }
 
+// [api(core)]
 inline ObjectPtr<IErrorGuard> ErrorGuard(ConstCharPtr fileName, Int fileLine)
 {
     return ErrorGuard_Create(fileName, fileLine);

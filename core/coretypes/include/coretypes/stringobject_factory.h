@@ -19,18 +19,21 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(application)]
 inline StringPtr String(ConstCharPtr str)
 {
     StringPtr obj(String_Create(str));
     return obj;
 }
 
+// [api(application)]
 inline StringPtr String(ConstCharPtr str, SizeT length)
 {
     StringPtr obj(StringN_Create(str, length));
     return obj;
 }
 
+// [api(application)]
 inline StringPtr String(const std::string& str)
 {
     StringPtr obj(String_Create(str.c_str()));

@@ -57,6 +57,7 @@ BEGIN_NAMESPACE_OPENDAQ
  *
  * To get the list of connections to input ports of the signal, `getConnections` can be used.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(ISignal, IComponent)
 {
     /*!

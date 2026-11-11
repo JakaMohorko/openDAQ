@@ -23,6 +23,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Interface enabling introspection into the expected element type of the list.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IListElementType, IBaseObject)
 {
     /*!

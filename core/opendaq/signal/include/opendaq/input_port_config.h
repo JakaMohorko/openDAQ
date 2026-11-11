@@ -28,6 +28,7 @@ struct IInputPortNotifications;
 /*!
  * @brief Represents how the input port should handle the packet-enqueued notification.
  */
+// [api(application)]
 enum class PacketReadyNotification : EnumType
 {
     None = 0,                   ///< Ignore the notification.
@@ -51,6 +52,7 @@ enum class PacketReadyNotification : EnumType
  * @brief The configuration component of input ports. Provides access to Input port owners
  * to internal components of the input port.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IInputPortConfig, IInputPort)
 {
     /*!
@@ -67,6 +69,7 @@ DECLARE_OPENDAQ_INTERFACE(IInputPortConfig, IInputPort)
      * @brief Gets called when a packet was enqueued in a connection.
      * @param queueWasEmpty True if queue was empty before packet was enqueued.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC notifyPacketEnqueued(Bool queueWasEmpty) = 0;
 
     /*!
@@ -74,6 +77,7 @@ DECLARE_OPENDAQ_INTERFACE(IInputPortConfig, IInputPort)
      *
      * The notification is called on the same thread that enqueued the packet.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC notifyPacketEnqueuedOnThisThread() = 0;
 
     /*!
@@ -111,6 +115,7 @@ DECLARE_OPENDAQ_INTERFACE(IInputPortConfig, IInputPort)
      *
      * The notification is scheduled.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC notifyPacketEnqueuedWithScheduler()  = 0;
 
     /*!
@@ -120,6 +125,7 @@ DECLARE_OPENDAQ_INTERFACE(IInputPortConfig, IInputPort)
 };
 /*!@}*/
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY,
     InputPort,

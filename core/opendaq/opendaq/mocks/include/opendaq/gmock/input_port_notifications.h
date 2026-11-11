@@ -21,6 +21,7 @@
 #include <gmock/gmock.h>
 #include <coretypes/gmock/mock_ptr.h>
 
+// [api(core)]
 struct MockInputPortNotifications : daq::ImplementationOfWeak<daq::IInputPortNotifications>
 {
     typedef MockPtr<

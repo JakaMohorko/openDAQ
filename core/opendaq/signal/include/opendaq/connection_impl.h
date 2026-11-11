@@ -45,6 +45,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * sets `closedFlag` and waits on `activeOps` until no operation is in flight, then owns
  * all queue state exclusively (see active_operation_tracker.h).
  */
+// [api(core)]
 class ConnectionImpl : public ImplementationOfWeak<IConnection, IConnectionInternal>
 {
 public:

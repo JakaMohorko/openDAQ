@@ -32,6 +32,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Represents a collection of key/value pairs.
  */
 
+// [api(application, coretype)]
 DECLARE_OPENDAQ_INTERFACE(IDict, IBaseObject)
 {
     /*!
@@ -132,8 +133,10 @@ DECLARE_OPENDAQ_INTERFACE(IDict, IBaseObject)
 
 /*!@}*/
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, Dict)
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, DictWithExpectedTypes, IDict,
     IntfID, keyType,

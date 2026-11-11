@@ -20,6 +20,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(application)]
 inline ObjectPtr<IBaseObject> BaseObject()
 {
     ObjectPtr<IBaseObject> obj(BaseObject_Create());

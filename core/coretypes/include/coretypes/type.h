@@ -38,6 +38,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * Structs and Property objects. Types should be inserted into the Type manager to be used by different parts
  * of the SDK.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IType, IBaseObject)
 {
     /*!

@@ -23,6 +23,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 template <class MainInterface, class ... Interfaces>
 class GenericReaderStatusImpl : public ImplementationOf<MainInterface, Interfaces...>
 {
@@ -45,6 +46,7 @@ private:
 
 using ReaderStatusImpl = GenericReaderStatusImpl<IReaderStatus>;
 
+// [api(core)]
 class BlockReaderStatusImpl final : public GenericReaderStatusImpl<IBlockReaderStatus>
 {
 public:
@@ -57,6 +59,7 @@ private:
     SizeT readSamples;
 };
 
+// [api(core)]
 class TailReaderStatusImpl final : public GenericReaderStatusImpl<ITailReaderStatus>
 {
 public:
@@ -70,6 +73,7 @@ private:
     Bool sufficientHistory;
 };
 
+// [api(core)]
 class MultiReaderStatusImpl final : public GenericReaderStatusImpl<IMultiReaderStatus>
 {
 public:

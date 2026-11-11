@@ -25,6 +25,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 template <class V, class Intf, class ... Intfs>
 class OrdinalObjectImpl : public ImplementationOf<Intf, IConvertible, ICoreType, IComparable, ISerializable, Intfs...>
 {

@@ -24,6 +24,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class EnumerationTypeImpl : public GenericTypeImpl<IEnumerationType>
 {
 public:

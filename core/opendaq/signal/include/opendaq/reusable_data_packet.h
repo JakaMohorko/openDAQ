@@ -31,6 +31,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @{
  */
 
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IReusableDataPacket, IBaseObject)
 {
     virtual ErrCode INTERFACE_FUNC reuse(IDataDescriptor* newDescriptor, SizeT newSampleCount, INumber* newOffset, IDataPacket* newDomainPacket, Bool canReallocMemory, Bool* success) = 0;

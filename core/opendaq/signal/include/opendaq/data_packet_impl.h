@@ -253,6 +253,7 @@ struct CreatePacketNoMemoryTag
 
 }
 
+// [api(core)]
 template <typename TInterface = IDataPacket, typename ... TInterfaces>
 class DataPacketImpl : public GenericDataPacketImpl<TInterface, IReusableDataPacket, TInterfaces ...>
 {

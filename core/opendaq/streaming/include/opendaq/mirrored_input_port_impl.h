@@ -28,6 +28,7 @@ class MirroredInputPortBase;
 
 using MirroredInputPort = MirroredInputPortBase<>;
 
+// [api(module)]
 template <typename... Interfaces>
 class MirroredInputPortBase : public GenericInputPortImpl<IMirroredInputPortConfig, IMirroredInputPortPrivate, Interfaces...>
 {
@@ -69,7 +70,9 @@ public:
 //    ErrCode INTERFACE_FUNC getConnection(IConnection** connection) override; // unavailable
 
 protected:
+    // [api(module, override)]
     void removed() override;
+    // [api(module, override)]
     virtual StringPtr onGetRemoteId() const = 0;
 
 private:

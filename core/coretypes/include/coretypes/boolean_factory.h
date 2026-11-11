@@ -20,6 +20,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(application)]
 inline ObjectPtr<IBoolean> Boolean(const Bool value)
 {
     ObjectPtr<IBoolean> obj(Boolean_Create(value));

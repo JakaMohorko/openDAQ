@@ -32,6 +32,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Builder component of Multi reader objects. Contains setter methods to configure the Multi reader parameters
  * and a `build` method that builds the Unit object.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IMultiReaderBuilder, IBaseObject)
 {
     /*!
@@ -246,6 +247,7 @@ DECLARE_OPENDAQ_INTERFACE(IMultiReaderBuilder, IBaseObject)
 
 /*!@}*/
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, MultiReaderBuilder, IMultiReaderBuilder)
 
 END_NAMESPACE_OPENDAQ

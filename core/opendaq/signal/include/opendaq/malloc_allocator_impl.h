@@ -22,6 +22,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class MallocAllocatorImpl : public ImplementationOf<IAllocator>
 {
 public:

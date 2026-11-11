@@ -23,6 +23,7 @@ BEGIN_NAMESPACE_OPENDAQ
 
 // No filter
 
+// [api(core)]
 class AnySearchFilterImpl final : public ImplementationOf<ISearchFilter>
 {
 public:
@@ -34,6 +35,7 @@ public:
 
 // Disjunction
 
+// [api(core)]
 class OrSearchFilterImpl final : public ImplementationOf<ISearchFilter>
 {
 public:
@@ -49,6 +51,7 @@ private:
 
 // Conjunction
 
+// [api(core)]
 class AndSearchFilterImpl final : public ImplementationOf<ISearchFilter>
 {
 public:
@@ -64,6 +67,7 @@ private:
 
 // Negation
 
+// [api(core)]
 class NotSearchFilterImpl final : public ImplementationOf<ISearchFilter>
 {
 public:
@@ -78,6 +82,7 @@ private:
 
 // Custom filter
 
+// [api(core)]
 class CustomSearchFilterImpl final : public ImplementationOf<ISearchFilter>
 {
 public:
@@ -92,6 +97,7 @@ private:
 
 // Recursive filter
 
+// [api(core)]
 class RecursiveSearchFilterImpl final : public ImplementationOf<ISearchFilter, IRecursiveSearch>
 {
 public:

@@ -24,6 +24,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 template <class Class, class TInterface>
 struct MockGenericFunctionBlock : MockGenericSignalContainer<Class, TInterface>
 {
@@ -43,10 +44,12 @@ struct MockGenericFunctionBlock : MockGenericSignalContainer<Class, TInterface>
     }
 };
 
+// [api(core)]
 struct MockFunctionBlock: MockGenericFunctionBlock<MockFunctionBlock, IFunctionBlock>
 {
 };
 
+// [api(core)]
 struct MockChannel : MockGenericFunctionBlock<MockChannel, IChannel>
 {
 };

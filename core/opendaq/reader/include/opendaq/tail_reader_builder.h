@@ -32,6 +32,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Builder component of Tail reader objects. Contains setter methods to configure the Tail reader parameters
  * and a `build` method that builds the Unit object.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(ITailReaderBuilder, IBaseObject)
 {
     /*!
@@ -132,6 +133,7 @@ DECLARE_OPENDAQ_INTERFACE(ITailReaderBuilder, IBaseObject)
     virtual ErrCode INTERFACE_FUNC getSkipEvents(Bool* skipEvents) = 0;
 };
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, TailReaderBuilder, ITailReaderBuilder)
 
 /*!@}*/

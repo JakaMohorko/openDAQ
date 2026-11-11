@@ -28,6 +28,7 @@ class SerializedObjectPtr;
  * @addtogroup types_serialized_list
  */
 
+// [api(module)]
 class SerializedListPtr : public ObjectPtr<ISerializedList>
 {
 public:

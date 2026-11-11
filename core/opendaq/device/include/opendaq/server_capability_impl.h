@@ -28,6 +28,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class ServerCapabilityConfigImpl : public GenericPropertyObjectImpl<IServerCapabilityConfig>
 {
 public:

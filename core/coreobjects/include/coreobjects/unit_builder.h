@@ -30,6 +30,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Builder component of Unit objects. Contains setter methods to configure the Unit parameters, and a
  * `build` method that builds the Unit object.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IUnitBuilder, IBaseObject)
 {
     /*!
@@ -111,12 +112,14 @@ DECLARE_OPENDAQ_INTERFACE(IUnitBuilder, IBaseObject)
 /*!
  * @brief Creates a UnitConfig with no parameters configured.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, UnitBuilder, IUnitBuilder)
 
 /*!
  * @brief UnitConfig copy factory that creates a configurable Unit object from a possibly non-configurable Unit.
  * @param unitToCopy The Unit of which configuration should be copied.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, UnitBuilderFromExisting, IUnitBuilder,
     IUnit*, unitToCopy

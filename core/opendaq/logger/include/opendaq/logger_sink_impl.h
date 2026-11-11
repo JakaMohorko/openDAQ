@@ -28,6 +28,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 template <typename... Interfaces>
 class LoggerSinkBase : public ImplementationOf<ILoggerSink, ILoggerSinkBasePrivate, Interfaces...>
 {
@@ -53,6 +54,7 @@ protected:
     SinkPtr sink;
 };
 
+// [api(core)]
 template <typename TSinkType, typename... Interfaces>
 class LoggerSinkImpl : public LoggerSinkBase<Interfaces...>
 {
@@ -80,6 +82,7 @@ public:
     explicit LoggerSinkImpl(IString* fileName);
 };
 
+// [api(core)]
 class LoggerSinkLastMessageImpl
     : public LoggerSinkImpl<spdlog::sinks::LoggerSinkLastMessageMt, ILastMessageLoggerSinkPrivate>
 {

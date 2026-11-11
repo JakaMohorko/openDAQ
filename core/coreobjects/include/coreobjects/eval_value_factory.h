@@ -20,6 +20,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(module)]
 inline EvalValuePtr EvalValue(const StringPtr& eval)
 {
     EvalValuePtr obj(EvalValue_Create(eval));
@@ -27,6 +28,7 @@ inline EvalValuePtr EvalValue(const StringPtr& eval)
     return obj;
 }
 
+// [api(module)]
 inline EvalValuePtr EvalValueFunc(const StringPtr& eval, const FunctionPtr& func)
 {
     EvalValuePtr obj(EvalValueFunc_Create(eval, func));
@@ -34,6 +36,7 @@ inline EvalValuePtr EvalValueFunc(const StringPtr& eval, const FunctionPtr& func
     return obj;
 }
 
+// [api(module)]
 template <typename... TArgs>
 EvalValuePtr EvalValue(StringPtr eval, TArgs&&... args)
 {
@@ -42,6 +45,7 @@ EvalValuePtr EvalValue(StringPtr eval, TArgs&&... args)
     return obj;
 }
 
+// [api(module)]
 inline EvalValuePtr Bind(const std::string& propertyName, const PropertyObjectPtr& propObj)
 {
     return EvalValue(std::string("{0}.$") + propertyName, propObj);

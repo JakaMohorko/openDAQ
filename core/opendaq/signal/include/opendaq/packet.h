@@ -24,6 +24,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @addtogroup opendaq_packets
  * @{
  */
+// [api(application)]
 enum class PacketType
 {
     None = 0, ///< Undefined packet type
@@ -47,6 +48,7 @@ enum class PacketType
  * @brief Base packet type. Data, Value, and Event packets are all also packets. Provides
  * the packet's unique ID that is unique to a given device, as well as the packet type.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IPacket, IBaseObject)
 {
     /*!
@@ -59,6 +61,7 @@ DECLARE_OPENDAQ_INTERFACE(IPacket, IBaseObject)
      * @brief Subscribes for notification when the packet is destroyed.
      * @param packetDestructCallback The callback that is called when the packet is destroyed.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC subscribeForDestructNotification(IPacketDestructCallback* packetDestructCallback) = 0;
 
     /*!

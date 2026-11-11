@@ -42,6 +42,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * ErrCode createComplexNumber(IComplexNumber** obj, ComplexFloat64 value)
  * @endcode
  */
+// [api(application, coretype)]
 DECLARE_OPENDAQ_INTERFACE(IComplexNumber, IBaseObject)
 {
     /*!
@@ -74,6 +75,7 @@ DECLARE_OPENDAQ_INTERFACE(IComplexNumber, IBaseObject)
 
 /*!@}*/
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, ComplexNumber, const Float, real, const Float, imaginary)
 
 END_NAMESPACE_OPENDAQ

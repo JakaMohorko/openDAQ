@@ -20,6 +20,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(module)]
 inline AllocatorPtr ExternalAllocator(void* data, const DeleterPtr& deleter)
 {
     AllocatorPtr obj(ExternalAllocator_Create(data, deleter));

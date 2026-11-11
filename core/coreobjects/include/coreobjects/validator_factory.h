@@ -29,6 +29,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Creates a Validator with the given evaluation expression.
  * @param eval The evaluation expression used for validation.
  */
+// [api(module)]
 inline ValidatorPtr Validator(const StringPtr& eval)
 {
     ValidatorPtr validator(Validator_Create(eval));

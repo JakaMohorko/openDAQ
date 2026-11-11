@@ -21,6 +21,7 @@
 #include <coretypes/gmock/mock_ptr.h>
 #include <opendaq/gmock/component.h>
 
+// [api(core)]
 struct MockInputPort : daq::MockGenericComponent<MockInputPort, daq::IInputPortConfig>
 {
     typedef MockPtr<

@@ -37,6 +37,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @param quantity The quantity represented by the unit, i.e. "Velocity". (optional)
  * @return The Unit object.
  */
+// [api(module)]
 inline UnitPtr Unit(const StringPtr& symbol, const Int id = -1, const StringPtr& name = "", const StringPtr& quantity = "")
 {
     UnitPtr obj(Unit_Create(id, symbol, name, quantity));
@@ -48,6 +49,7 @@ inline UnitPtr Unit(const StringPtr& symbol, const Int id = -1, const StringPtr&
  * @param builder Unit Builder
  * @return The Unit object.
  */
+// [api(module)]
 inline UnitPtr UnitFromBuilder(const UnitBuilderPtr& builder)
 {
     UnitPtr obj(UnitFromBuilder_Create(builder));
@@ -57,6 +59,7 @@ inline UnitPtr UnitFromBuilder(const UnitBuilderPtr& builder)
 /*!
  * @brief Creates a UnitBuilder with no parameters configured.
  */
+// [api(module)]
 inline UnitBuilderPtr UnitBuilder()
 {
     UnitBuilderPtr obj(UnitBuilder_Create());
@@ -68,6 +71,7 @@ inline UnitBuilderPtr UnitBuilder()
  * non-configurable UnitPtr.
  * @param unit The Unit of which configuration should be copied.
  */
+// [api(module)]
 inline UnitBuilderPtr UnitBuilderCopy(const UnitPtr& unit)
 {
     UnitBuilderPtr obj(UnitBuilderFromExisting_Create(unit));
@@ -77,6 +81,7 @@ inline UnitBuilderPtr UnitBuilderCopy(const UnitPtr& unit)
 /*!
  * @brief Creates the Struct type object that defines the Unit struct.
  */
+// [api(module)]
 inline StructTypePtr UnitStructType()
 {
     return StructType(

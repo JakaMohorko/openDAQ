@@ -30,6 +30,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  *  @brief creates a work object, a lightweight implementation of callback used in scheduler for worker tasks.
  */
+// [api(application)]
 template <class Callback>
 WorkPtr Work(Callback&& callback)
 {
@@ -39,6 +40,7 @@ WorkPtr Work(Callback&& callback)
 /*!
  *  @brief creates a work object, a lightweight implementation of callback used in scheduler for worker tasks.
  */
+// [api(application)]
 template <class Callback>
 WorkPtr WorkRepetitive(Callback&& callback)
 {

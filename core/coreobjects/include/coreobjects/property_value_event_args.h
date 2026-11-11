@@ -21,6 +21,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(application)]
 enum class PropertyEventType : EnumType
 {
     Update = 0,
@@ -31,16 +32,19 @@ enum class PropertyEventType : EnumType
 /*#
  * [interfaceSmartPtr(IEventArgs, EventArgsPtr, "<coretypes/event_args_ptr.h>")]
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IPropertyValueEventArgs, IEventArgs)
 {
     virtual ErrCode INTERFACE_FUNC getProperty(IProperty** property) = 0;
     virtual ErrCode INTERFACE_FUNC getValue(IBaseObject** value) = 0;
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC setValue(IBaseObject* value) = 0;
     virtual ErrCode INTERFACE_FUNC getPropertyEventType(PropertyEventType* changeType) = 0;
     virtual ErrCode INTERFACE_FUNC getIsUpdating(Bool* isUpdating) = 0;
     virtual ErrCode INTERFACE_FUNC getOldValue(IBaseObject** value) = 0;
 };
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(
     LIBRARY_FACTORY, PropertyValueEventArgs,
     IProperty*, prop,

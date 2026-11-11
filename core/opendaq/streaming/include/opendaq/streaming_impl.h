@@ -44,6 +44,7 @@ class StreamingImpl;
 
 using Streaming = StreamingImpl<>;
 
+// [api(module)]
 template <typename... Interfaces>
 class StreamingImpl : public ImplementationOfWeak<IStreaming, IStreamingPrivate, Interfaces...>
 {
@@ -90,39 +91,47 @@ public:
     ErrCode INTERFACE_FUNC detachRemovedInputPort(IString* inputPortRemoteId) override;
 
 protected:
+    // [api(module)]
     void addToAvailableSignals(const StringPtr& signalStreamingId);
+    // [api(module)]
     void removeFromAvailableSignals(const StringPtr& signalStreamingId);
 
+    // [api(module, override)]
     virtual void updateConnectionStatus(const EnumerationPtr& status, const StringPtr& statusMessage);
 
     /*!
      * @brief A function called when the active state of the Streaming is changed.
      * @param active The new active state of the Streaming.
      */
+    // [api(module, override)]
     virtual void onSetActive(bool active) = 0;
 
     /*!
      * @brief A function called when a signal is being added to the Streaming.
      * @param signal The signal to be added to the Streaming.
      */
+    // [api(module, override)]
     virtual void onAddSignal(const MirroredSignalConfigPtr& signal) = 0;
 
     /*!
      * @brief A function is called when signal is being removed from the Streaming.
      * @param signal The signal to be removed from the Streaming.
      */
+    // [api(module, override)]
     virtual void onRemoveSignal(const MirroredSignalConfigPtr& signal) = 0;
 
     /*!
      * @brief A function is called when signal is being subscribed within the Streaming.
      * @param signalStreamingId The streaming ID of the signal to be subscribed.
      */
+    // [api(module, override)]
     virtual void onSubscribeSignal(const StringPtr& signalStreamingId) = 0;
 
     /*!
      * @brief A function is called when signal is being unsubscribed within the Streaming.
      * @param signalStreamingId The streaming ID of the signal to be unsubscribed.
      */
+    // [api(module, override)]
     virtual void onUnsubscribeSignal(const StringPtr& signalStreamingId) = 0;
 
     /*!
@@ -130,6 +139,7 @@ protected:
      * This is typically triggered when a client signal is connected to a device input port.
      * @param signal The client signal being registered with the Streaming.
      */
+    // [api(module, override)]
     virtual void onRegisterStreamedClientSignal(const SignalPtr& signal);
 
     /*!
@@ -137,19 +147,30 @@ protected:
      * This is typically triggered when a client signal is disconnected from a device input port.
      * @param signal The client signal being unregistered from the Streaming.
      */
+    // [api(module, override)]
     virtual void onUnregisterStreamedClientSignal(const SignalPtr& signal);
 
+    // [api(module)]
     void onPacket(const StringPtr& signalId, const PacketPtr& packet);
+    // [api(core)]
     void handleEventPacket(const MirroredSignalConfigPtr& signal, const EventPacketPtr& eventPacket);
+    // [api(module)]
     void triggerSubscribeAck(const StringPtr& signalStreamingId, bool subscribed);
 
+    // [api(core)]
     std::mutex sync;
 
+    // [api(module, readOnly)]
     StringPtr connectionString;
+    // [api(module, readOnly)]
     ContextPtr context;
+    // [api(core)]
     LoggerComponentPtr loggerComponent;
+    // [api(core)]
     WeakRefPtr<IMirroredDevice> ownerDeviceRef;
+    // [api(core)]
     EnumerationPtr connectionStatus;
+    // [api(core)]
     std::unordered_map<StringPtr, WeakRefPtr<ISignal>> streamedClientSignals;
 
 private:

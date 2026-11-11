@@ -53,6 +53,7 @@ struct InterfaceToSmartPtr<IStructType>
  * `ctStruct`, `ctEnumeration`, or `ctUndefined`. Additionally, all Container types (`ctList`, `ctDict`) should only have values of the aforementioned
  * types.
  */
+// [api(application)]
 class StructTypePtr : public GenericTypePtr<IStructType>
 {
 public:

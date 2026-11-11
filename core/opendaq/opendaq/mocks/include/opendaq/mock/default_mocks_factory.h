@@ -21,6 +21,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(module)]
 inline ChannelPtr DefaultChannel(const daq::ContextPtr& ctx, const ComponentPtr& parent, const StringPtr& localId)
 {
     
@@ -28,6 +29,7 @@ inline ChannelPtr DefaultChannel(const daq::ContextPtr& ctx, const ComponentPtr&
     return obj;
 }
 
+// [api(module)]
 inline FunctionBlockPtr DefaultFunctionBlock(const daq::ContextPtr& ctx, const ComponentPtr& parent, const StringPtr& localId)
 {
     
@@ -35,6 +37,7 @@ inline FunctionBlockPtr DefaultFunctionBlock(const daq::ContextPtr& ctx, const C
     return obj;
 }
 
+// [api(module)]
 inline DevicePtr DefaultDevice(const daq::ContextPtr& ctx, const ComponentPtr& parent, const StringPtr& localId)
 {
     

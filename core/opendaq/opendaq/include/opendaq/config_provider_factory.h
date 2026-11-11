@@ -19,18 +19,21 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(application)]
 inline ConfigProviderPtr JsonConfigProvider(const StringPtr& filename = nullptr)
 {
     ConfigProviderPtr obj(JsonConfigProvider_Create(filename));
     return obj;
 }
 
+// [api(application)]
 inline ConfigProviderPtr EnvConfigProvider()
 {
     ConfigProviderPtr obj(EnvConfigProvider_Create());
     return obj;
 }
 
+// [api(application)]
 inline ConfigProviderPtr CmdLineArgsConfigProvider(const ListPtr<IString>& args)
 {
     ConfigProviderPtr obj(CmdLineArgsConfigProvider_Create(args));

@@ -28,6 +28,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Used to subscribe to packet destruction
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IPacketDestructCallback, IBaseObject)
 {
     /*!

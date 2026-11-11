@@ -27,6 +27,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Creates a permissions builder object.
  */
+// [api(application)]
 inline PermissionsBuilderPtr PermissionsBuilder()
 {
     PermissionsBuilderPtr obj(PermissionsBuilder_Create());

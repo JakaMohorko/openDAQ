@@ -34,6 +34,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * Permisison builder can specify allowed and denied permissions for each group. It can
  * also inherit or overwrite premissions from parent objects.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IPermissionsBuilder, IBaseObject)
 {
     // [returnSelf]
@@ -86,6 +87,7 @@ DECLARE_OPENDAQ_INTERFACE(IPermissionsBuilder, IBaseObject)
      * @brief Builds the permission config object.
      * @param configOut[out] Permission config object.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC build(IPermissions** configOut) = 0;
 };
 
@@ -94,6 +96,7 @@ DECLARE_OPENDAQ_INTERFACE(IPermissionsBuilder, IBaseObject)
 /*!
  * @brief Creates a Permissions builder object.
  */
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, PermissionsBuilder)
 
 END_NAMESPACE_OPENDAQ

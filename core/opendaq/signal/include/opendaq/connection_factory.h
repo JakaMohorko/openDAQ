@@ -34,6 +34,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @param signal The signal that is to be connected to an input port.
  * @param context The Context. Most often provided by the Instance.
  */
+// [api(module)]
 inline ConnectionPtr Connection(InputPortPtr inputPort, SignalPtr signal, ContextPtr context)
 {
     ConnectionPtr obj(Connection_Create(inputPort, signal, context));

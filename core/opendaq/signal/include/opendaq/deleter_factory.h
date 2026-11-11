@@ -33,6 +33,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * of external memory is responsible to provide a custom deleter, which is called when the packet is
  * destroyed.
  */
+// [api(module)]
 template <class Callback>
 DeleterPtr Deleter(Callback&& callback)
 {

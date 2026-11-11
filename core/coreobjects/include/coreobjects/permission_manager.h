@@ -34,6 +34,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * it is possible to restrict or allow read, write and execute permissions for each object. It is also
  * possible to specify if permissions are inherited from parent object
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IPermissionManager, IBaseObject)
 {
     /*!
@@ -57,6 +58,7 @@ DECLARE_OPENDAQ_INTERFACE(IPermissionManager, IBaseObject)
  * @brief Creates an permission manager with a given parent.
  * @param parent Permission manager of a parent object. It can be null for a root object.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, PermissionManager, IPermissionManager*, parent)
 
 END_NAMESPACE_OPENDAQ

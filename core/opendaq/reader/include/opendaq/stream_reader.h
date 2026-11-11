@@ -42,6 +42,7 @@ struct IStreamReaderBuilder;
  * internal read-position and automatically advances it on subsequent reads.
  * @remark Currently only supports scalar sample-types and RangeInt64
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IStreamReader, ISampleReader)
 {
     // [arrayArg(values, count), arrayArg(count, 1)]
@@ -93,6 +94,7 @@ DECLARE_OPENDAQ_INTERFACE(IStreamReader, ISampleReader)
 
 /*!@}*/
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, StreamReader, IStreamReader,
     ISignal*, signal,
@@ -102,6 +104,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     ReadTimeoutType, timeoutType
 )
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, StreamReaderFromPort, IStreamReader,
     IInputPortConfig*, port,
@@ -111,6 +114,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     ReadTimeoutType, timeoutType
 )
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, StreamReaderFromExisting, IStreamReader,
     IStreamReader*, invalidatedReader,
@@ -119,6 +123,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
 )
 
 //[factory(Hide)]
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, StreamReaderFromBuilder, IStreamReader,
     IStreamReaderBuilder*, builder

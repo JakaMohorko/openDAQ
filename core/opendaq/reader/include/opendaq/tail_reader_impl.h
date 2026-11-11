@@ -29,6 +29,7 @@ struct TailReaderInfo;
 
 extern template class ReaderImpl<ITailReader>;
 
+// [api(core)]
 class TailReaderImpl final : public ReaderImpl<ITailReader>
 {
 public:

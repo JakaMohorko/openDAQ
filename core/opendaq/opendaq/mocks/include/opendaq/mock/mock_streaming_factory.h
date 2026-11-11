@@ -19,12 +19,14 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 inline StreamingPtr MockStreaming(const daq::StringPtr& connectionString, const ContextPtr& context)
 {
     StreamingPtr obj(MockStreaming_Create(connectionString, context));
     return obj;
 }
 
+// [api(core)]
 inline StreamingPtr MockStreamingWithProtocol(const daq::StringPtr& connectionString,
                                               const ContextPtr& context,
                                               const daq::StringPtr& protocolId,

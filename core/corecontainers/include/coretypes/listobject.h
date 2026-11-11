@@ -31,6 +31,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Represents a heterogeneous collection of objects that can be individually accessed by index.
  */
 
+// [api(application, coretype)]
 DECLARE_OPENDAQ_INTERFACE(IList, IBaseObject)
 {
     /*!
@@ -161,8 +162,10 @@ DECLARE_OPENDAQ_INTERFACE(IList, IBaseObject)
 
 /*!@}*/
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, List)
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, ListWithElementType, IList,
     IntfID, id

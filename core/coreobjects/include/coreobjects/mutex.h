@@ -30,6 +30,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Mutex wrapper interface. Wraps a std::mutex object.
  */
+// [api(core)]
 DECLARE_OPENDAQ_INTERFACE(IMutex, IBaseObject)
 {
     /*!
@@ -50,6 +51,7 @@ DECLARE_OPENDAQ_INTERFACE(IMutex, IBaseObject)
 
 /*!@}*/
 
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, Mutex)
 
 END_NAMESPACE_OPENDAQ

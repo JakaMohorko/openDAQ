@@ -34,6 +34,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * Binary value packet contains exactly one sample of binary type. The size of the sample is provided with
  * `sampleSize` argument.
  */
+// [api(module)]
 inline DataPacketPtr BinaryDataPacket(
     const DataPacketPtr& domainPacket,
     const DataDescriptorPtr& descriptor,
@@ -56,6 +57,7 @@ inline DataPacketPtr BinaryDataPacket(
  * provided through `data` parameter. Deleter callback is called when the packet is destroyed. The callback
  * should free the memory.
  */
+// [api(module)]
 inline DataPacketPtr BinaryDataPacketWithExternalMemory(
     const DataPacketPtr& domainPacket,
     const DataDescriptorPtr& descriptor, uint64_t sampleSize,

@@ -20,6 +20,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class BaseDictIterableImpl : public ImplementationOf<IIterable>
 {
 protected:
@@ -52,6 +53,7 @@ protected:
     const IntfID& id;
 };
 
+// [api(core)]
 template <typename TSelector>
 class DictIterableImpl final : public BaseDictIterableImpl
 {

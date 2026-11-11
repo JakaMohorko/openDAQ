@@ -39,6 +39,7 @@ BEGIN_NAMESPACE_OPENDAQ
  *
  * "StatusChanged" Core events are triggered whenever there is a change in the status of the openDAQ Component.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IComponentStatusContainerPrivate, IBaseObject)
 {
     /*!

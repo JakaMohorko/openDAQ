@@ -32,6 +32,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * of external memory is responsible to provide a custom deleter, which is called when the packet is
  * destroyed.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IDeleter, IBaseObject)
 {
     /*!

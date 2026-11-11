@@ -34,6 +34,7 @@ struct InterfaceToSmartPtr<ISerializable>
     typedef SerializablePtr SmartPtr;
 };
 
+// [api(module)]
 class SerializablePtr : public ObjectPtr<ISerializable>
 {
 public:

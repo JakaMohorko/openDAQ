@@ -34,18 +34,23 @@ BEGIN_NAMESPACE_OPENDAQ
  * [interfaceLibrary(IPropertyObject, "coreobjects")]
  */
 
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IDiscoveryServer, IBaseObject)
 {
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC registerService(IString* id, IPropertyObject* config, IDeviceInfo* deviceInfo) = 0;
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC unregisterService(IString* id) = 0;
     virtual ErrCode INTERFACE_FUNC setRootDevice(IDevice* device) = 0;
 };
 /*!@}*/
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY,
     MdnsDiscoveryServer, IDiscoveryServer,
     ILogger*, logger)
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY,
     MdnsDiscoveryServerWithOptions, IDiscoveryServer,
     ILogger*, logger,

@@ -33,6 +33,7 @@ BEGIN_NAMESPACE_OPENDAQ
  *  - minor version representing new features
  *  - patch version representing only bug fixes.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IVersionInfo, IBaseObject)
 {
     /*!
@@ -58,6 +59,7 @@ DECLARE_OPENDAQ_INTERFACE(IVersionInfo, IBaseObject)
  * @}
  */
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, VersionInfo, SizeT, major, SizeT, minor, SizeT, patch);
 
 END_NAMESPACE_OPENDAQ

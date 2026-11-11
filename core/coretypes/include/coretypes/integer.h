@@ -39,6 +39,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * ErrCode createInteger(IInteger** obj, Int value)
  * @endcode
  */
+// [api(application, coretype)]
 DECLARE_OPENDAQ_INTERFACE(IInteger, IBaseObject)
 {
     /*!
@@ -61,7 +62,9 @@ DECLARE_OPENDAQ_INTERFACE(IInteger, IBaseObject)
 
 /*!@}*/
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, Integer, Int, value)
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(LIBRARY_FACTORY, IntegerFromPool, IInteger, createIntegerFromPool, Int, value)
 
 END_NAMESPACE_OPENDAQ

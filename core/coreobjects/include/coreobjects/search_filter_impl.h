@@ -24,6 +24,7 @@ BEGIN_NAMESPACE_OPENDAQ
 
 // Filter by Visible
 
+// [api(core)]
 class VisiblePropertyFilterImpl final : public ImplementationOf<ISearchFilter>
 {
 public:
@@ -35,6 +36,7 @@ public:
 
 // Filter by Read-only flag
 
+// [api(core)]
 class ReadOnlyPropertyFilterImpl final : public ImplementationOf<ISearchFilter>
 {
 public:
@@ -46,6 +48,7 @@ public:
 
 // Filter by name
 
+// [api(core)]
 class NamePropertyFilterImpl final : public ImplementationOf<ISearchFilter>
 {
 public:

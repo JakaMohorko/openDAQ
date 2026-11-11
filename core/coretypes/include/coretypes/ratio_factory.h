@@ -24,17 +24,20 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(application)]
 inline RatioPtr Ratio(Int num, Int den)
 {
     return RatioPtr(Ratio_Create(num, den));
 }
 
+// [api(application)]
 inline SimplifiedRatioPtr SimplifiedRatio(Int num, Int den)
 {
     simplify(num, den);
     return SimplifiedRatioPtr(Ratio_Create(num, den));
 }
 
+// [api(module)]
 inline StructTypePtr RatioStructType()
 {
     return StructType("Ratio",

@@ -35,6 +35,7 @@ struct IMultiReaderBuilder;
 /*!
  * @brief Reads multiple Signals at once.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IMultiReader, ISampleReader)
 {
     // [arrayArg(samples, count), arrayArg(count, 1)]
@@ -199,6 +200,7 @@ DECLARE_OPENDAQ_INTERFACE(IMultiReader, ISampleReader)
 
 // [templateType(signals, ISignal)]
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, MultiReader, IMultiReader,
     IList*, signals,
@@ -208,6 +210,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     ReadTimeoutType, timeoutType
 )
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, MultiReaderEx, IMultiReader,
     IList*, signals,
@@ -220,6 +223,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     SizeT, minReadCount
 )
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, MultiReaderFromExisting, IMultiReader,
     IMultiReader*, invalidatedReader,
@@ -232,6 +236,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  * @param builder MultiReader Builder
  */
 //[factory(Hide)]
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, MultiReaderFromBuilder, IMultiReader,
     IMultiReaderBuilder*, builder

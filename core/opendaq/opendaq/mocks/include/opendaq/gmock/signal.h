@@ -26,6 +26,7 @@
 #include <opendaq/connection_ptr.h>
 #include <vector>
 
+// [api(core)]
 struct MockSignal : daq::GenericPropertyObjectImpl<daq::ISignal, daq::ISignalEvents, daq::ISignalPrivate, daq::IRemovable>
 {
     typedef MockPtr<

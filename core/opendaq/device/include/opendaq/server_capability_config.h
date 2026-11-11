@@ -26,6 +26,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * [interfaceSmartPtr(IInteger, IntegerPtr, "<coretypes/integer.h>")]
  */
 
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IServerCapabilityConfig, IServerCapability)
 {
     // [returnSelf]
@@ -127,6 +128,7 @@ DECLARE_OPENDAQ_INTERFACE(IServerCapabilityConfig, IServerCapability)
     virtual ErrCode INTERFACE_FUNC setProtocolSecurityLevel(IInteger* securityLevel) = 0;
 };
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, ServerCapability, IServerCapabilityConfig,
     IString*, protocolId,

@@ -31,12 +31,14 @@ BEGIN_NAMESPACE_OPENDAQ
  * @param localId The local ID of the component.
  * @param className The property object class name of the component.
  */
+// [api(module)]
 inline ComponentPtr Component(const ContextPtr& context, const ComponentPtr& parent, const StringPtr& localId, const StringPtr& className = "")
 {
     ComponentPtr obj(Component_Create(context, parent, localId, className));
     return obj;
 }
 
+// [api(application)]
 inline StringPtr OperationModeTypeToString(OperationModeType mode)
 {
     switch (mode)

@@ -35,6 +35,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * to obtain the default configuration used when either adding/creating a new device, or establishing
  * a new streaming connection.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IStreamingType, IComponentType)
 {
     /*
@@ -62,6 +63,7 @@ DECLARE_OPENDAQ_INTERFACE(IStreamingType, IComponentType)
  * @param defaultConfig The property object, to be cloned and returned, each time user creates default
  * configuration object. This way each instance of the Streaming has its own configuration object.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(
     LIBRARY_FACTORY, StreamingType,
     IString*, id,

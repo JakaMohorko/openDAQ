@@ -19,6 +19,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(module)]
 inline ModuleAuthenticatorPtr FunctionModuleAuthenticator(const FunctionPtr& f)
 {
     return FunctionModuleAuthenticator_Create(f);

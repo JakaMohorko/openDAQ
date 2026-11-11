@@ -37,6 +37,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief A signal reader reads packets from a signal data stream.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IPacketReader, IReader)
 {
     /*!
@@ -54,11 +55,13 @@ DECLARE_OPENDAQ_INTERFACE(IPacketReader, IReader)
 };
 /*!@}*/
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY(
     LIBRARY_FACTORY, PacketReader,
     ISignal*, signal
 )
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, PacketReaderFromPort, IPacketReader,
     IInputPortConfig*, port

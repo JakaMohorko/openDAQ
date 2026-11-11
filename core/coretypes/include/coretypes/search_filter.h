@@ -37,6 +37,7 @@ BEGIN_NAMESPACE_OPENDAQ
  *
  * Visit children defines whether or not the children of said object should be traversed during a recursive search.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(ISearchFilter, IBaseObject)
 {
     /*!
@@ -65,6 +66,7 @@ DECLARE_OPENDAQ_INTERFACE(ISearchFilter, IBaseObject)
 /*!
  * @brief Creates a search filter that accepts all objects. "Visit children" always returns `true`.
  */
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, AnySearchFilter, ISearchFilter)
 
 /*!
@@ -73,6 +75,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, AnySearchFilter, I
  * @param left The first argument of the conjunction operation.
  * @param right The second argument of the conjunction operation.
  */
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, AndSearchFilter, ISearchFilter, ISearchFilter*, left, ISearchFilter*, right)
 
 /*!
@@ -81,6 +84,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, AndSearchFilter, I
  * @param left The first argument of the disjunction operation.
  * @param right The second argument of the disjunction operation.
  */
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, OrSearchFilter, ISearchFilter, ISearchFilter*, left, ISearchFilter*, right)
 
 /*!
@@ -88,6 +92,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, OrSearchFilter, IS
  * Does not negate the "visit children" result.
  * @param filter The filter of which results should be negated.
  */
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, NotSearchFilter, ISearchFilter, ISearchFilter*, filter)
 
 /*!
@@ -95,6 +100,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, NotSearchFilter, I
  * @param acceptsFunction The function to be called when "accepts object" is called. Should return `true` or `false`.
  * @param visitFunction The function to be called when "visit children" is called. Should return `true` or `false`.
  */
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, CustomSearchFilter, ISearchFilter, IFunction*, acceptsFunction, IFunction*, visitFunction)
 
 /*!
@@ -103,6 +109,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, CustomSearchFilter
  * for another filter.
  * @param filter The filter to be wrapped with a "recursive" flag.
  */
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, RecursiveSearchFilter, ISearchFilter, ISearchFilter*, filter)
 
 /*!@}*/

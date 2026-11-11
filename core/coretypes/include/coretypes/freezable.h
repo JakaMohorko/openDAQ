@@ -32,12 +32,14 @@ BEGIN_NAMESPACE_OPENDAQ
  * Once the object is frozen, it should not allow to change any of its properties or internal state.
  */
 
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IFreezable, IBaseObject)
 {
     /*!
      * @brief Makes the object frozen/immutable.
      * It should return OPENDAQ_IGNORED value if the object is already frozen.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC freeze() = 0;
 
     /*!

@@ -26,6 +26,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class ContextImpl : public ImplementationOf<IContext, IContextInternal>
 {
 public:

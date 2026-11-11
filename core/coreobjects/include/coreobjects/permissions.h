@@ -36,6 +36,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief A class which describes a permission configuration for openDAQ object.A configuration object
  * can be constructed using the permission builder class.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IPermissions, IBaseObject)
 {
     /*!

@@ -59,6 +59,7 @@ namespace std
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class EventImpl : public ImplementationOf<IEvent, IFreezable, ICloneable>
 {
     struct Handler

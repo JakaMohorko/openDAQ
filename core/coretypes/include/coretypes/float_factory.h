@@ -20,12 +20,14 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(application)]
 inline ObjectPtr<IFloat> Floating(const Float value)
 {
     ObjectPtr<IFloat> obj(Float_Create(value));
     return obj;
 }
 
+// [api(application)]
 inline ObjectPtr<IFloat> FloatingFromPool(const Float value)
 {
     ObjectPtr<IFloat> obj(FloatFromPool_Create(value));

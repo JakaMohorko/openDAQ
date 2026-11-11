@@ -48,6 +48,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * operand being a constant string literal containing the enumerator value name valid for the Enumeration type
  * of the original Enumeration object.
  */
+// [api(application, coretype)]
 DECLARE_OPENDAQ_INTERFACE(IEnumeration, IBaseObject)
 {
     /*!
@@ -71,6 +72,7 @@ DECLARE_OPENDAQ_INTERFACE(IEnumeration, IBaseObject)
 
 /*!@}*/
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY(
     LIBRARY_FACTORY, Enumeration,
     IString*, name,
@@ -78,6 +80,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY(
     ITypeManager*, typeManager
 )
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, EnumerationWithIntValue, IEnumeration,
     IString*, name,
@@ -85,12 +88,14 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     ITypeManager*, typeManager
 )
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, EnumerationWithType, IEnumeration,
     IEnumerationType*, type,
     IString*, value
 )
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, EnumerationWithIntValueAndType, IEnumeration,
     IEnumerationType*, type,

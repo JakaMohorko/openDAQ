@@ -87,6 +87,7 @@ struct InterfaceOrTypeToSmartPtr<T, typename std::enable_if_t<Is_ct_conv<T>::val
  * for other supported interfaces.
  */
 
+// [api(application)]
 template <typename T>
 class ObjectPtr
 {

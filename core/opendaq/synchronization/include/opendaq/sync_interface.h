@@ -35,6 +35,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @{
  */
 
+// [api(application)]
 enum class SyncMode : EnumType
 {
     Off = 0,  ///> Interface is disabled.
@@ -43,6 +44,7 @@ enum class SyncMode : EnumType
     Auto      ///> Interface automatically selects its active role.
 };
 
+// [api(application)]
 enum class SyncSourceStatus : EnumType
 {
     Off = 0,
@@ -53,6 +55,7 @@ enum class SyncSourceStatus : EnumType
     Unknown
 };
 
+// [api(application)]
 enum class SyncRoleStatus : EnumType
 {
     Off = 0,
@@ -66,6 +69,7 @@ enum class SyncRoleStatus : EnumType
  *
  * A property object. Use the methods below; the property tree is for special cases only.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(ISyncInterface, IBaseObject)
 {
     /*!

@@ -22,12 +22,14 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(module)]
 template <typename MainInterface, typename ... Intfs>
 class IntfObjectWithWeakRefImpl : public IntfObjectSupportsWeakRefImpl<MainInterface, ISupportsWeakRef, Intfs...>
 {
 public:
     ErrCode INTERFACE_FUNC getWeakRef(IWeakRef** weakRef) override;
 protected:
+    // [api(module)]
     template <class TInterface>
     WeakRefPtr<TInterface> getWeakRefInternal();
 };

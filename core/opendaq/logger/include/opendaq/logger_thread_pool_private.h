@@ -23,6 +23,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 DECLARE_OPENDAQ_INTERFACE(ILoggerThreadPoolPrivate, IBaseObject)
 {
     using ThreadPool = spdlog::details::thread_pool;

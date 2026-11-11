@@ -30,6 +30,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @param parent The parent component.
  * @param localId The local ID of the component.
  */
+// [api(module)]
 template <class TInterface = IComponent>
 inline FolderConfigPtr Folder(const ContextPtr& context, const ComponentPtr& parent, const StringPtr& localId)
 {

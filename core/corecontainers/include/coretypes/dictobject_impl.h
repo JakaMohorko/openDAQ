@@ -53,6 +53,7 @@ using BaseObjectPair = std::pair<IBaseObject*, IBaseObject*>;
 
 ErrCode INTERFACE_FUNC deserializeDict(ISerializedObject* ser, IBaseObject* context, IFunction* factoryCallback, IBaseObject** obj);
 
+// [api(core)]
 class DictImpl : public ImplementationOf<IDict, IIterable, ISerializable, ICoreType, IDictElementType, IFreezable, ICloneable>
 {
 private:

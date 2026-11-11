@@ -32,6 +32,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @param highValue The upper boundary of the range.
  * @throws RangeBoundariesInvalidException if lowValue > highValue.
  */
+// [api(module)]
 inline RangePtr Range(const NumberPtr& lowValue, const NumberPtr& highValue)
 {
     RangePtr obj(Range_Create(lowValue, highValue));
@@ -41,6 +42,7 @@ inline RangePtr Range(const NumberPtr& lowValue, const NumberPtr& highValue)
 /*!
  * @brief Creates the Struct type object that defines the Range struct.
  */
+// [api(module)]
 inline StructTypePtr RangeStructType()
 {
     return StructType("Range",

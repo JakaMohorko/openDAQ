@@ -18,6 +18,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(module)]
 extern "C"
 ErrCode PUBLIC_EXPORT createJsonSerializer(ISerializer** obj, Bool pretty = False);
 
@@ -31,6 +32,7 @@ inline ISerializer* JsonSerializer_Create(Bool pretty = False)
     throw std::bad_alloc();
 }
 
+// [api(module)]
 extern "C"
 ErrCode PUBLIC_EXPORT createJsonSerializerWithVersion(ISerializer** obj, Int version, Bool pretty = False);
 

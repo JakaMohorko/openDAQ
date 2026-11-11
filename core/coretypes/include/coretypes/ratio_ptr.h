@@ -47,6 +47,7 @@ struct InterfaceToSmartPtr<IRatio>
  * @endcode
  */
 
+// [api(application)]
 class RatioPtr : public ObjectPtr<IRatio>
 {
 public:

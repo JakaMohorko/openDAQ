@@ -30,6 +30,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Creates a DataRuleConfig with no parameters.
  */
+// [api(module)]
 inline DataRulePtr DataRule(DataRuleType type, const DictPtr<IString, IBaseObject>& parameters)
 {
     DataRulePtr obj(DataRule_Create(type, parameters));
@@ -40,6 +41,7 @@ inline DataRulePtr DataRule(DataRuleType type, const DictPtr<IString, IBaseObjec
  * @brief Creates a DataRulePtr from Builder.
  * @param builder DataRule Builder
  */
+// [api(module)]
 inline DataRulePtr DataRuleFromBuilder(const DataRuleBuilderPtr& builder)
 {
     DataRulePtr obj(DataRuleFromBuilder_Create(builder));
@@ -55,6 +57,7 @@ inline DataRulePtr DataRuleFromBuilder(const DataRuleBuilderPtr& builder)
  * The scale and offset are stored within the `parameters` member of the Rule object
  * with the scale being at the first position of the list, and the offset at the second.
  */
+// [api(module)]
 inline DataRulePtr LinearDataRule(const NumberPtr& delta, const NumberPtr& start)
 {
     DataRulePtr obj(LinearDataRule_Create(delta, start));
@@ -64,6 +67,7 @@ inline DataRulePtr LinearDataRule(const NumberPtr& delta, const NumberPtr& start
 /*!
  * @brief Creates a DataRule with a Constant rule type configuration.
  */
+// [api(module)]
 inline DataRulePtr ConstantDataRule()
 {
     DataRulePtr obj(ConstantDataRule_Create());
@@ -73,6 +77,7 @@ inline DataRulePtr ConstantDataRule()
 /*!
  * @brief Creates a DataRule with an Explicit rule type configuration and no parameters.
  */
+// [api(module)]
 inline DataRulePtr ExplicitDataRule()
 {
     DataRulePtr obj(ExplicitDataRule_Create());
@@ -87,6 +92,7 @@ inline DataRulePtr ExplicitDataRule()
  * Most often used for domain signals to specify estimates on how close together/far apart two
  * subsequent samples might be.
  */
+// [api(module)]
 inline DataRulePtr ExplicitDomainDataRule(const NumberPtr& minExpectedDelta = 0, const NumberPtr& maxExpectedDelta = 0)
 {
     DataRulePtr obj(ExplicitDomainDataRule_Create(minExpectedDelta, maxExpectedDelta));
@@ -96,6 +102,7 @@ inline DataRulePtr ExplicitDomainDataRule(const NumberPtr& minExpectedDelta = 0,
 /*!
  * @brief Creates a Data rule builder with no parameters.
  */
+// [api(module)]
 inline DataRuleBuilderPtr DataRuleBuilder()
 {
     DataRuleBuilderPtr obj(DataRuleBuilder_Create());
@@ -107,6 +114,7 @@ inline DataRuleBuilderPtr DataRuleBuilder()
  * non-configurable Data rule.
  * @param rule The rule of which configuration should be copied.
  */
+// [api(module)]
 inline DataRuleBuilderPtr DataRuleBuilderCopy(const DataRulePtr& rule)
 {
     DataRuleBuilderPtr obj(DataRuleBuilderFromExisting_Create(rule));
@@ -116,6 +124,7 @@ inline DataRuleBuilderPtr DataRuleBuilderCopy(const DataRulePtr& rule)
 /*!
  * @brief Creates the Struct type object that defines the Data rule struct.
  */
+// [api(module)]
 inline StructTypePtr DataRuleStructType()
 {
     return StructType("DataRule",

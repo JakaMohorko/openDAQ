@@ -31,6 +31,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Enumeration of available log severity levels. `Trace` is the lowest level.
  * `Critical` is the highest level.
  */
+// [api(application)]
 enum class LogLevel
 {
     Trace = OPENDAQ_LOG_LEVEL_TRACE,        ///< used to log any details about the execution for diagnostic
@@ -61,6 +62,7 @@ enum class LogLevel
  * Additionally, it provides the ability to customize format for messages written to the target,
  * see `setPattern` method.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(ILoggerSink, IBaseObject)
 {
     /*!
@@ -96,9 +98,12 @@ DECLARE_OPENDAQ_INTERFACE(ILoggerSink, IBaseObject)
 
 /*!@}*/
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(LIBRARY_FACTORY, StdErrLoggerSink, ILoggerSink, createStdErrLoggerSink)
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(LIBRARY_FACTORY, StdOutLoggerSink, ILoggerSink, createStdOutLoggerSink)
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(LIBRARY_FACTORY,
                                                          RotatingFileLoggerSink,
                                                          ILoggerSink,
@@ -110,6 +115,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(LIBRARY_FACTORY,
                                                          SizeT,
                                                          maxFiles)
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(LIBRARY_FACTORY,
                                                          BasicFileLoggerSink,
                                                          ILoggerSink,
@@ -118,10 +124,12 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(LIBRARY_FACTORY,
                                                          fileName)
 
 #ifdef _WIN32
+    // [api(application)]
     OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(LIBRARY_FACTORY, WinDebugLoggerSink, ILoggerSink, createWinDebugLoggerSink)
 #endif
 
 //[factory(Hide)]
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE_AND_CREATEFUNC(LIBRARY_FACTORY, LastMessageLoggerSink, ILoggerSink, createLastMessageLoggerSink)
 
 

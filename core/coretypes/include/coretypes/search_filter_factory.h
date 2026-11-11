@@ -29,6 +29,7 @@ BEGIN_NAMESPACE_OPENDAQ_SEARCH
 /*!
  * @brief Creates a search filter that accepts all objects. "Visit children" always returns `true`.
  */
+// [api(application)]
 inline SearchFilterPtr Any()
 {
     SearchFilterPtr obj(AnySearchFilter_Create());
@@ -41,6 +42,7 @@ inline SearchFilterPtr Any()
  * @param left The first argument of the conjunction operation.
  * @param right The second argument of the conjunction operation.
  */
+// [api(application)]
 inline SearchFilterPtr And(const SearchFilterPtr& left, const SearchFilterPtr& right)
 {
     SearchFilterPtr obj(AndSearchFilter_Create(left, right));
@@ -53,6 +55,7 @@ inline SearchFilterPtr And(const SearchFilterPtr& left, const SearchFilterPtr& r
  * @param left The first argument of the disjunction operation.
  * @param right The second argument of the disjunction operation.
  */
+// [api(application)]
 inline SearchFilterPtr Or(const SearchFilterPtr& left, const SearchFilterPtr& right)
 {
     SearchFilterPtr obj(OrSearchFilter_Create(left, right));
@@ -64,6 +67,7 @@ inline SearchFilterPtr Or(const SearchFilterPtr& left, const SearchFilterPtr& ri
  * Does not negate the "visit children" result.
  * @param filter The filter of which results should be negated.
  */
+// [api(application)]
 inline SearchFilterPtr Not(const SearchFilterPtr& filter)
 {
     SearchFilterPtr obj(NotSearchFilter_Create(filter));
@@ -75,6 +79,7 @@ inline SearchFilterPtr Not(const SearchFilterPtr& filter)
  * @param acceptsFunction The function to be called when "accepts component" is called. Should return `true` or `false`.
  * @param visitFunction The function to be called when "visit children" is called. Should return `true` or `false`.
  */
+// [api(application)]
 inline SearchFilterPtr Custom(const FunctionPtr& acceptsFunction, const FunctionPtr& visitFunction = nullptr)
 {
     SearchFilterPtr obj(CustomSearchFilter_Create(acceptsFunction, visitFunction));
@@ -87,6 +92,7 @@ inline SearchFilterPtr Custom(const FunctionPtr& acceptsFunction, const Function
  * for another filter.
  * @param filter The filter to be wrapped with a "recursive" flag.
  */
+// [api(application)]
 inline SearchFilterPtr Recursive(const SearchFilterPtr& filter)
 {
     SearchFilterPtr obj(RecursiveSearchFilter_Create(filter));

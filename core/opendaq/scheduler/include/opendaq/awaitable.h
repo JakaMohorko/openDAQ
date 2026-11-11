@@ -29,6 +29,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Represents the state of an asynchronous operation that can
  * be canceled, waited upon or queried for the result.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IAwaitable, IBaseObject)
 {
     /*!

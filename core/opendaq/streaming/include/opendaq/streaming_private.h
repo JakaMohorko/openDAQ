@@ -32,6 +32,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Internal functions used by openDAQ core. This interface should never be used in
  * client SDK or module code.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IStreamingPrivate, IBaseObject)
 {
     /*!
@@ -53,6 +54,7 @@ DECLARE_OPENDAQ_INTERFACE(IStreamingPrivate, IBaseObject)
      * @param signalRemoteId The global remote ID of the removed signal.
      * @retval OPENDAQ_ERR_NOTFOUND if a signal with corresponding remote Id was not added to the Streaming.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC detachRemovedSignal(const StringPtr& signalRemoteId) = 0;
 
     /*!
@@ -69,6 +71,7 @@ DECLARE_OPENDAQ_INTERFACE(IStreamingPrivate, IBaseObject)
      *
      * Forwarding of signal data via streaming is enabled for these signals once they are registered.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC registerStreamedClientSignals(IList* signals) = 0;
 
     // [elementType(signals, ISignal)]
@@ -79,6 +82,7 @@ DECLARE_OPENDAQ_INTERFACE(IStreamingPrivate, IBaseObject)
      *
      * Unregistered signals will not be transmitted through the streaming protocol.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC unregisterStreamedClientSignals(IList* signals) = 0;
 
     /*!
@@ -86,6 +90,7 @@ DECLARE_OPENDAQ_INTERFACE(IStreamingPrivate, IBaseObject)
      * @param inputPortRemoteId The global remote ID of the removed input port.
      * @retval OPENDAQ_ERR_NOTFOUND if an input port with corresponding remote Id was not added to the Streaming.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC detachRemovedInputPort(IString* inputPortRemoteId) = 0;
 };
 /*!@}*/

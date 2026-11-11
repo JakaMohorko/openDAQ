@@ -28,6 +28,7 @@ BEGIN_NAMESPACE_OPENDAQ
     #pragma warning(disable : 4275)
 #endif
 
+// [api(core)]
 class PUBLIC_EXPORT PtpSyncInterfaceBaseImpl : public SyncInterfaceBaseImpl
 {
 public:

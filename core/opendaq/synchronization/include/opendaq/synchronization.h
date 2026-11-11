@@ -35,6 +35,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * The device holds it as the hidden property "daqSynchronization". IDevice::getSynchronization
  * returns null when the device is not clocked.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(ISynchronization, IBaseObject)
 {
     /*!
@@ -82,6 +83,7 @@ DECLARE_OPENDAQ_INTERFACE(ISynchronization, IBaseObject)
 };
 /*!@}*/
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, Synchronization, ISynchronization,
     ITypeManager*, manager,

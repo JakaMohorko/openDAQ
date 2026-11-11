@@ -25,6 +25,7 @@ BEGIN_NAMESPACE_OPENDAQ
 
 // AuthenticationProviderImpl
 
+// [api(core)]
 class AuthenticationProviderImpl : public ImplementationOf<IAuthenticationProvider>
 {
 public:
@@ -47,6 +48,7 @@ protected:
 
 // StaticAuthenticationProviderImpl
 
+// [api(core)]
 class StaticAuthenticationProviderImpl : public AuthenticationProviderImpl
 {
 public:
@@ -55,6 +57,7 @@ public:
 
 // JsonStringAuthenticationProviderImpl
 
+// [api(core)]
 class JsonStringAuthenticationProviderImpl : public AuthenticationProviderImpl
 {
 public:
@@ -70,6 +73,7 @@ protected:
 
 // JsonFileAuthenticationProviderImpl
 
+// [api(core)]
 class JsonFileAuthenticationProviderImpl : public JsonStringAuthenticationProviderImpl
 {
 public:

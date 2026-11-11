@@ -28,6 +28,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Creates an unlocked UserLock object.
  */
+// [api(core)]
 inline UserLockPtr UserLock()
 {
     UserLockPtr obj(UserLock_Create());

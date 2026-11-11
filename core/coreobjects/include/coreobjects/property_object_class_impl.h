@@ -32,6 +32,7 @@ struct ISerializedObject;
 
 using PropertyOrderedMap = tsl::ordered_map<StringPtr, PropertyPtr, StringHash, StringEqualTo>;
 
+// [api(core)]
 class PropertyObjectClassImpl : public ImplementationOf<IPropertyObjectClass, IPropertyObjectClassInternal, ISerializable>
 {
 public:

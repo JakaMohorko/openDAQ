@@ -26,6 +26,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @{
  */
 
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IAddressInfoBuilder, IBaseObject)
 {
     /*!
@@ -108,6 +109,7 @@ DECLARE_OPENDAQ_INTERFACE(IAddressInfoBuilder, IBaseObject)
 /*!
  * @brief Creates an Address builder with no parameters configured.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, AddressInfoBuilder, IAddressInfoBuilder)
 
 /*!@}*/

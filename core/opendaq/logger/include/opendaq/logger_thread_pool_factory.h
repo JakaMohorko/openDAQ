@@ -29,6 +29,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Creates a Logger Thread Pool object.
  */
+// [api(module)]
 inline LoggerThreadPoolPtr LoggerThreadPool()
 {
     return LoggerThreadPoolPtr(LoggerThreadPool_Create());

@@ -39,6 +39,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(module)]
 class Module : public ImplementationOf<IModule>
 {
 public:
@@ -318,6 +319,7 @@ public:
      * The implementation can start discovery in background and only return the results in this function.
      * @returns The list of known devices information.
      */
+    // [api(module, override)]
     virtual ListPtr<IDeviceInfo> onGetAvailableDevices()
     {
         return List<IDeviceInfo>();
@@ -327,6 +329,7 @@ public:
      * @brief Retrieves a dictionary of known and available device types this module can create.
      * @returns A dictionary of known device types information.
      */
+    // [api(module, override)]
     virtual DictPtr<IString, IDeviceType> onGetAvailableDeviceTypes()
     {
         return Dict<IString, IDeviceType>();
@@ -340,6 +343,7 @@ public:
      * @param config A configuration object that contains parameters used to configure a device in the form of key-value pairs.
      * @returns The device object created to communicate with and control the device.
      */
+    // [api(module, override)]
     virtual DevicePtr onCreateDevice(const StringPtr& connectionString, const ComponentPtr& parent, const PropertyObjectPtr& config)
     {
         return nullptr;
@@ -349,6 +353,7 @@ public:
      * @brief Retrieves a dictionary of known and available function blocks this module can create.
      * @returns A dictionary of known function blocks information.
      */
+    // [api(module, override)]
     virtual DictPtr<IString, IFunctionBlockType> onGetAvailableFunctionBlockTypes()
     {
         return Dict<IString, IFunctionBlockType>();
@@ -361,6 +366,7 @@ public:
      * @param parent The parent component/folder/device to which the device attaches.
      * @returns The created function block.
      */
+    // [api(module, override)]
     virtual FunctionBlockPtr onCreateFunctionBlock(const StringPtr& id, const ComponentPtr& parent, const StringPtr& localId, const PropertyObjectPtr& config)
     {
         DAQ_THROW_EXCEPTION(NotFoundException);
@@ -370,26 +376,31 @@ public:
      * @brief Retrieves a dictionary of known and available server types this module can create.
      * @returns The dictionary of known server types information.
      */
+    // [api(module, override)]
     virtual DictPtr<IString, IServerType> onGetAvailableServerTypes()
     {
         return Dict<IString, IServerType>();
     }
 
+    // [api(module, override)]
     virtual DictPtr<IString, IStreamingType> onGetAvailableStreamingTypes()
     {
         return Dict<IString, IStreamingType>();
     }
 
+    // [api(module, override)]
     virtual ServerPtr onCreateServer(const StringPtr& serverType, const PropertyObjectPtr& serverConfig, const DevicePtr& rootDevice)
     {
         return nullptr;
     }
 
+    // [api(module, override)]
     virtual StreamingPtr onCreateStreaming(const StringPtr& connectionString, const PropertyObjectPtr& config)
     {
         return nullptr;
     }
 
+    // [api(module, override)]
     virtual Bool onCompleteServerCapability(const ServerCapabilityPtr& source, const ServerCapabilityConfigPtr& target)
     {
         return false;
@@ -408,6 +419,7 @@ public:
         return errCode;
     }
 
+    // [api(module, override)]
     virtual Bool onLoadLicense(IDict* licenseConfig)
     {
         return true;
@@ -425,6 +437,7 @@ public:
         return errCode;
     }
 
+    // [api(module, override)]
     virtual DictPtr<IString, IString> onGetLicenseConfig()
     {
         return nullptr;
@@ -442,17 +455,22 @@ public:
         return errCode;
     }
 
+    // [api(module, override)]
     virtual Bool onLicenseLoaded()
     {
         return true;
     }
 
 protected:
+    // [api(module, readOnly)]
     ModuleInfoPtr moduleInfo;
 
+    // [api(module, readOnly)]
     ContextPtr context;
 
+    // [api(core)]
     LoggerPtr logger;
+    // [api(module)]
     LoggerComponentPtr loggerComponent;
 
     Module(StringPtr name, VersionInfoPtr version, ContextPtr context, StringPtr id = nullptr)
@@ -466,6 +484,7 @@ protected:
     {
     }
 
+    // [api(module)]
     template <typename PopulatePropertiesFunc, typename DiscoveredDeviceT>
     static DeviceInfoPtr populateDiscoveredDeviceInfo(PopulatePropertiesFunc populateProperties,
                                                       const DiscoveredDeviceT& discoveredDevice,

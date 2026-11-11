@@ -38,6 +38,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @param defaultConfig The property object, to be cloned and returned, each time user creates default
  * configuration object. This way each instance of the device has its own configuration object.
  */
+// [api(module)]
 inline DeviceTypePtr DeviceType(const StringPtr& id,
                                 const StringPtr& name,
                                 const StringPtr& description,
@@ -51,6 +52,7 @@ inline DeviceTypePtr DeviceType(const StringPtr& id,
 /*!
  * @brief Creates the Struct type object that defines the Device type struct.
  */
+// [api(module)]
 inline StructTypePtr DeviceTypeStructType()
 {
     return StructType("DeviceType",

@@ -20,6 +20,7 @@
 #include <opendaq/context_ptr.h>
 #include <opendaq/module_manager_ptr.h>
 
+// [api(core)]
 class MockServerModuleImpl : public daq::ImplementationOf<daq::IModule>
 {
 public:
@@ -51,6 +52,7 @@ private:
     daq::WeakRefPtr<daq::IModuleManager> manager;
 };
 
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     INTERNAL_FACTORY, MockServerModule, daq::IModule,
     daq::IContext*, context,

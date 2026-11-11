@@ -31,6 +31,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * [interfaceLibrary(IPropertyObject, "coreobjects")]
  * [interfaceSmartPtr(IPropertyObject, GenericPropertyObjectPtr, "<coreobjects/property_object_ptr.h>")]
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IConnectedClientInfo, IPropertyObject)
 {
     /*!
@@ -75,6 +76,7 @@ DECLARE_OPENDAQ_INTERFACE(IConnectedClientInfo, IPropertyObject)
 /*!
  * @brief Creates a Connected client with no parameters configured.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, ConnectedClientInfo, IConnectedClientInfo)
 
 /*!
@@ -85,6 +87,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, ConnectedClientInf
  * @param clientType The configuration connection client type name.
  * @param hostName The host name of connected client.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, ConnectedClientInfoWithParams, IConnectedClientInfo,
     IString*, address,

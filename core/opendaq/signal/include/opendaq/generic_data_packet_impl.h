@@ -20,6 +20,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 template <typename TInterface = IDataPacket, typename... TInterfaces>
 class GenericDataPacketImpl : public PacketImpl<TInterface, TInterfaces ...>
 {

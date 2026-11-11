@@ -30,12 +30,14 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Container for messages queue and backing threads used for asynchronous logging.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(ILoggerThreadPool, IBaseObject)
 {
 };
 
 /*!@}*/
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, LoggerThreadPool)
 
 END_NAMESPACE_OPENDAQ

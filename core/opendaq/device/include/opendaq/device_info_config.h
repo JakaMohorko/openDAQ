@@ -38,6 +38,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * The implementation of `config` also implements the `freeze` function that freezes the object making it
  * immutable. Once frozen, the setter methods fail as the object can no longer be modified.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IDeviceInfoConfig, IDeviceInfo)
 {
     /*!
@@ -205,11 +206,13 @@ DECLARE_OPENDAQ_INTERFACE(IDeviceInfoConfig, IDeviceInfo)
 };
 /*!@}*/
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, DeviceInfoConfig, IDeviceInfoConfig,
     IString*, name,
     IString*, connectionString)
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, DeviceInfoConfigWithCustomSdkVersion, IDeviceInfoConfig,
     IString*, name,
@@ -217,6 +220,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     IString*, sdkVersion)
 
 //[factory(Hide)]
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, DeviceInfoConfigWithChanegableFields, IDeviceInfoConfig,
     IList*, changeableDefaultPropertyNames)

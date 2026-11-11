@@ -27,6 +27,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @{
  */
 
+// [api(core)]
 DECLARE_OPENDAQ_INTERFACE(IUpdatable, IBaseObject)
 {
     virtual ErrCode INTERFACE_FUNC update(ISerializedObject* update, IBaseObject* config) = 0;

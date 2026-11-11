@@ -201,6 +201,7 @@ struct SupportsInterface
     }
 };
 
+// [api(module)]
 template <typename MainInterface, typename... Interfaces>
 class DAQ_EMPTY_BASES GenericObjInstance : public MainInterface, public Interfaces...
 {
@@ -230,16 +231,19 @@ public:
 #endif
     }
 
+    // [api(core)]
     virtual int INTERFACE_FUNC addRef() override
     {
         return 0;
     }
 
+    // [api(core)]
     virtual int INTERFACE_FUNC releaseRef() override
     {
         return 0;
     }
 
+    // [api(core)]
     ErrCode INTERFACE_FUNC dispose() override
     {
         if (!disposeCalled)
@@ -250,6 +254,7 @@ public:
         return OPENDAQ_SUCCESS;
     }
 
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC queryInterface(const IntfID& id, void** intf) override
     {
         OPENDAQ_PARAM_NOT_NULL(intf);
@@ -262,6 +267,7 @@ public:
         return OPENDAQ_ERR_NOINTERFACE;
     }
 
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC borrowInterface(const IntfID& id, void** intf) const override
     {
         OPENDAQ_PARAM_NOT_NULL(intf);
@@ -274,6 +280,7 @@ public:
         return OPENDAQ_ERR_NOINTERFACE;
     }
 
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC getHashCode(SizeT* hashCode) override
     {
         OPENDAQ_PARAM_NOT_NULL(hashCode);
@@ -282,6 +289,7 @@ public:
         return OPENDAQ_SUCCESS;
     }
 
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC equals(IBaseObject* other, Bool* equal) const override
     {
         if (equal == nullptr)
@@ -306,6 +314,7 @@ public:
         return OPENDAQ_SUCCESS;
     }
 
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC toString(CharPtr* str) override
     {
         OPENDAQ_PARAM_NOT_NULL(str);
@@ -315,6 +324,7 @@ public:
 
     // IInspectable
 
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC getInterfaceIds(SizeT* idCount, IntfID** ids) override
     {
         OPENDAQ_PARAM_NOT_NULL(idCount);
@@ -329,6 +339,7 @@ public:
         return OPENDAQ_SUCCESS;
     }
 
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC getRuntimeClassName(IString** implementationName) override
     {
         OPENDAQ_PARAM_NOT_NULL(implementationName);
@@ -354,28 +365,33 @@ public:
         return createString(implementationName, id);
     }
 
+    // [api(core)]
     [[nodiscard]] bool getRefAdded() const noexcept
     {
         return refAdded;
     }
 
 protected:
+    // [api(core)]
     IBaseObject* getThisAsBaseObject()
     {
         return static_cast<IBaseObject*>(static_cast<MainInterface*>(this));
     }
 
+    // [api(core)]
     IBaseObject* getThisAsBaseObject() const
     {
         return const_cast<IBaseObject*>(static_cast<const IBaseObject*>(static_cast<const MainInterface*>(this)));
     }
 
+    // [api(core)]
     void checkAndCallDispose()
     {
         if (!disposeCalled)
             internalDispose(false);
     }
 
+    // [api(core)]
     template <typename... Params>
     ErrCode makeErrorInfo(ErrCode errCode, const std::string& message, Params... params) const
     {
@@ -390,11 +406,13 @@ protected:
         return errCode;
     }
 
+    // [api(core)]
     void clearErrorInfo() const
     {
         daqClearErrorInfo();
     }
 
+    // [api(core)]
     template <template <typename> typename T, typename Interface>
     T<Interface> borrowThis() const
     {
@@ -405,6 +423,7 @@ protected:
         return T<Interface>::Borrow(thisInterface);
     }
 
+    // [api(module)]
     template <typename TPtr>
     TPtr borrowPtr() const
     {
@@ -417,6 +436,7 @@ protected:
         return TPtr::Borrow(thisInterface);
     }
 
+    // [api(core)]
     template <typename Intf = MainInterface>
     Intf* thisInterface()
     {
@@ -427,6 +447,7 @@ protected:
         return thisInterface;
     }
 
+    // [api(core)]
     template <typename Intf = MainInterface>
     Intf* borrowInterface()
     {
@@ -437,6 +458,7 @@ protected:
         return thisInterface;
     }
 
+    // [api(module)]
     template <typename TPtr>
     TPtr thisPtr()
     {
@@ -449,26 +471,32 @@ protected:
         return thisInterface;
     }
 
+    // [api(module)]
     template <typename TReturn, typename TInstance, typename... TArgs>
     auto event(TReturn (TInstance::*func)(TArgs...))
     {
         return delegate<TReturn(TArgs...)>(static_cast<TInstance* const>(this), func);
     }
 
+    // [api(module)]
     template <typename TReturn, typename TInstance, typename... TArgs>
     auto event(TReturn (TInstance::*func)(TArgs...) const)
     {
         return delegate<TReturn(TArgs...)>(static_cast<TInstance* const>(this), func);
     }
 
+    // [api(core)]
     virtual void internalDispose([[maybe_unused]] bool disposing)
     {
     }
 
+    // [api(core)]
     bool refAdded;
+    // [api(module, readOnly)]
     bool disposeCalled;
 };
 
+// [api(module)]
 template <typename... Interfaces>
 class ObjInstance : public GenericObjInstance<Interfaces...>
 {
@@ -478,11 +506,13 @@ public:
     {
     }
 
+    // [api(core)]
     int INTERFACE_FUNC addRef() override
     {
         return std::atomic_fetch_add_explicit(&refCount, 1, std::memory_order_relaxed) + 1;
     }
 
+    // [api(core)]
     int INTERFACE_FUNC releaseRef() override
     {
         const auto newRefCount = std::atomic_fetch_sub_explicit(&refCount, 1, std::memory_order_acq_rel) - 1;
@@ -497,6 +527,7 @@ public:
     }
 
 protected:
+    // [api(core)]
     int internalAddRef()
     {
         if (this->refAdded)
@@ -507,16 +538,19 @@ protected:
         return refCount;
     }
 
+    // [api(core)]
     int internalAddRefNoCheck()
     {
         return std::atomic_fetch_add_explicit(&refCount, 1, std::memory_order_relaxed);
     }
 
+    // [api(core)]
     int internalReleaseRef()
     {
         return std::atomic_fetch_sub_explicit(&refCount, 1, std::memory_order_acq_rel) - 1;
     }
 
+    // [api(core)]
     int getReferenceCount()
     {
         return std::atomic_load_explicit(&refCount, std::memory_order_acquire);
@@ -539,6 +573,7 @@ public:
     std::atomic<int> weak;
 };
 
+// [api(module)]
 template <typename... Interfaces>
 class ObjInstanceSupportsWeakRef : public GenericObjInstance<Interfaces...>
 {
@@ -548,11 +583,13 @@ public:
     {
     }
 
+    // [api(module)]
     int INTERFACE_FUNC addRef() override
     {
         return std::atomic_fetch_add_explicit(&refCount->strong, 1, std::memory_order_relaxed) + 1;
     }
 
+    // [api(module)]
     int INTERFACE_FUNC releaseRef() override
     {
         const auto newRefCount = std::atomic_fetch_sub_explicit(&refCount->strong, 1, std::memory_order_acq_rel) - 1;
@@ -574,6 +611,7 @@ public:
     }
 
 protected:
+    // [api(core)]
     int internalAddRef()
     {
         if (this->refAdded)
@@ -584,6 +622,7 @@ protected:
         return refCount->strong;
     }
 
+    // [api(core)]
     int releaseWeakRefOnException()
     {
         const auto newRefCount = std::atomic_fetch_sub_explicit(&refCount->strong, 1, std::memory_order_acq_rel) - 1;
@@ -601,29 +640,35 @@ protected:
         return newRefCount;
     }
 
+    // [api(core)]
     int internalAddRefNoCheck()
     {
         return std::atomic_fetch_add_explicit(&refCount->strong, 1, std::memory_order_relaxed);
     }
 
+    // [api(core)]
     int internalReleaseRef()
     {
         return std::atomic_fetch_sub_explicit(&refCount->strong, 1, std::memory_order_acq_rel) - 1;
     }
 
+    // [api(core)]
     int getReferenceCount()
     {
         return std::atomic_load_explicit(&refCount->strong, std::memory_order_acquire);
     }
 
+    // [api(core)]
     std::unique_ptr<RefCount> refCount{};
 };
 
+// [api(module)]
 template <typename... Interfaces>
 class IntfObjectImpl : public ObjInstance<Interfaces...>
 {
 };
 
+// [api(module)]
 template <typename... Interfaces>
 class IntfObjectSupportsWeakRefImpl : public ObjInstanceSupportsWeakRef<Interfaces...>
 {

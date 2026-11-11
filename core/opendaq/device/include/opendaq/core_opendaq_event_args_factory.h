@@ -35,6 +35,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * The sender of the event is always the parent component.
  * The ID of the event is 40, and the event name is "ComponentAdded".
  */
+// [api(core)]
 inline CoreEventArgsPtr CoreEventArgsComponentAdded(const ComponentPtr& component)
 {
     CoreEventArgsPtr obj(CoreEventArgsComponentAdded_Create(component));
@@ -49,6 +50,7 @@ inline CoreEventArgsPtr CoreEventArgsComponentAdded(const ComponentPtr& componen
  *
  * The ID of the event is 50, and the event name is "ComponentRemoved".
  */
+// [api(core)]
 inline CoreEventArgsPtr CoreEventArgsComponentRemoved(const StringPtr& componentId)
 {
     CoreEventArgsPtr obj(CoreEventArgsComponentRemoved_Create(componentId));
@@ -63,6 +65,7 @@ inline CoreEventArgsPtr CoreEventArgsComponentRemoved(const StringPtr& component
  *
  * The ID of the event is 60, and the event name is "SignalConnected".
  */
+// [api(core)]
 inline CoreEventArgsPtr CoreEventArgsSignalConnected(const SignalPtr& signal)
 {
     CoreEventArgsPtr obj(CoreEventArgsSignalConnected_Create(signal));
@@ -77,6 +80,7 @@ inline CoreEventArgsPtr CoreEventArgsSignalConnected(const SignalPtr& signal)
  *
  * The ID of the event is 70, and the event name is "SignalDisconnected".
  */
+// [api(core)]
 inline CoreEventArgsPtr CoreEventArgsSignalDisconnected()
 {
     CoreEventArgsPtr obj(CoreEventArgsSignalDisconnected_Create());
@@ -91,6 +95,7 @@ inline CoreEventArgsPtr CoreEventArgsSignalDisconnected()
  *
  * The ID of the event is 80, and the event name is "DataDescriptorChanged".
  */
+// [api(core)]
 inline CoreEventArgsPtr CoreEventArgsDataDescriptorChanged(const DataDescriptorPtr& descriptor)
 {
     CoreEventArgsPtr obj(CoreEventArgsDataDescriptorChanged_Create(descriptor));
@@ -103,6 +108,7 @@ inline CoreEventArgsPtr CoreEventArgsDataDescriptorChanged(const DataDescriptorP
  * A component finished updating at the end of the `update` call.
  * The ID of the event is 90, and the event name is "ComponentUpdateEnd".
  */
+// [api(core)]
 inline CoreEventArgsPtr CoreEventArgsComponentUpdateEnd()
 {
     CoreEventArgsPtr obj(CoreEventArgsComponentUpdateEnd_Create());
@@ -119,6 +125,7 @@ inline CoreEventArgsPtr CoreEventArgsComponentUpdateEnd()
  *
  * The ID of the event is 100, and the event name is "AttributeChanged".
  */
+// [api(core)]
 inline CoreEventArgsPtr CoreEventArgsAttributeChanged(const StringPtr& attributeName, const BaseObjectPtr& attributeValue)
 {
     CoreEventArgsPtr obj(CoreEventArgsAttributeChanged_Create(attributeName, attributeValue));
@@ -131,6 +138,7 @@ inline CoreEventArgsPtr CoreEventArgsAttributeChanged(const StringPtr& attribute
  *
  * The ID of the event is 110, and the event name is "TagsChanged".
  */
+// [api(core)]
 inline CoreEventArgsPtr CoreEventArgsTagsChanged(const ListPtr<IString>& tags)
 {
     CoreEventArgsPtr obj(CoreEventArgsTagsChanged_Create(tags));
@@ -143,6 +151,7 @@ inline CoreEventArgsPtr CoreEventArgsTagsChanged(const ListPtr<IString>& tags)
  *
  * The ID of the event is 150, and the event name is "DeviceDomainChanged".
  */
+// [api(core)]
 inline CoreEventArgsPtr CoreEventArgsDeviceDomainChanged(const DeviceDomainPtr& deviceDomain)
 {
     CoreEventArgsPtr obj(CoreEventArgsDeviceDomainChanged_Create(deviceDomain));
@@ -155,6 +164,7 @@ inline CoreEventArgsPtr CoreEventArgsDeviceDomainChanged(const DeviceDomainPtr& 
  *
  * The ID of the event is 160, and the event name is "DeviceLockStateChanged".
  */
+// [api(core)]
 inline CoreEventArgsPtr CoreEventArgsDeviceLockStateChanged(Bool isLocked)
 {
     CoreEventArgsPtr obj(CoreEventArgsDeviceLockStateChanged_Create(isLocked));
@@ -168,6 +178,7 @@ inline CoreEventArgsPtr CoreEventArgsDeviceLockStateChanged(Bool isLocked)
  * The ID of the event is 180, and the event name is "DeviceOperationModeChanged".
  */
 
+// [api(core)]
 inline CoreEventArgsPtr CoreEventArgsDeviceOperationModeChanged(Int operationMode)
 {
     CoreEventArgsPtr obj(CoreEventArgsDeviceOperationModeChanged_Create(operationMode));

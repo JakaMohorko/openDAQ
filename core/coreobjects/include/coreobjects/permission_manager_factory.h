@@ -27,6 +27,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Creates a default permission manager object.
  */
+// [api(module)]
 inline PermissionManagerPtr PermissionManager()
 {
     PermissionManagerPtr obj(PermissionManager_Create(nullptr));
@@ -37,6 +38,7 @@ inline PermissionManagerPtr PermissionManager()
  * @brief Creates a permission manager object which inherits permissions from a parent permission manager.
  * @param parent Permission manager of a parent component.
  */
+// [api(module)]
 inline PermissionManagerPtr PermissionManager(const PermissionManagerPtr& parent)
 {
     PermissionManagerPtr obj(PermissionManager_Create(parent));

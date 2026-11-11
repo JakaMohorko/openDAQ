@@ -24,6 +24,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class RangeImpl : public GenericStructImpl<IRange, IStruct>
 {
 public:

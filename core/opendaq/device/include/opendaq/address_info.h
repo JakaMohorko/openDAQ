@@ -28,6 +28,7 @@ struct IAddressInfoBuilder;
  * @{
  */
 
+// [api(application)]
 enum class AddressReachabilityStatus: EnumType
 {
     Unknown = 0,
@@ -39,6 +40,7 @@ enum class AddressReachabilityStatus: EnumType
  * [interfaceLibrary(IPropertyObject, "coreobjects")]
  * [interfaceSmartPtr(IPropertyObject, GenericPropertyObjectPtr, "<coreobjects/property_object_ptr.h>")]
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IAddressInfo, IPropertyObject)
 {
     /*!
@@ -82,12 +84,14 @@ DECLARE_OPENDAQ_INTERFACE(IAddressInfo, IPropertyObject)
 /*!
  * @brief Creates an Address with no parameters configured.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, AddressInfo, IAddressInfo)
 
 /*!
  * @brief Creates an Address using the builder's configuration parameters.
  * @param builder The address info builder.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, AddressInfoFromBuilder, IAddressInfo,
     IAddressInfoBuilder*, builder

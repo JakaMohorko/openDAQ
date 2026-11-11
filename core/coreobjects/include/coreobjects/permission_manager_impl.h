@@ -29,6 +29,7 @@ BEGIN_NAMESPACE_OPENDAQ
 
 #ifdef OPENDAQ_ENABLE_ACCESS_CONTROL
 
+// [api(core)]
 class PermissionManagerImpl : public ImplementationOfWeak<IPermissionManager, IPermissionManagerInternal, ICloneable>
 {
 public:

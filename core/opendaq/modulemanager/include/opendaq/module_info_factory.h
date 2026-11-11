@@ -34,6 +34,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @param id The module id.
  * @return The ModuleInfo object.
  */
+// [api(module)]
 inline ModuleInfoPtr ModuleInfo(const VersionInfoPtr& versionInfo, const StringPtr& name, const StringPtr& id)
 {
     return ModuleInfoPtr{ModuleInfo_Create(versionInfo, name, id)};
@@ -42,6 +43,7 @@ inline ModuleInfoPtr ModuleInfo(const VersionInfoPtr& versionInfo, const StringP
 /*!
  * @brief Creates the Struct type object that defines the Module Info struct.
  */
+// [api(module)]
 inline StructTypePtr ModuleInfoStructType()
 {
     return StructType("ModuleInfo",

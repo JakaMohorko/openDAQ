@@ -37,6 +37,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @param defaultConfig The property object, to be cloned and returned, each time user creates default
  * configuration object. This way each instance of the server has its own configuration object.
  */
+// [api(module)]
 inline ServerTypePtr ServerType(const StringPtr& id,
                                       const StringPtr& name,
                                       const StringPtr& description,
@@ -49,6 +50,7 @@ inline ServerTypePtr ServerType(const StringPtr& id,
 /*!
  * @brief Creates the Struct type object that defines the Server type struct.
  */
+// [api(module)]
 inline StructTypePtr ServerTypeStructType()
 {
     return StructType("ServerType",

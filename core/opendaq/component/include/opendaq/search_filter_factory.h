@@ -30,6 +30,7 @@ BEGIN_NAMESPACE_OPENDAQ_SEARCH
  * @brief Creates a search filter that accepts only visible components. "Visit children" returns `true`
  * only if the component being evaluated is visible.
  */
+// [api(application)]
 inline SearchFilterPtr Visible()
 {
     SearchFilterPtr obj(VisibleSearchFilter_Create());
@@ -41,6 +42,7 @@ inline SearchFilterPtr Visible()
  * always returns `true`.
  * @param requiredTags A list of strings containing the tags that a component must have to be accepted.
  */
+// [api(application)]
 inline SearchFilterPtr RequireTags(const ListPtr<IString>& requiredTags)
 {
     SearchFilterPtr obj(RequiredTagsSearchFilter_Create(requiredTags));
@@ -52,6 +54,7 @@ inline SearchFilterPtr RequireTags(const ListPtr<IString>& requiredTags)
  * always returns `true`.
  * @param excludedTags A list of strings containing the tags that a component must not have to be accepted.
  */
+// [api(application)]
 inline SearchFilterPtr ExcludeTags(const ListPtr<IString>& excludedTags)
 {
     SearchFilterPtr obj(ExcludedTagsSearchFilter_Create(excludedTags));
@@ -63,6 +66,7 @@ inline SearchFilterPtr ExcludeTags(const ListPtr<IString>& excludedTags)
  * always returns `true`.
  * @param intfId The interface ID that should be implemented by accepted components.
  */
+// [api(application)]
 inline SearchFilterPtr InterfaceId(const IntfID& intfId)
 {
     SearchFilterPtr obj(InterfaceIdSearchFilter_Create(intfId));
@@ -74,6 +78,7 @@ inline SearchFilterPtr InterfaceId(const IntfID& intfId)
  * always returns `true`.
  * @param localId The local ID of the accepted components.
  */
+// [api(application)]
 inline SearchFilterPtr LocalId(const StringPtr& localId)
 {
     SearchFilterPtr obj(LocalIdSearchFilter_Create(localId));

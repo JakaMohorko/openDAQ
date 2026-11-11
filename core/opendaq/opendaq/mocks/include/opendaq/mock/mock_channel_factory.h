@@ -19,6 +19,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 inline ChannelPtr MockChannel(const daq::ContextPtr& ctx, const ComponentPtr& parent, const StringPtr& localId)
 {
     ChannelPtr obj(MockChannel_Create(ctx, parent, localId));

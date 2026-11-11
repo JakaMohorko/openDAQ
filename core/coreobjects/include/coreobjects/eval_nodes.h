@@ -21,6 +21,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(application)]
 enum class ResolveStatus
 {
     Unresolved,
@@ -28,6 +29,7 @@ enum class ResolveStatus
     Failed
 };
 
+// [api(application)]
 enum class RefType
 {
     Value,

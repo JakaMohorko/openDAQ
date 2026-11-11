@@ -22,6 +22,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Internal User interface. It should be used only in openDAQ core implementation files.
  */
+// [api(core)]
 DECLARE_OPENDAQ_INTERFACE(IUserInternal, IBaseObject)
 {
     /*!

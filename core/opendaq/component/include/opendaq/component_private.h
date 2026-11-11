@@ -36,6 +36,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * After construction, an attribute may only be unlocked temporarily to apply an internal change to it, and must be
  * locked again right after. Locking or unlocking an attribute does not trigger a core event.
  */
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IComponentPrivate, IBaseObject)
 {
     // [templateType(attributes, IString)]
@@ -66,12 +67,14 @@ DECLARE_OPENDAQ_INTERFACE(IComponentPrivate, IBaseObject)
      * @brief Triggers the component-specific core event with the provided arguments.
      * @param args The arguments of the core event.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC triggerComponentCoreEvent(ICoreEventArgs* args) = 0;
 
     /*!
      * @brief Notifies component about the change of the operation mode.
      * @param modeType The new operation mode.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC updateOperationMode(OperationModeType modeType) = 0;
 
     /*!
@@ -95,6 +98,7 @@ DECLARE_OPENDAQ_INTERFACE(IComponentPrivate, IBaseObject)
      * If the effective active state changes, triggers an AttributeChanged event.
      * Container components (folders, devices) propagate this call to their children.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC setParentActive(Bool parentActive, Bool onUpdate) = 0;
 };
 

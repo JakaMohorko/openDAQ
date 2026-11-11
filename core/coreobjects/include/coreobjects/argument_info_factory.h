@@ -32,6 +32,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @param name The name of the argument.
  * @param type The type expected of the argument.
  */
+// [api(module)]
 inline ArgumentInfoPtr ArgumentInfo(const StringPtr& name, CoreType type)
 {
     return ArgumentInfoPtr::Adopt(ArgumentInfo_Create(name, type));
@@ -43,6 +44,7 @@ inline ArgumentInfoPtr ArgumentInfo(const StringPtr& name, CoreType type)
  * @param name The name of the argument.
  * @param itemType Corresponds to the expected type of items in the list argument.
  */
+// [api(module)]
 inline ArgumentInfoPtr ListArgumentInfo(const StringPtr& name, CoreType itemType)
 {
     return ArgumentInfoPtr::Adopt(ListArgumentInfo_Create(name, itemType));
@@ -55,6 +57,7 @@ inline ArgumentInfoPtr ListArgumentInfo(const StringPtr& name, CoreType itemType
  * @param keyType Corresponds to the expected type of key in the dictionary argument.
  * @param itemType Corresponds to the expected type of items in the dictionary argument.
  */
+// [api(module)]
 inline ArgumentInfoPtr DictArgumentInfo(const StringPtr& name, CoreType keyType, CoreType itemType)
 {
     return ArgumentInfoPtr::Adopt(DictArgumentInfo_Create(name, keyType, itemType));
@@ -63,6 +66,7 @@ inline ArgumentInfoPtr DictArgumentInfo(const StringPtr& name, CoreType keyType,
 /*!
  * @brief Creates the Struct type object that defines the Argument info struct.
  */
+// [api(module)]
 inline StructTypePtr ArgumentInfoStructType()
 {
     return StructType("ArgumentInfo",

@@ -42,6 +42,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * ObjectPtr<IObjectWithWeakReafSupport> newRef = weakRef.getRef();
  * @endcode
  */
+// [api(application)]
 template <typename TInterface, typename TSmartPtr = typename InterfaceToSmartPtr<TInterface>::SmartPtr>
 class WeakRefPtr : public ObjectPtr<IWeakRef>
 {

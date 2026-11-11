@@ -35,6 +35,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Data descriptor builder factory that creates a builder object with no parameters configured.
  */
+// [api(module)]
 inline DataDescriptorBuilderPtr DataDescriptorBuilder()
 {
     DataDescriptorBuilderPtr obj(DataDescriptorBuilder_Create());
@@ -46,6 +47,7 @@ inline DataDescriptorBuilderPtr DataDescriptorBuilder()
  * different Data descriptor, copying its parameters.
  * @param dataDescriptor The Data descriptor of which configuration should be copied.
  */
+// [api(module)]
 inline DataDescriptorBuilderPtr DataDescriptorBuilderCopy(const DataDescriptorPtr& dataDescriptor)
 {
     DataDescriptorBuilderPtr obj(DataDescriptorBuilderFromExisting_Create(dataDescriptor));
@@ -56,6 +58,7 @@ inline DataDescriptorBuilderPtr DataDescriptorBuilderCopy(const DataDescriptorPt
  * @brief Creates a Data Descriptor using Builder
  * @param builder Data Descriptor Builder
  */
+// [api(module)]
 inline DataDescriptorPtr DataDescriptorFromBuilder(const DataDescriptorBuilderPtr& builder)
 {
     DataDescriptorPtr obj(DataDescriptorFromBuilder_Create(builder));
@@ -65,6 +68,7 @@ inline DataDescriptorPtr DataDescriptorFromBuilder(const DataDescriptorBuilderPt
 /*!
  * @brief Creates a Data Descriptor to be used as a substitute in the event packet when a signal's descriptor is not assigned.
  */
+// [api(module)]
 inline DataDescriptorPtr NullDataDescriptor()
 {
     return DataDescriptorBuilder().setSampleType(SampleType::Null).build();
@@ -73,6 +77,7 @@ inline DataDescriptorPtr NullDataDescriptor()
 /*!
  * @brief Creates the Struct type object that defines the Data descriptor struct.
  */
+// [api(module)]
 inline StructTypePtr DataDescriptorStructType()
 {
     return StructType("DataDescriptor",

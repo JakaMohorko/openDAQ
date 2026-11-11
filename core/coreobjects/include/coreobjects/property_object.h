@@ -65,6 +65,7 @@ BEGIN_NAMESPACE_OPENDAQ
  *
  * Property objects can be frozen. When frozen, their set of Properties and Property values can no longer be modified.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IPropertyObject, IBaseObject)
 {
     /*!
@@ -218,6 +219,7 @@ DECLARE_OPENDAQ_INTERFACE(IPropertyObject, IBaseObject)
      * The Property is frozen once added to the Property object, making it immutable. The same Property cannot
      * be added to multiple different Property objects.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC addProperty(IProperty* property) = 0;
 
     /*!
@@ -229,6 +231,7 @@ DECLARE_OPENDAQ_INTERFACE(IPropertyObject, IBaseObject)
      *
      * A property can only be removed from a Property object, if it was added to the object, and not inherited from its class.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC removeProperty(IString* propertyName) = 0;
 
     // [templateType(event, IPropertyObject, IPropertyValueEventArgs)]
@@ -244,6 +247,7 @@ DECLARE_OPENDAQ_INTERFACE(IPropertyObject, IBaseObject)
      * holds an event args object that contains the written value, event type (Update), and a method of overriding the written value.
      * If the written value is overridden, the overridden value is stored in the Property object instead.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC getOnPropertyValueWrite(IString* propertyName, IEvent** event) = 0;
 
     // [templateType(event, IPropertyObject, IPropertyValueEventArgs)]
@@ -259,6 +263,7 @@ DECLARE_OPENDAQ_INTERFACE(IPropertyObject, IBaseObject)
      * holds an event args object that contains the read Property value, event type (Read), and a method of overriding the read value.
      * If the read value is overridden, the overridden value is read instead.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC getOnPropertyValueRead(IString* propertyName, IEvent** event) = 0;
 
     // [templateType(event, IPropertyObject, IPropertyValueEventArgs)]
@@ -273,6 +278,7 @@ DECLARE_OPENDAQ_INTERFACE(IPropertyObject, IBaseObject)
      * holds an event args object that contains the written value, event type (Update), and a method of overriding the written value.
      * If the written value is overridden, the overridden value is stored in the Property object instead.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC getOnAnyPropertyValueWrite(IEvent** event) = 0;
 
     // [templateType(event, IPropertyObject, IPropertyValueEventArgs)]
@@ -287,6 +293,7 @@ DECLARE_OPENDAQ_INTERFACE(IPropertyObject, IBaseObject)
      * holds an event args object that contains the read Property value, event type (Read), and a method of overriding the read value.
      * If the read value is overridden, the overridden value is read instead.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC getOnAnyPropertyValueRead(IEvent** event) = 0;
 
     // [elementType(properties, IProperty)]
@@ -322,6 +329,7 @@ DECLARE_OPENDAQ_INTERFACE(IPropertyObject, IBaseObject)
      * be sorted in the order in which the names appear in the provided list. Any properties not in the custom order are
      * kept in insertion order at the end of the Property object's list of properties.
      */
+    // [api(module)]
     virtual ErrCode INTERFACE_FUNC setPropertyOrder(IList* orderedPropertyNames) = 0;
 
     /*!
@@ -427,6 +435,7 @@ DECLARE_OPENDAQ_INTERFACE(IPropertyObject, IBaseObject)
 /*!
  * @brief Creates a empty Property object with no class.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, PropertyObject)
 
 /*!
@@ -434,6 +443,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, PropertyObject)
  * @param manager The Type manager manager.
  * @param className The name of the class from which the Property object inherits its properties.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, PropertyObjectWithClassAndManager,
     IPropertyObject,

@@ -69,6 +69,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * object is frozen (immutable). As such, Property Object setter methods cannot be used
  * and will fail when called.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IDeviceInfo, IPropertyObject)
 {
     /*!

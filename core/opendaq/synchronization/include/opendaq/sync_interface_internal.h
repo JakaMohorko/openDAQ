@@ -30,6 +30,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Internal interface for synchronization interface operations.
  */
+// [api(core)]
 DECLARE_OPENDAQ_INTERFACE(ISyncInterfaceInternal, IBaseObject)
 {
     /*!

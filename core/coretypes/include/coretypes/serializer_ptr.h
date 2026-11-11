@@ -27,6 +27,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @{
  */
 
+// [api(module)]
 class SerializerPtr : public ObjectPtr<ISerializer>
 {
 public:

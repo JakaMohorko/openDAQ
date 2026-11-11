@@ -28,6 +28,7 @@ struct ISerializable;
  * @{
  */
 
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(ISerializer, IBaseObject)
 {
     /**

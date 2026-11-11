@@ -33,6 +33,7 @@ class ListIteratorImpl;
 
 ErrCode INTERFACE_FUNC deserializeList(ISerializedObject* ser, IBaseObject* context, IFunction* factoryCallback, IBaseObject** obj);
 
+// [api(core)]
 class ListImpl : public ImplementationOf<IList, IIterable, ISerializable, IListElementType, ICoreType, ICloneable, IFreezable>
 {
 public:

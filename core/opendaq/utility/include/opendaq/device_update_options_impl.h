@@ -22,6 +22,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(application)]
 enum class NodeType : EnumType
 {
     Instance = 0,
@@ -30,6 +31,7 @@ enum class NodeType : EnumType
     Unknown = 99
 };
 
+// [api(core)]
 class DeviceUpdateOptionsImpl : public ImplementationOf<IDeviceUpdateOptions, ISerializable>
 {
 public:

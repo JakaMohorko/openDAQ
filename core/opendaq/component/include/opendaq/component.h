@@ -40,6 +40,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * [interfaceSmartPtr(IProperty, GenericPropertyPtr, "<coreobjects/property_ptr.h>")]
  */
 
+// [api(application)]
 enum class OperationModeType: EnumType
 {
     Unknown = 0,
@@ -48,6 +49,7 @@ enum class OperationModeType: EnumType
     SafeOperation
 };
 
+// [api(application)]
 enum class ComponentStatus : EnumType
 {
     Ok = 0,
@@ -61,6 +63,7 @@ enum class ComponentStatus : EnumType
  * The IComponent provides a set of methods that are common to all components:
  * LocalID, GlobalID and Active properties.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IComponent, IPropertyObject)
 {
     /*!
@@ -255,6 +258,7 @@ DECLARE_OPENDAQ_INTERFACE(IComponent, IPropertyObject)
  * @param parent The parent component.
  * @param localId The local ID of the component.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(
     LIBRARY_FACTORY, Component,
     IContext*, context,

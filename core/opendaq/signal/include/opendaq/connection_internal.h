@@ -27,11 +27,13 @@ BEGIN_NAMESPACE_OPENDAQ
  * @{
  */
 
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IConnectionInternal, IBaseObject)
 {
     /*!
      * @brief Enqueues an event packet with the last descriptor at the front of the queue.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC enqueueLastDescriptor() = 0;
 	virtual ErrCode INTERFACE_FUNC dequeueUpTo(IPacket** packetPtr, SizeT* count) = 0;
 
@@ -42,6 +44,7 @@ DECLARE_OPENDAQ_INTERFACE(IConnectionInternal, IBaseObject)
      * dequeue methods, disconnection is not covered by the owner-serialization rule, so
      * this call tolerates concurrent producer/consumer operations.
      */
+    // [api(core)]
     virtual ErrCode INTERFACE_FUNC closeQueue() = 0;
 };
 

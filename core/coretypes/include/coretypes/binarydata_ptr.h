@@ -47,6 +47,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * Binary data is just a continuously allocated memory of a specific size. A client can get a pointer to
  * internal buffer and size it.
  */
+// [api(application)]
 class BinaryDataPtr : public ObjectPtr<IBinaryData>
 {
 public:

@@ -29,6 +29,7 @@ class MirroredDeviceBase;
 
 using MirroredDevice = MirroredDeviceBase<>;
 
+// [api(module)]
 template <typename... Interfaces>
 class MirroredDeviceBase : public DeviceBase<IMirroredDeviceConfig, Interfaces...>
 {
@@ -60,17 +61,24 @@ public:
     ErrCode INTERFACE_FUNC setComponentConfig(IPropertyObject* config) override;
 
 protected:
+    // [api(module, override)]
     void serializeCustomObjectValues(const SerializerPtr& serializer, bool forUpdate) override;
+    // [api(core)]
     void deserializeCustomObjectValues(const SerializedObjectPtr& serializedObject,
                                        const BaseObjectPtr& context,
                                        const FunctionPtr& factoryCallback) override;
 
+    // [api(module, override)]
     void removed() override;
+    // [api(core)]
     void removedNoLock() override;
 
+    // [api(module, override)]
     StreamingPtr onAddStreaming(const StringPtr& connectionString, const PropertyObjectPtr& config) override;
 
+    // [api(core)]
     virtual bool isAddedToLocalComponentTree();
+    // [api(module, override)]
     virtual StringPtr onGetRemoteId() const = 0;
 
 private:

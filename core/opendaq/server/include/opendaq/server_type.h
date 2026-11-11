@@ -34,6 +34,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Provides information about the server.
  */
 
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IServerType, IComponentType)
 {
 };
@@ -53,6 +54,7 @@ DECLARE_OPENDAQ_INTERFACE(IServerType, IComponentType)
  * @param defaultConfig The property object, to be cloned and returned, each time user creates default
  * configuration object. This way each instance of the server has its own configuration object.
  */
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(
     LIBRARY_FACTORY, ServerType,
     IString*, id,

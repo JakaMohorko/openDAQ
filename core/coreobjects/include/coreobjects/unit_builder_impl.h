@@ -22,6 +22,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class UnitBuilderImpl : public ImplementationOf<IUnitBuilder>
 {
 public:

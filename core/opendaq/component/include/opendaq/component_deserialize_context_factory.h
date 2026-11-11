@@ -24,6 +24,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @{
  */
 
+// [api(module)]
 inline ComponentDeserializeContextPtr ComponentDeserializeContext(const ContextPtr& context,
                                                                   const ComponentPtr& root,
                                                                   const ComponentPtr& parent,

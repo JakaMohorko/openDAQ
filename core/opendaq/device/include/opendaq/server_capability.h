@@ -26,6 +26,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @{
  */
 
+// [api(application)]
 enum class ProtocolType: EnumType
 {
     Unknown = 0,
@@ -61,6 +62,7 @@ enum class ProtocolType: EnumType
  * - connection type (e.g., IPv4, IPv6),
  * - core events enabled (indicating communication mode).
 */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IServerCapability, IPropertyObject)
 {
     /*!

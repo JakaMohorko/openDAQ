@@ -21,6 +21,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class BinaryDataImpl : public ImplementationOf<IBinaryData, ICoreType>
 {
 public:

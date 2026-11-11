@@ -18,6 +18,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(application)]
 inline FunctionPtr CustomFunction(FuncCall func)
 {
     return FunctionPtr(Function_Create(func));

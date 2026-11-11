@@ -20,6 +20,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(module)]
 DECLARE_OPENDAQ_INTERFACE(IDeserializeComponent, IBaseObject)
 {
     virtual ErrCode INTERFACE_FUNC deserializeValues(ISerializedObject* serializedObject, IBaseObject* context, IFunction* callbackFactory) = 0;

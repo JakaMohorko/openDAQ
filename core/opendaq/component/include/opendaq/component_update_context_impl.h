@@ -23,6 +23,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class ComponentUpdateContextImpl : public ImplementationOf<IComponentUpdateContext, ISerializable>
 {
 public:

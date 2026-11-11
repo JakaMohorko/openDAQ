@@ -181,6 +181,7 @@ struct BlockNotifyInfo
 
 extern template class ReaderImpl<IBlockReader>;
 
+// [api(core)]
 class BlockReaderImpl final : public ReaderImpl<IBlockReader>
 {
 public:

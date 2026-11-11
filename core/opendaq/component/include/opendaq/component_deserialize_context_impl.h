@@ -22,6 +22,7 @@
 namespace daq
 {
 
+// [api(core)]
 template <class MainInterface, class ... Interfaces>
 class GenericComponentDeserializeContextImpl : public ImplementationOf<MainInterface, Interfaces...>
 {

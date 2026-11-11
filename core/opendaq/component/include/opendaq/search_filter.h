@@ -31,6 +31,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief Creates a search filter that accepts only visible components. "Visit children" returns `true`
  * only if the component being evaluated is visible.
  */
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, VisibleSearchFilter, ISearchFilter)
 
 /*!
@@ -38,6 +39,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, VisibleSearchFilte
  * always returns `true`.
  * @param requiredTags A list of strings containing the tags that a component must have to be accepted.
  */
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, RequiredTagsSearchFilter, ISearchFilter, IList*, requiredTags)
 
 /*!
@@ -45,6 +47,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, RequiredTagsSearch
  * always returns `true`.
  * @param excludedTags A list of strings containing the tags that a component must not have to be accepted.
  */
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, ExcludedTagsSearchFilter, ISearchFilter, IList*, excludedTags)
 
 /*!
@@ -52,6 +55,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, ExcludedTagsSearch
  * always returns `true`.
  * @param intfId The interface ID that should be implemented by accepted components.
  */
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, InterfaceIdSearchFilter, ISearchFilter, const IntfID&, intfId)
 
 /*!
@@ -59,6 +63,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, InterfaceIdSearchF
  * always returns `true`.
  * @param localId The local ID of the accepted components.
  */
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(LIBRARY_FACTORY, LocalIdSearchFilter, ISearchFilter, IString*, localId)
 
 /*!@}*/

@@ -25,6 +25,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @{
  */
 
+// [api(application)]
 enum class ReadStatus : EnumType
 {
     Ok = 0,
@@ -45,6 +46,7 @@ enum class ReadStatus : EnumType
  * Objects of this class are typically returned as a result of the `read` function of the Readers,
  * allowing the client code to assess and respond to the status of the reading process.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IReaderStatus, IBaseObject)
 {
     /*!
@@ -74,6 +76,7 @@ DECLARE_OPENDAQ_INTERFACE(IReaderStatus, IBaseObject)
 };
 /*!@}*/
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY (
     LIBRARY_FACTORY, ReaderStatus,
     IEventPacket*, eventPacket,

@@ -20,6 +20,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 template <typename TPtr, typename... TArgs>
 class ObjectDecorator : public ImplementationOf<TArgs...>
 {

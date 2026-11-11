@@ -32,6 +32,7 @@ BEGIN_NAMESPACE_OPENDAQ
  *
  * The default Value type is `ctUndefined`.
  */
+// [api(module)]
 inline PropertyBuilderPtr PropertyBuilder(const StringPtr& name)
 {
     PropertyBuilderPtr obj(PropertyBuilder_Create(name));
@@ -46,6 +47,7 @@ inline PropertyBuilderPtr PropertyBuilder(const StringPtr& name)
  *
  * The Property Value type is `ctBool`. Note that the defaultValue and visible parameters can be EvalValues.
  */
+// [api(module)]
 inline PropertyPtr BoolProperty(const StringPtr& name, const BooleanPtr& defaultValue, const BooleanPtr& visible = true)
 {
     PropertyPtr obj(BoolProperty_Create(name, defaultValue, visible));
@@ -59,6 +61,7 @@ inline PropertyPtr BoolProperty(const StringPtr& name, const BooleanPtr& default
  *
  * The Property Value type is `ctBool`. Note that the defaultValue parameter can be EvalValue.
  */
+// [api(module)]
 inline PropertyBuilderPtr BoolPropertyBuilder(const StringPtr& name, const BooleanPtr& defaultValue)
 {
     PropertyBuilderPtr obj(BoolPropertyBuilder_Create(name, defaultValue));
@@ -73,6 +76,7 @@ inline PropertyBuilderPtr BoolPropertyBuilder(const StringPtr& name, const Boole
  *
  * The Property Value type is `ctInt`. Note that the defaultValue and visible parameters can be EvalValues.
  */
+// [api(module)]
 inline PropertyPtr IntProperty(const StringPtr& name, const IntegerPtr& defaultValue, const BooleanPtr& visible = true)
 {
     PropertyPtr obj(IntProperty_Create(name, defaultValue, visible));
@@ -86,6 +90,7 @@ inline PropertyPtr IntProperty(const StringPtr& name, const IntegerPtr& defaultV
  *
  * The Property Value type is `ctInt`. Note that the defaultValue parameter can be EvalValue.
  */
+// [api(module)]
 inline PropertyBuilderPtr IntPropertyBuilder(const StringPtr& name, const IntegerPtr& defaultValue)
 {
     PropertyBuilderPtr obj(IntPropertyBuilder_Create(name, defaultValue));
@@ -100,6 +105,7 @@ inline PropertyBuilderPtr IntPropertyBuilder(const StringPtr& name, const Intege
  *
  * The Property Value type is `ctFloat`. Note that the defaultValue and visible parameters can be EvalValues.
  */
+// [api(module)]
 inline PropertyPtr FloatProperty(const StringPtr& name, const FloatPtr& defaultValue, const BooleanPtr& visible = true)
 {
     PropertyPtr obj(FloatProperty_Create(name, defaultValue, visible));
@@ -113,6 +119,7 @@ inline PropertyPtr FloatProperty(const StringPtr& name, const FloatPtr& defaultV
  *
  * The Property Value type is `ctFloat`. Note that the defaultValue parameter can be EvalValue.
  */
+// [api(module)]
 inline PropertyBuilderPtr FloatPropertyBuilder(const StringPtr& name, const FloatPtr& defaultValue)
 {
     PropertyBuilderPtr obj(FloatPropertyBuilder_Create(name, defaultValue));
@@ -127,6 +134,7 @@ inline PropertyBuilderPtr FloatPropertyBuilder(const StringPtr& name, const Floa
  *
  * The Property Value type is `ctString`. Note that the defaultValue and visible parameters can be EvalValues.
  */
+// [api(module)]
 inline PropertyPtr StringProperty(const StringPtr& name, const StringPtr& defaultValue, const BooleanPtr& visible = true)
 {
     PropertyPtr obj(StringProperty_Create(name, defaultValue, visible));
@@ -140,6 +148,7 @@ inline PropertyPtr StringProperty(const StringPtr& name, const StringPtr& defaul
  *
  * The Property Value type is `ctString`. Note that the defaultValue parameter can be EvalValue.
  */
+// [api(module)]
 inline PropertyBuilderPtr StringPropertyBuilder(const StringPtr& name, const StringPtr& defaultValue)
 {
     PropertyBuilderPtr obj(StringPropertyBuilder_Create(name, defaultValue));
@@ -157,6 +166,7 @@ inline PropertyBuilderPtr StringPropertyBuilder(const StringPtr& name, const Str
  *
  * The Property's Item type field will be set according to defaultValue list type.
  */
+// [api(module)]
 inline PropertyPtr ListProperty(const StringPtr& name,
                                       const ListPtr<IBaseObject>& defaultValue,
                                       const BooleanPtr& visible = true)
@@ -175,6 +185,7 @@ inline PropertyPtr ListProperty(const StringPtr& name,
  *
  * The Property's Item type field will be set according to defaultValue list type.
  */
+// [api(module)]
 inline PropertyBuilderPtr ListPropertyBuilder(const StringPtr& name,
                                       const ListPtr<IBaseObject>& defaultValue)
 {
@@ -196,6 +207,7 @@ inline PropertyBuilderPtr ListPropertyBuilder(const StringPtr& name,
  *
  * TODO: defaultValue can be an EvalValue once dictionaries are supported.
  */
+// [api(module)]
 inline PropertyPtr DictProperty(const StringPtr& name,
                                       const DictPtr<IBaseObject, IBaseObject>& defaultValue,
                                       const BooleanPtr& visible = true)
@@ -217,6 +229,7 @@ inline PropertyPtr DictProperty(const StringPtr& name,
  *
  * TODO: defaultValue can be an EvalValue once dictionaries are supported.
  */
+// [api(module)]
 inline PropertyBuilderPtr DictPropertyBuilder(const StringPtr& name,
                                       const DictPtr<IBaseObject, IBaseObject>& defaultValue)
 {
@@ -234,6 +247,7 @@ inline PropertyBuilderPtr DictPropertyBuilder(const StringPtr& name,
  *
  * TODO: defaultValue can be an EvalValue once ratios are supported.
  */
+// [api(module)]
 inline PropertyPtr RatioProperty(const StringPtr& name, const RatioPtr& defaultValue, const BooleanPtr& visible = true)
 {
     PropertyPtr obj(RatioProperty_Create(name, defaultValue, visible));
@@ -249,6 +263,7 @@ inline PropertyPtr RatioProperty(const StringPtr& name, const RatioPtr& defaultV
  *
  * TODO: defaultValue can be an EvalValue once ratios are supported.
  */
+// [api(module)]
 inline PropertyBuilderPtr RatioPropertyBuilder(const StringPtr& name, const RatioPtr& defaultValue)
 {
     PropertyBuilderPtr obj(RatioPropertyBuilder_Create(name, defaultValue));
@@ -266,6 +281,7 @@ inline PropertyBuilderPtr RatioPropertyBuilder(const StringPtr& name, const Rati
  *
  * If the defaultValue is not specified, it will automatically be configured to an empty Property Object.
  */
+// [api(module)]
 inline PropertyPtr ObjectProperty(const StringPtr& name, const PropertyObjectPtr& defaultValue = nullptr)
 {
     PropertyPtr obj(ObjectProperty_Create(name, defaultValue));
@@ -283,6 +299,7 @@ inline PropertyPtr ObjectProperty(const StringPtr& name, const PropertyObjectPtr
  *
  * If the defaultValue is not specified, it will automatically be configured to an empty Property Object.
  */
+// [api(module)]
 inline PropertyBuilderPtr ObjectPropertyBuilder(const StringPtr& name, const PropertyObjectPtr& defaultValue = nullptr)
 {
     PropertyBuilderPtr obj(ObjectPropertyBuilder_Create(name, defaultValue));
@@ -299,6 +316,7 @@ inline PropertyBuilderPtr ObjectPropertyBuilder(const StringPtr& name, const Pro
  * The Property Value type is `ctFunction` or `ctProc`, depending on if `callableInfo` contains information
  * on the return type or not. Note that the visible parameter can be an EvalValue.
  */
+// [api(module)]
 inline PropertyPtr FunctionProperty(const StringPtr& name,
                                           const CallableInfoPtr& callableInfo,
                                           const BooleanPtr& visible = true)
@@ -316,6 +334,7 @@ inline PropertyPtr FunctionProperty(const StringPtr& name,
  * The Property Value type is `ctFunction` or `ctProc`, depending on if `callableInfo` contains information
  * on the return type or not.
  */
+// [api(module)]
 inline PropertyBuilderPtr FunctionPropertyBuilder(const StringPtr& name,
                                                   const CallableInfoPtr& callableInfo)
 {
@@ -329,6 +348,7 @@ inline PropertyBuilderPtr FunctionPropertyBuilder(const StringPtr& name,
  * @param name The name of the Property.
  * @param referencedPropertyEval The evaluation expression that evaluates to another property.
  */
+// [api(module)]
 inline PropertyPtr ReferenceProperty(const StringPtr& name, const EvalValuePtr& referencedPropertyEval)
 {
     PropertyPtr obj(ReferenceProperty_Create(name, referencedPropertyEval));
@@ -341,6 +361,7 @@ inline PropertyPtr ReferenceProperty(const StringPtr& name, const EvalValuePtr& 
  * @param name The name of the Property.
  * @param referencedPropertyEval The evaluation expression that evaluates to another property.
  */
+// [api(module)]
 inline PropertyBuilderPtr ReferencePropertyBuilder(const StringPtr& name, const EvalValuePtr& referencedPropertyEval)
 {
     PropertyBuilderPtr obj(ReferencePropertyBuilder_Create(name, referencedPropertyEval));
@@ -357,6 +378,7 @@ inline PropertyBuilderPtr ReferencePropertyBuilder(const StringPtr& name, const 
  *
  * The Property Value type is `ctInt`.
  */
+// [api(module)]
 inline PropertyPtr SelectionProperty(const StringPtr& name,
                                            const ListPtr<IBaseObject>& selectionValues,
                                            const IntegerPtr& defaultValue,
@@ -375,6 +397,7 @@ inline PropertyPtr SelectionProperty(const StringPtr& name,
  *
  * The Property Value type is `ctInt`.
  */
+// [api(module)]
 inline PropertyBuilderPtr SelectionPropertyBuilder(const StringPtr& name,
                                            const ListPtr<IBaseObject>& selectionValues,
                                            const IntegerPtr& defaultValue)
@@ -393,6 +416,7 @@ inline PropertyBuilderPtr SelectionPropertyBuilder(const StringPtr& name,
  *
  * The Property Value type is `ctInt`. The key type of the Selection values dictionary must be `ctInt`.
  */
+// [api(module)]
 inline PropertyPtr SparseSelectionProperty(const StringPtr& name,
                                                  const DictPtr<Int, IBaseObject>& selectionValues,
                                                  const IntegerPtr& defaultValue,
@@ -411,6 +435,7 @@ inline PropertyPtr SparseSelectionProperty(const StringPtr& name,
  *
  * The Property Value type is `ctInt`. The key type of the Selection values dictionary must be `ctInt`.
  */
+// [api(module)]
 inline PropertyBuilderPtr SparseSelectionPropertyBuilder(const StringPtr& name,
                                                  const DictPtr<Int, IBaseObject>& selectionValues,
                                                  const IntegerPtr& defaultValue)
@@ -427,6 +452,7 @@ inline PropertyBuilderPtr SparseSelectionPropertyBuilder(const StringPtr& name,
  *
  * The Property Value type is `ctStruct`.
  */
+// [api(module)]
 inline PropertyPtr StructProperty(const StringPtr& name, const StructPtr& defaultValue, const BooleanPtr& visible = true)
 {
     PropertyPtr obj(StructProperty_Create(name, defaultValue, visible));
@@ -440,6 +466,7 @@ inline PropertyPtr StructProperty(const StringPtr& name, const StructPtr& defaul
  *
  * The Property Value type is `ctStruct`.
  */
+// [api(module)]
 inline PropertyBuilderPtr StructPropertyBuilder(const StringPtr& name, const StructPtr& defaultValue)
 {
     PropertyBuilderPtr obj(StructPropertyBuilder_Create(name, defaultValue));
@@ -454,6 +481,7 @@ inline PropertyBuilderPtr StructPropertyBuilder(const StringPtr& name, const Str
  *
  * The Property Value type is `ctEnumeration`.
  */
+// [api(module)]
 inline PropertyPtr EnumerationProperty(const StringPtr& name, const EnumerationPtr& defaultValue, const BooleanPtr& visible = true)
 {
     PropertyPtr obj(EnumerationProperty_Create(name, defaultValue, visible));
@@ -467,6 +495,7 @@ inline PropertyPtr EnumerationProperty(const StringPtr& name, const EnumerationP
  *
  * The Property Value type is `ctEnumeration`.
  */
+// [api(module)]
 inline PropertyBuilderPtr EnumerationPropertyBuilder(const StringPtr& name, const EnumerationPtr& defaultValue)
 {
     PropertyBuilderPtr obj(EnumerationPropertyBuilder_Create(name, defaultValue));
@@ -477,6 +506,7 @@ inline PropertyBuilderPtr EnumerationPropertyBuilder(const StringPtr& name, cons
  * @brief Creates a Property using Builder
  * @param builder Property Builder
  */
+// [api(module)]
 inline PropertyPtr PropertyFromBuilder(const PropertyBuilderPtr& builder)
 {
     PropertyPtr obj(PropertyFromBuilder_Create(builder));

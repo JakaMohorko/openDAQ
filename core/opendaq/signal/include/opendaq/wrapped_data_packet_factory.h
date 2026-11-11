@@ -31,6 +31,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @param sourcePacket The source packet being wrapped.
  * @param descriptor The descriptor of the packet.
  */
+// [api(module)]
 inline DataPacketPtr WrappedDataPacket(const DataPacketPtr& sourcePacket,
                                        const DataDescriptorPtr& descriptor)
 {

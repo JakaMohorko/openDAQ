@@ -42,6 +42,7 @@ struct InterfaceToSmartPtr<IStructBuilder>
  * @brief Builder component of Struct objects. Contains setter methods to configure the Struct parameters, and a
  * `build` method that builds the Struct object.
  */
+// [api(application)]
 class StructBuilderPtr : public ObjectPtr<IStructBuilder>
 {
 public:

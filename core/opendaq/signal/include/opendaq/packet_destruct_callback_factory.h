@@ -29,6 +29,7 @@ BEGIN_NAMESPACE_OPENDAQ
 /*!
  * @brief Creates packet destruct callback that is used to subscribe to packet destruction
  */
+// [api(module)]
 template <class Callback>
 PacketDestructCallbackPtr PacketDestructCallback(Callback callback)
 {

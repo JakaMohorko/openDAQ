@@ -19,6 +19,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 DECLARE_OPENDAQ_INTERFACE(IComponentHolder, IBaseObject)
 {
     virtual ErrCode INTERFACE_FUNC getLocalId(IString** localId) = 0;
@@ -26,11 +27,13 @@ DECLARE_OPENDAQ_INTERFACE(IComponentHolder, IBaseObject)
     virtual ErrCode INTERFACE_FUNC getComponent(IComponent** component) = 0;
 };
 
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY(
     LIBRARY_FACTORY, ComponentHolder,
     IComponent*, component
 )
 
+// [api(core)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, ComponentHolderWithIds, IComponentHolder,
     IString*, id,

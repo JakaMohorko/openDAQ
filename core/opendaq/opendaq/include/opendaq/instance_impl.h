@@ -25,6 +25,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class InstanceImpl final : public ImplementationOfWeak<IInstance, ISerializable, IUpdatable>
 {
 public:

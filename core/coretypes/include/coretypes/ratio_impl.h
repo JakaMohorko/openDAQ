@@ -26,6 +26,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class RatioImpl : public GenericStructImpl<IRatio, IStruct, IConvertible, IComparable>
 {
 public:

@@ -23,6 +23,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class DataRuleBuilderImpl final : public ImplementationOf<IDataRuleBuilder>
 {
 public:

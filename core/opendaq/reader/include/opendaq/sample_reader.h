@@ -27,6 +27,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @{
  */
 
+// [api(application)]
 enum class ReadMode
 {
     Unscaled,
@@ -44,6 +45,7 @@ enum class ReadMode
 /*!
  * @brief A basic signal reader that simplifies reading the signals's samples.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(ISampleReader, IReader)
 {
     /*!

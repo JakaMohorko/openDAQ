@@ -42,6 +42,7 @@ struct IBlockReaderBuilder;
  * at least one block.
  * @remark Currently only supports single-dimensional scalar sample-types and RangeInt64
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IBlockReader, ISampleReader)
 {
     
@@ -95,6 +96,7 @@ DECLARE_OPENDAQ_INTERFACE(IBlockReader, ISampleReader)
 };
 /*!@}*/
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY(
     LIBRARY_FACTORY, BlockReader,
     ISignal*, signal,
@@ -104,6 +106,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY(
     ReadMode, mode
 )
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, BlockReaderFromExisting, IBlockReader,
     IBlockReader*, invalidatedReader,
@@ -112,6 +115,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     SizeT, blockSize
 )
 
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, BlockReaderFromPort, IBlockReader,
     IInputPortConfig*, port,
@@ -126,6 +130,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
  * @param builder BlockReader Builder
  */
 //[factory(Hide)]
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, BlockReaderFromBuilder, IBlockReader,
     IBlockReaderBuilder*, builder

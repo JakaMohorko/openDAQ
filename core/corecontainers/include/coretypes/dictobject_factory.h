@@ -20,6 +20,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(application)]
 template <class KeyT, class ValueT>
 inline DictObjectPtr<IDict, KeyT, ValueT> Dict()
 {
@@ -31,6 +32,7 @@ inline DictObjectPtr<IDict, KeyT, ValueT> Dict()
     return obj;
 }
 
+// [api(application)]
 template <typename KeyT, typename ValueT>
 static DictObjectPtr<IDict, KeyT, ValueT> Dict(std::initializer_list<std::pair<const typename InterfaceToSmartPtr<KeyT>::SmartPtr,
                                                                                      typename InterfaceToSmartPtr<ValueT>::SmartPtr>> init)

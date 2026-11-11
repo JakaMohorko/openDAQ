@@ -32,6 +32,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @brief An immutable structure which describes an openDAQ user. It holds username, password as a hash string
  * and a list of groups assigned to the user.
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IUser, IBaseObject)
 {
     /*!
@@ -56,6 +57,7 @@ DECLARE_OPENDAQ_INTERFACE(IUser, IBaseObject)
  * @param passwordHash The hashed password as a string in Modular Crypt Format.
  * @param groups The list of group IDs which the user belongs to.
  */
+// [api(application)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, User, IString*, username, IString*, passwordHash, IList*, groups)
 
 END_NAMESPACE_OPENDAQ

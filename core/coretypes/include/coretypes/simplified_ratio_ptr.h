@@ -21,6 +21,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(application)]
 class SimplifiedRatioPtr : public RatioPtr
 {
 public:

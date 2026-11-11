@@ -46,6 +46,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * automatically assigned in ascending order, starting from that value (or from the default '0' value if not
  * specified).
  */
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IEnumerationType, IType)
 {
     // [elementType(names, IString)]
@@ -79,6 +80,7 @@ DECLARE_OPENDAQ_INTERFACE(IEnumerationType, IType)
 
 /*!@}*/
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(
     LIBRARY_FACTORY, EnumerationType,
     IString*, typeName,
@@ -86,6 +88,7 @@ OPENDAQ_DECLARE_CLASS_FACTORY(
     Int, firstEnumeratorIntValue
 )
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY_WITH_INTERFACE(
     LIBRARY_FACTORY, EnumerationTypeWithValues, IEnumerationType,
     IString*, typeName,

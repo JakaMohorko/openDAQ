@@ -31,6 +31,7 @@ BEGIN_NAMESPACE_OPENDAQ
  * @{
  */
 
+// [api(application)]
 DECLARE_OPENDAQ_INTERFACE(IEventArgs, IBaseObject)
 {
     virtual ErrCode INTERFACE_FUNC getEventId(Int* id) = 0;
@@ -41,6 +42,7 @@ DECLARE_OPENDAQ_INTERFACE(IEventArgs, IBaseObject)
  * @}
  */
 
+// [api(module)]
 OPENDAQ_DECLARE_CLASS_FACTORY(LIBRARY_FACTORY, EventArgs, Int, eventId, IString*, eventName)
 
 END_NAMESPACE_OPENDAQ

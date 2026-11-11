@@ -34,6 +34,7 @@ struct InterfaceToSmartPtr<IUpdatable>
  * @{
  */
 
+// [api(core)]
 class UpdatablePtr : public ObjectPtr<IUpdatable>
 {
 public:

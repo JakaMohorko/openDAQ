@@ -23,6 +23,7 @@
 
 BEGIN_NAMESPACE_OPENDAQ
 
+// [api(core)]
 class LogFileInfoImpl : public ImplementationOf<ILogFileInfo, ISerializable>
 {
 public:
